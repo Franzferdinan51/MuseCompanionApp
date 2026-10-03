@@ -63,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _showAllVoices = false;
   int _voiceLookupGeneration = 0;
   Timer? _voiceLookup;
+  String? _adbInfoStatus;
 
   @override
   void initState() {
@@ -251,6 +252,24 @@ class _SettingsScreenState extends State<SettingsScreen>
     WidgetsBinding.instance.removeObserver(this);
     _connectionSub?.cancel();
     super.dispose();
+  }
+
+  /// Display ADB connection info on demand.
+  /// Shows USB debugging status, model, and serial for troubleshooting.
+  Future<void> _shareAdbInfo() async {
+    setState(() => _adbInfoStatus = 'Collecting ADB info...');
+    try {
+      final phone = const PhoneBridge();
+      final info = await phone.adbInfo();
+      final adbOn = info['adb_enabled'] == true;
+      final model = info['model'] ?? 'unknown';
+      final serial = info['serial'] ?? 'unknown';
+      setState(() => _adbInfoStatus =
+          'USB debugging: ${adbOn ? 'enabled' : 'disabled'}\n'
+          'Model: $model\nSerial: $serial');
+    } catch (e) {
+      setState(() => _adbInfoStatus = 'Error: $e');
+    }
   }
 
   Future<void> _commit(CompanionSettings next) async {
@@ -756,17 +775,19 @@ class _SettingsScreenState extends State<SettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Share ADB/wireless-ADB connection info with Muse via chat '
-                  'so remote troubleshooting is possible.',
+                  'Check ADB/wireless-ADB status for troubleshooting. Tap to view.',
                 ),
                 const SizedBox(height: 12),
-                SwitchListTile(
-                  title: const Text('Share ADB info'),
-                  value: _settings.adbInfoSharingEnabled,
-                  onChanged: (v) => _commit(
-                    _settings.copyWith(adbInfoSharingEnabled: v),
-                  ),
+                FilledButton.icon(
+                  onPressed: _shareAdbInfo,
+                  icon: const Icon(Icons.adb),
+                  label: const Text('Check ADB info'),
                 ),
+                if (_adbInfoStatus != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_adbInfoStatus!,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
               ],
             ),
           ),
