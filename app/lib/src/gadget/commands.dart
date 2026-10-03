@@ -644,6 +644,8 @@ String companionIntroMessage() {
       'voice.listen, and use the phone.* commands registered on this device '
       '(open links, launch apps, notifications, messages, contacts, calendar, '
       'location, alarms, clipboard, flashlight, volume, and spoken replies). '
-      'Chat replies you write show on the phone. If already set up, refresh '
+      'Each reply you write is shown as the caption under the character, '
+      'the way a Muse screen does, and spoken when the phone is set to. '
+      'If already set up, refresh '
       'the character and current status. Tell me if a command fails.';
 }

@@ -119,4 +119,35 @@ void main() {
     expect(history.messages, isEmpty);
     expect(history.activity, 'thinking');
   });
+
+  test('a transcript replaces the voice-note placeholder', () {
+    final history = ChatHistory();
+    addTearDown(history.close);
+    final heard = <String>[];
+    history.onHeard = heard.add;
+    history.addSending('Voice note');
+    history.applyServerEvent('transcript', {
+      'role': 'user',
+      'text': 'turn on the porch light',
+    });
+    history.applyServerEvent('message.user', {
+      'role': 'user',
+      'text': 'this typed line should stay',
+    });
+    history.addSending('hello');
+    history.applyServerEvent('transcript', {'text': 'not this'});
+    expect(history.messages.first.text, 'turn on the porch light');
+    expect(history.messages.last.text, 'hello');
+    expect(heard, ['turn on the porch light']);
+  });
+
+  test('a finished reply is remembered for replay', () {
+    final history = ChatHistory();
+    addTearDown(history.close);
+    history.applyServerEvent('delta.message_done', {
+      'message_id': 'm2',
+      'display_text': 'On it.',
+    });
+    expect(history.lastReply, 'On it.');
+  });
 }

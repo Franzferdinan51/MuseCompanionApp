@@ -381,6 +381,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
           _SettingCard(
+            title: 'Speech volume',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'How loud spoken replies are. Same idea as the volume dial on a Muse voice gadget.',
+                ),
+                Row(
+                  children: [
+                    const Icon(Icons.volume_up_outlined),
+                    Expanded(
+                      child: Slider(
+                        value: _settings.speechVolume.toDouble(),
+                        min: 0,
+                        max: 100,
+                        divisions: 10,
+                        label: '${_settings.speechVolume}',
+                        onChanged: (v) => _commit(
+                            _settings.copyWith(speechVolume: v.round())),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 36,
+                      child: Text('${_settings.speechVolume}'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
             title: 'Phone actions',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

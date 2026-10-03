@@ -61,6 +61,7 @@ class CompanionSettings {
     this.speakReplies = true,
     this.allowCalls = false,
     this.allowSendSms = false,
+    this.speechVolume = 80,
   });
 
   /// One of `light`, `dark` or `system`.
@@ -76,12 +77,19 @@ class CompanionSettings {
   /// Let Muse send texts directly with `phone.sms`. Off until the user opts in.
   final bool allowSendSms;
 
+  /// Media volume used when a reply is spoken, 0–100.
+  ///
+  /// The Home Assistant Voice gadget keeps a speaker dial. This is that
+  /// dial for the phone speaker. Muse cannot change it.
+  final int speechVolume;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
     bool? speakReplies,
     bool? allowCalls,
     bool? allowSendSms,
+    int? speechVolume,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -89,6 +97,7 @@ class CompanionSettings {
       speakReplies: speakReplies ?? this.speakReplies,
       allowCalls: allowCalls ?? this.allowCalls,
       allowSendSms: allowSendSms ?? this.allowSendSms,
+      speechVolume: speechVolume ?? this.speechVolume,
     );
   }
 
@@ -105,6 +114,7 @@ class CompanionSettings {
         'speak_replies': speakReplies,
         'allow_calls': allowCalls,
         'allow_send_sms': allowSendSms,
+        'speech_volume': speechVolume.clamp(0, 100),
       };
 
   static CompanionSettings fromMap(Map<String, Object?> map) {
@@ -119,7 +129,15 @@ class CompanionSettings {
           : true,
       allowCalls: map['allow_calls'] == true,
       allowSendSms: map['allow_send_sms'] == true,
+      speechVolume: _speechVolume(map['speech_volume']),
     );
+  }
+
+  static int _speechVolume(Object? value) {
+    final number = value is num ? value.round() : 80;
+    if (number < 0) return 0;
+    if (number > 100) return 100;
+    return number;
   }
 }
 

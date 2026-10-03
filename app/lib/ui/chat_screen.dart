@@ -42,6 +42,7 @@ class _ChatScreenState extends State<ChatScreen> {
   ConnectionState _connection = ConnectionState.unpaired;
   bool _listening = false;
   bool _capturing = false;
+  String? _captionBeforeListen;
 
   @override
   void didChangeDependencies() {
@@ -97,20 +98,32 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _startVoice() async {
     if (_listening || !_ready) return;
+    final scope = AppScope.of(context);
+    _captionBeforeListen = scope.presentation.statusText;
+    scope.presentation.applyStatus('Listening…');
     setState(() => _listening = true);
     try {
-      await AppScope.of(context).phone.startRecording();
+      await scope.phone.startRecording();
     } on PhoneActionException catch (e) {
       if (!mounted) return;
       setState(() => _listening = false);
+      _restoreCaption();
       _showError(e.message);
     }
+  }
+
+  void _restoreCaption() {
+    final previous = _captionBeforeListen;
+    _captionBeforeListen = null;
+    if (previous == null) return;
+    AppScope.of(context).presentation.applyStatus(previous);
   }
 
   Future<void> _stopVoice() async {
     if (!_listening) return;
     setState(() => _listening = false);
     final scope = AppScope.of(context);
+    if (scope.presentation.statusText == 'Listening…') _restoreCaption();
     try {
       final wav = await scope.phone.stopRecording();
       final note = _controller.text.trim();

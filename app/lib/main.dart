@@ -23,6 +23,7 @@ import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
+import 'package:muse_companion/app/captions.dart';
 import 'package:muse_companion/app/chat.dart';
 import 'package:muse_companion/app/companion_platform.dart';
 import 'package:muse_companion/app/foreground.dart';
@@ -30,13 +31,14 @@ import 'package:muse_companion/app/model.dart';
 import 'package:muse_companion/app/phone_bridge.dart';
 import 'package:muse_companion/app/storage.dart';
 import 'package:muse_companion/src/gadget/chat_events.dart';
+import 'package:muse_companion/src/gadget/phone_actions.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
 import 'ui/companion_screen.dart';
 import 'ui/scope.dart';
 
-const String _appVersion = '0.2.0';
+const String _appVersion = '0.2.1';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -96,10 +98,30 @@ Future<void> main() async {
   service.onChatEvent.listen((event) {
     chat.applyServerEvent(event.event, event.payload);
   });
+  // The on-screen Muse gadgets put the reply under the character while
+  // it streams, then speak a short form of it. The full text stays in chat.
+  chat.onCaption = (text) {
+    final caption = captionFromReply(text);
+    if (caption.isNotEmpty) presentation.applyStatus(caption);
+  };
+  chat.onActivity = (code) {
+    final line = activityCaption(code);
+    if (line != null) presentation.applyStatus(line);
+  };
+  chat.onHeard = (text) {
+    final caption = captionFromReply(text);
+    if (caption.isNotEmpty) presentation.applyStatus(caption);
+  };
   chat.onAssistantDone = (text) {
-    if (presentation.settings.speakReplies) {
-      unawaited(phone.speak(text));
+    final caption = captionFromReply(text);
+    if (caption.isNotEmpty) {
+      presentation.applyStatus(caption);
+      unawaited(settings.saveStatus(caption));
     }
+    if (!presentation.settings.speakReplies) return;
+    final spoken = speakableReply(text);
+    if (spoken.isEmpty) return;
+    unawaited(_speakReply(phone, presentation, spoken));
   };
   final ble = BlePeripheralManager(
     identity: identity.identity,
@@ -120,6 +142,19 @@ Future<void> main() async {
     sdkTokens: sdkTokens,
     phone: phone,
   ));
+}
+
+/// Set the speaker, then read [spoken]. Failures leave the caption up.
+Future<void> _speakReply(
+    PhoneBridge phone, PresentationState presentation, String spoken) async {
+  try {
+    await phone.run('phone.volume', {
+      'level': presentation.settings.speechVolume,
+    });
+    await phone.speak(spoken);
+  } on PhoneActionException {
+    // The caption under the character is the fallback.
+  }
 }
 
 /// Lets the executor post a photo or voice note before the service exists.

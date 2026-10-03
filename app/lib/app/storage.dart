@@ -124,6 +124,7 @@ class SettingsStore {
       'allow_calls': _prefs.getBool('${_settingsPrefix}allow_calls') ?? false,
       'allow_send_sms':
           _prefs.getBool('${_settingsPrefix}allow_send_sms') ?? false,
+      'speech_volume': _prefs.getInt('${_settingsPrefix}speech_volume'),
     });
   }
 
@@ -138,6 +139,8 @@ class SettingsStore {
         '${_settingsPrefix}allow_calls', settings.allowCalls);
     await _prefs.setBool(
         '${_settingsPrefix}allow_send_sms', settings.allowSendSms);
+    await _prefs.setInt(
+        '${_settingsPrefix}speech_volume', settings.speechVolume);
   }
 
   String loadStatus() => _prefs.getString(_statusKey) ?? '';

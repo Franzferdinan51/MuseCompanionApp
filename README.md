@@ -25,6 +25,11 @@ Android first; iOS, macOS and Windows follow from the same Flutter codebase.
   companion (main chat or a side chat). Replies stream back on
   `/chat/subscribe` and show up in the thread. Hold the mic for a voice
   note, or show the camera so your Muse can see the photo.
+- **Captions and a speaker, like the Muse screens** — a reply also appears
+  under the character while it streams, the same job the Waveshare, AiPi,
+  Stick, and Pocket displays do. Spoken replies follow the speech-volume
+  dial in Settings, and Say it again repeats the last one. A voice-note
+  transcript replaces the "Voice note" placeholder when Muse sends one.
 - **Muse-driven display** — your Muse can update the caption, swap the
   character, clear back to the placeholder, and adjust theme preferences
   through gadget commands; a health command reports battery and device info.

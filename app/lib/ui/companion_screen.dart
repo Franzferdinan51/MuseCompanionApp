@@ -27,7 +27,9 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../app/captions.dart';
 import '../app/model.dart';
+import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import 'chat_screen.dart';
 import 'pairing_screen.dart';
@@ -451,6 +453,11 @@ class _BottomBar extends StatelessWidget {
                   label: const Text('Pair'),
                 ),
               IconButton(
+                tooltip: 'Say it again',
+                onPressed: () => _repeatLast(context),
+                icon: const Icon(Icons.replay),
+              ),
+              IconButton(
                 tooltip: 'Message',
                 icon: const Icon(Icons.chat_bubble_outline),
                 onPressed: () => Navigator.of(context).push(
@@ -473,6 +480,32 @@ class _BottomBar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _repeatLast(BuildContext context) async {
+    final scope = AppScope.of(context);
+    final reply = scope.chat.lastReply;
+    final source = (reply != null && reply.trim().isNotEmpty)
+        ? reply
+        : scope.presentation.statusText;
+    final spoken = speakableReply(source);
+    if (spoken.isEmpty || spoken == 'Listening…') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nothing to say yet.')),
+      );
+      return;
+    }
+    try {
+      await scope.phone.run('phone.volume', {
+        'level': scope.presentation.settings.speechVolume,
+      });
+      await scope.phone.speak(spoken);
+    } on PhoneActionException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
   }
 
   String _labelFor(ConnectionState state) {

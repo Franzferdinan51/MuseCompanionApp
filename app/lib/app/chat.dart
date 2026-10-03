@@ -72,6 +72,19 @@ class ChatHistory {
   /// Spoken when an assistant reply finishes.
   void Function(String text)? onAssistantDone;
 
+  /// Live caption text while a reply is streaming or has just finished.
+  void Function(String text)? onCaption;
+
+  /// Activity code from `agent.status`, such as `thinking`.
+  void Function(String code)? onActivity;
+
+  /// Transcript Muse attached to the latest voice note.
+  void Function(String text)? onHeard;
+
+  /// Last finished assistant reply, for "say it again".
+  String? get lastReply => _lastReply;
+  String? _lastReply;
+
   /// Short Muse activity label from `agent.status`, or empty.
   String get activity => _activity;
 
@@ -124,11 +137,22 @@ class ChatHistory {
   /// Fold one `/chat/subscribe` event into the history.
   void applyServerEvent(String name, Map<String, Object?> payload) {
     final role = _text(payload['role']) ?? _text(payload['author']);
-    if (role == 'user' || role == 'human') return;
+    if (role == 'user' ||
+        role == 'human' ||
+        name == 'transcript' ||
+        name == 'message.user') {
+      final heard = _text(payload['transcript']) ??
+          _text(payload['display_text']) ??
+          _text(payload['content']) ??
+          _text(payload['text']);
+      if (heard != null) _applyHeard(heard);
+      return;
+    }
     if (name == 'agent.status' || name == 'task.status') {
       final code = _text(payload['activity_code']) ?? _text(payload['status']);
       _activity = code ?? '';
       _emit();
+      if (code != null) onActivity?.call(code);
       return;
     }
     final serverId = _text(payload['message_id']) ??
@@ -168,6 +192,7 @@ class ChatHistory {
     message.streaming = true;
     message.status = ChatStatus.sending;
     _emit();
+    if (message.text.trim().isNotEmpty) onCaption?.call(message.text);
   }
 
   void _finishAssistant(String serverId, String? full) {
@@ -179,8 +204,28 @@ class ChatHistory {
     message.streaming = false;
     message.status = ChatStatus.sent;
     _emit();
+    if (message.text.trim().isNotEmpty) {
+      _lastReply = message.text;
+      onCaption?.call(message.text);
+    }
     if (finishedNow && message.text.trim().isNotEmpty) {
       onAssistantDone?.call(message.text);
+    }
+  }
+
+  /// Replace the latest "Voice note" bubble with what Muse heard.
+  ///
+  /// Typed messages are left alone, so an echo of the user's own text
+  /// does not add a second bubble.
+  void _applyHeard(String text) {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      final message = _messages[i];
+      if (message.role != ChatRole.user) continue;
+      if (message.text != 'Voice note') return;
+      message.text = text;
+      _emit();
+      onHeard?.call(text);
+      return;
     }
   }
 
