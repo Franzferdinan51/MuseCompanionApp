@@ -380,6 +380,10 @@ Future<String> _stageModel(Uint8List bytes) async {
   return file.path;
 }
 
+/// Portrait sprite size in stage cells. The disc is 64 cells across and
+/// stays still; this box is the body that bobs inside it.
+const double _portraitCells = 46;
+
 class _StagePainter extends CustomPainter {
   _StagePainter({required this.clock, required this.pose, required this.model})
     : super(repaint: clock);
@@ -483,60 +487,20 @@ class _StagePainter extends CustomPainter {
       );
     }
 
+    final listening = _poseWeight(AvatarPose.listening, smooth);
+    final speaking = _poseWeight(AvatarPose.speaking, smooth);
+
     canvas.save();
     canvas.clipPath(
       Path()..addOval(Rect.fromCircle(center: center, radius: side / 2 - 1)),
     );
-    canvas.translate(center.dx, center.dy);
-    final fromLean = clock.from == AvatarPose.error ? 0.0 : fromMotion.lean;
-    final toLean = pose == AvatarPose.error ? life.lean : toMotion.lean;
-    final lean = fromLean + (toLean - fromLean) * smooth + life.step;
-    final gaze = image == null ? 0.0 : 1.0;
-    canvas.translate(
-      (lean + life.gazeX * gaze) * cell,
-      (motion.bob - life.hop + life.gazeY * gaze) * cell,
-    );
-    canvas.rotate(life.sway);
-    final bounce = _bounceScale(clock.nudge);
-    final bodyBlink = image == null
-        ? 1.0
-        : 1 - 0.045 * clock.shut.clamp(0.0, 1.0);
-    final pop = 1 + 0.04 * math.sin(clock.flourish * math.pi);
-    final breathe = 1 + life.breathe;
-    final wide = pose == AvatarPose.boot ? 1 + (1 - life.squash) * 0.45 : 1.0;
-    canvas.scale(
-      motion.scale * bounce * pop * breathe * wide,
-      motion.scale * bounce * pop * breathe * life.squash * bodyBlink,
-    );
-    canvas.translate(-side / 2, -side / 2);
+    // Stage space. Rings, sparkles, and dots orbit this fixed disc.
+    // Only the portrait below is translated, so the circle does not slide.
+    canvas.translate(origin.dx, origin.dy);
 
     final sparks = sparkles(seconds, pose, life.boot);
     _sparks(canvas, side, cell, accent, sparks, behind: true, fade: life.fade);
 
-    if (!model && image != null) {
-      canvas.drawImageRect(
-        image,
-        const Rect.fromLTWH(0, 0, 64, 64),
-        Rect.fromLTWH(0, 0, side, side),
-        Paint()
-          ..filterQuality = FilterQuality.none
-          ..color = Color.fromRGBO(255, 255, 255, life.fade),
-      );
-      if (side >= 3 * pixelGrid) {
-        _grid(canvas, side, cell);
-      }
-    } else if (!model) {
-      _face(canvas, side, cell, accent, life);
-    }
-    _sparks(canvas, side, cell, accent, sparks, behind: false, fade: life.fade);
-    if (life.waves > 0) {
-      _waves(canvas, side, cell, accent, life.waves, seconds, life.fade);
-    }
-    if (life.hearts) _hearts(canvas, side, cell, accent, seconds, clock.happy);
-    if (life.alert) _alert(canvas, side, cell, accent);
-
-    final listening = _poseWeight(AvatarPose.listening, smooth);
-    final speaking = _poseWeight(AvatarPose.speaking, smooth);
     final ringStrength = math.max(listening, speaking);
     if (ringStrength > 0.04) {
       final speed = listening >= speaking ? 0.9 : 0.6;
@@ -552,6 +516,60 @@ class _StagePainter extends CustomPainter {
     if (thinking > 0.04) {
       _dots(canvas, Offset(side * 0.70, side * 0.34), cell, accent, thinking);
     }
+    if (life.waves > 0) {
+      _waves(canvas, side, cell, accent, life.waves, seconds, life.fade);
+    }
+
+    canvas.save();
+    canvas.translate(side / 2, side / 2);
+    final fromLean = clock.from == AvatarPose.error ? 0.0 : fromMotion.lean;
+    final toLean = pose == AvatarPose.error ? life.lean : toMotion.lean;
+    final lean = fromLean + (toLean - fromLean) * smooth + life.step;
+    final gazeShift = image == null ? 0.0 : 1.0;
+    canvas.translate(
+      (lean + life.gazeX * gazeShift) * cell,
+      (motion.bob - life.hop + life.gazeY * gazeShift) * cell,
+    );
+    canvas.rotate(life.sway);
+    final bounce = _bounceScale(clock.nudge);
+    final bodyBlink = image == null
+        ? 1.0
+        : 1 - 0.045 * clock.shut.clamp(0.0, 1.0);
+    final pop = 1 + 0.04 * math.sin(clock.flourish * math.pi);
+    final breathe = 1 + life.breathe;
+    final wide = pose == AvatarPose.boot ? 1 + (1 - life.squash) * 0.45 : 1.0;
+    canvas.scale(
+      motion.scale * bounce * pop * breathe * wide,
+      motion.scale * bounce * pop * breathe * life.squash * bodyBlink,
+    );
+    canvas.translate(-side / 2, -side / 2);
+
+    if (!model && image != null) {
+      final body = _portraitCells * cell;
+      final rect = Rect.fromCenter(
+        center: Offset(side / 2, side / 2),
+        width: body,
+        height: body,
+      );
+      canvas.drawImageRect(
+        image,
+        const Rect.fromLTWH(0, 0, 64, 64),
+        rect,
+        Paint()
+          ..filterQuality = FilterQuality.none
+          ..color = Color.fromRGBO(255, 255, 255, life.fade),
+      );
+      if (side >= 3 * pixelGrid) {
+        _grid(canvas, rect, cell);
+      }
+    } else if (!model) {
+      _face(canvas, side, cell, accent, life);
+    }
+    canvas.restore();
+
+    _sparks(canvas, side, cell, accent, sparks, behind: false, fade: life.fade);
+    if (life.hearts) _hearts(canvas, side, cell, accent, seconds, clock.happy);
+    if (life.alert) _alert(canvas, side, cell, accent);
     canvas.restore();
 
     // The meter is an overlay on the bezel, not part of the bobbing sprite.
@@ -570,14 +588,15 @@ class _StagePainter extends CustomPainter {
     return math.max(at, was);
   }
 
-  void _grid(Canvas canvas, double side, double cell) {
+  void _grid(Canvas canvas, Rect rect, double cell) {
     final paint = Paint()
       ..color = const Color(0x59000000)
       ..strokeWidth = 1;
-    for (var i = 1; i < pixelGrid; i++) {
-      final p = i * cell;
-      canvas.drawLine(Offset(p, 0), Offset(p, side), paint);
-      canvas.drawLine(Offset(0, p), Offset(side, p), paint);
+    for (var x = rect.left + cell; x < rect.right; x += cell) {
+      canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), paint);
+    }
+    for (var y = rect.top + cell; y < rect.bottom; y += cell) {
+      canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), paint);
     }
   }
 
