@@ -50,10 +50,11 @@ class PixelStage extends StatefulWidget {
 }
 
 class _PixelFrames {
-  _PixelFrames(this.images, this.durationsMs);
+  _PixelFrames(this.images, this.durationsMs, this.bodies);
 
   final List<ui.Image> images;
   final List<int> durationsMs;
+  final List<CharacterFrame> bodies;
 
   int indexAt(Duration elapsed) {
     if (images.length <= 1) return 0;
@@ -82,6 +83,7 @@ class _StageClock extends ChangeNotifier {
   double seconds = 0;
   double shut = 0;
   ui.Image? image;
+  CharacterFrame body = const CharacterFrame.full();
   AvatarPose pose = AvatarPose.idle;
   AvatarPose from = AvatarPose.idle;
   double blend = 1;
@@ -109,6 +111,7 @@ class _StageClock extends ChangeNotifier {
     required double seconds,
     required double shut,
     required ui.Image? image,
+    required CharacterFrame body,
     required AvatarPose pose,
     required AvatarPose from,
     required double blend,
@@ -126,6 +129,7 @@ class _StageClock extends ChangeNotifier {
     this.seconds = seconds;
     this.shut = shut;
     this.image = image;
+    this.body = body;
     this.pose = pose;
     this.from = from;
     this.blend = blend;
@@ -233,10 +237,14 @@ class _PixelStageState extends State<PixelStage>
     if (_flourish > 0) _flourish = (_flourish - dt / 0.55).clamp(0.0, 1.0);
     if (_nudge > 0) _nudge = (_nudge - dt / 0.38).clamp(0.0, 1.0);
     final frames = _frames;
-    final image = frames == null
-        ? null
-        : frames.images[frames.indexAt(elapsed)];
-    _publish(image, _blink.advance(dt), elapsed.inMicroseconds / 1000000);
+    ui.Image? image;
+    var body = const CharacterFrame.full();
+    if (frames != null && frames.images.isNotEmpty) {
+      final index = frames.indexAt(elapsed);
+      image = frames.images[index];
+      if (index < frames.bodies.length) body = frames.bodies[index];
+    }
+    _publish(image, body, _blink.advance(dt), elapsed.inMicroseconds / 1000000);
   }
 
   /// Ring fill for the hold that is in progress. Wall time, not the
@@ -247,12 +255,18 @@ class _PixelStageState extends State<PixelStage>
     return listenRingProgress(DateTime.now().difference(started));
   }
 
-  void _publish(ui.Image? image, double shut, double seconds) {
+  void _publish(
+    ui.Image? image,
+    CharacterFrame body,
+    double shut,
+    double seconds,
+  ) {
     final level = avatarLevel(_shown, seconds);
     _clock.tick(
       seconds: seconds,
       shut: shut,
       image: image,
+      body: image == null ? const CharacterFrame.full() : body,
       pose: _shown,
       from: _from,
       blend: _blend,
@@ -284,7 +298,7 @@ class _PixelStageState extends State<PixelStage>
     _frames = null;
     _modelPath = null;
     // Drop the painted frame before its image is disposed.
-    _publish(null, _clock.shut, _clock.seconds);
+    _publish(null, const CharacterFrame.full(), _clock.shut, _clock.seconds);
     previous?.dispose();
     // initState and didUpdateWidget both run before build, so clearing the
     // frames here is enough. setState in that window throws.
@@ -342,32 +356,35 @@ Future<_PixelFrames> _decode(Uint8List bytes) async {
     final count = codec.frameCount.clamp(1, 24);
     final images = <ui.Image>[];
     final durations = <int>[];
+    final bodies = <CharacterFrame>[];
     for (var i = 0; i < count; i++) {
       final frame = await codec.getNextFrame();
       try {
-        images.add(await _gridImage(frame.image));
+        final sprite = await _gridImage(frame.image);
+        images.add(sprite.image);
+        bodies.add(sprite.body);
         durations.add(frame.duration.inMilliseconds);
       } finally {
         frame.image.dispose();
       }
     }
-    return _PixelFrames(images, durations);
+    return _PixelFrames(images, durations, bodies);
   } finally {
     codec.dispose();
   }
 }
 
-Future<ui.Image> _gridImage(ui.Image source) async {
+Future<({ui.Image image, CharacterFrame body})> _gridImage(
+  ui.Image source,
+) async {
   final data = await source.toByteData(format: ui.ImageByteFormat.rawRgba);
   if (data == null) {
     throw StateError('image has no pixels');
   }
-  final grid = coverCropGrid(
-    data.buffer.asUint8List(),
-    source.width,
-    source.height,
+  final keyed = keyCharacter(
+    coverCropGrid(data.buffer.asUint8List(), source.width, source.height),
   );
-  final buffer = await ui.ImmutableBuffer.fromUint8List(grid);
+  final buffer = await ui.ImmutableBuffer.fromUint8List(keyed.rgba);
   try {
     final descriptor = ui.ImageDescriptor.raw(
       buffer,
@@ -379,7 +396,7 @@ Future<ui.Image> _gridImage(ui.Image source) async {
       final gridCodec = await descriptor.instantiateCodec();
       try {
         final frame = await gridCodec.getNextFrame();
-        return frame.image;
+        return (image: frame.image, body: keyed.frame);
       } finally {
         gridCodec.dispose();
       }
@@ -397,10 +414,6 @@ Future<String> _stageModel(Uint8List bytes) async {
   await file.writeAsBytes(bytes, flush: true);
   return file.path;
 }
-
-/// Portrait sprite size in stage cells. The disc is 64 cells across and
-/// stays still; this box is the body that bobs inside it.
-const double _portraitCells = 46;
 
 class _StagePainter extends CustomPainter {
   _StagePainter({required this.clock, required this.pose, required this.model})
@@ -518,7 +531,7 @@ class _StagePainter extends CustomPainter {
       Path()..addOval(Rect.fromCircle(center: center, radius: side / 2 - 1)),
     );
     // Stage space. Rings, sparkles, and dots orbit this fixed disc.
-    // Only the portrait below is translated, so the circle does not slide.
+    // A picture stays in the frame: the body bobs, the feet stay put.
     canvas.translate(origin.dx, origin.dy);
 
     final sparks = sparkles(seconds, pose, life.boot);
@@ -543,52 +556,42 @@ class _StagePainter extends CustomPainter {
       _waves(canvas, side, cell, accent, life.waves, seconds, life.fade);
     }
 
-    canvas.save();
-    canvas.translate(side / 2, side / 2);
     final fromLean = clock.from == AvatarPose.error ? 0.0 : fromMotion.lean;
     final toLean = pose == AvatarPose.error ? life.lean : toMotion.lean;
     final lean = fromLean + (toLean - fromLean) * smooth + life.step;
-    final gazeShift = image == null ? 0.0 : 1.0;
-    canvas.translate(
-      (lean + life.gazeX * gazeShift) * cell,
-      (motion.bob - life.hop + life.gazeY * gazeShift) * cell,
-    );
-    canvas.rotate(life.sway);
-    final bounce = _bounceScale(clock.nudge);
-    final bodyBlink = image == null
-        ? 1.0
-        : 1 - 0.045 * clock.shut.clamp(0.0, 1.0);
-    final pop = 1 + 0.04 * math.sin(clock.flourish * math.pi);
-    final breathe = 1 + life.breathe;
-    final wide = pose == AvatarPose.boot ? 1 + (1 - life.squash) * 0.45 : 1.0;
-    canvas.scale(
-      motion.scale * bounce * pop * breathe * wide,
-      motion.scale * bounce * pop * breathe * life.squash * bodyBlink,
-    );
-    canvas.translate(-side / 2, -side / 2);
-
     if (!model && image != null) {
-      final body = _portraitCells * cell;
-      final rect = Rect.fromCenter(
-        center: Offset(side / 2, side / 2),
-        width: body,
-        height: body,
-      );
-      canvas.drawImageRect(
+      // The picture stays in the frame. Rows above the feet pick up the
+      // bob, the way muse_pixel.c moves the body and leaves the feet.
+      _drawPlanted(
+        canvas,
         image,
-        const Rect.fromLTWH(0, 0, 64, 64),
-        rect,
-        Paint()
-          ..filterQuality = FilterQuality.none
-          ..color = Color.fromRGBO(255, 255, 255, life.fade),
+        clock.body,
+        cell,
+        bob: motion.bob,
+        lean: lean,
+        hop: life.hop + clock.nudge * 2.2,
+        gazeX: life.gazeX,
+        gazeY: life.gazeY,
+        scale: motion.scale * (1 + life.breathe) * life.squash,
+        fade: life.fade,
       );
-      if (side >= 3 * pixelGrid) {
-        _grid(canvas, rect, cell);
-      }
     } else if (!model) {
+      canvas.save();
+      canvas.translate(side / 2, side / 2);
+      canvas.translate(lean * cell, (motion.bob - life.hop) * cell);
+      canvas.rotate(life.sway);
+      final bounce = _bounceScale(clock.nudge);
+      final pop = 1 + 0.04 * math.sin(clock.flourish * math.pi);
+      final breathe = 1 + life.breathe;
+      final wide = pose == AvatarPose.boot ? 1 + (1 - life.squash) * 0.45 : 1.0;
+      canvas.scale(
+        motion.scale * bounce * pop * breathe * wide,
+        motion.scale * bounce * pop * breathe * life.squash,
+      );
+      canvas.translate(-side / 2, -side / 2);
       _face(canvas, side, cell, accent, life);
+      canvas.restore();
     }
-    canvas.restore();
 
     _sparks(canvas, side, cell, accent, sparks, behind: false, fade: life.fade);
     if (life.hearts) _hearts(canvas, side, cell, accent, seconds, clock.happy);
@@ -605,22 +608,66 @@ class _StagePainter extends CustomPainter {
     }
   }
 
+  /// Draw [image] in grid order, feet on their own row.
+  ///
+  /// Each row above the feet takes more of [bob], [lean], and [scale].
+  /// A keyed backdrop is already transparent, so the square does not show.
+  void _drawPlanted(
+    Canvas canvas,
+    ui.Image image,
+    CharacterFrame frame,
+    double cell, {
+    required double bob,
+    required double lean,
+    required double hop,
+    required double gazeX,
+    required double gazeY,
+    required double scale,
+    required double fade,
+  }) {
+    final srcW = frame.right - frame.left + 1;
+    if (srcW <= 0 || frame.bottom < frame.top || cell <= 0) return;
+    final paint = Paint()
+      ..filterQuality = FilterQuality.none
+      ..color = Color.fromRGBO(255, 255, 255, fade.clamp(0.0, 1.0));
+    final destW = srcW * cell;
+    var y = (frame.bottom + 1) * cell;
+    for (var row = frame.bottom; row >= frame.top; row--) {
+      final lift = frame.lift(row.toDouble());
+      final grow = 1 + (scale - 1) * lift;
+      final height = cell * grow;
+      y -= height;
+      final shift = bodyRowShift(
+        lift: lift,
+        bob: bob,
+        lean: lean,
+        hop: hop,
+        gazeX: gazeX,
+        gazeY: gazeY,
+      );
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(
+          frame.left.toDouble(),
+          row.toDouble(),
+          srcW.toDouble(),
+          1,
+        ),
+        Rect.fromLTWH(
+          frame.left * cell + shift.dx * cell,
+          y + shift.dy * cell,
+          destW,
+          height + 0.75,
+        ),
+        paint,
+      );
+    }
+  }
+
   double _poseWeight(AvatarPose target, double smooth) {
     final at = pose == target ? smooth : 0.0;
     final was = clock.from == target ? 1 - smooth : 0.0;
     return math.max(at, was);
-  }
-
-  void _grid(Canvas canvas, Rect rect, double cell) {
-    final paint = Paint()
-      ..color = const Color(0x59000000)
-      ..strokeWidth = 1;
-    for (var x = rect.left + cell; x < rect.right; x += cell) {
-      canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), paint);
-    }
-    for (var y = rect.top + cell; y < rect.bottom; y += cell) {
-      canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), paint);
-    }
   }
 
   /// Round placeholder until Muse sends its own picture. Not the stock

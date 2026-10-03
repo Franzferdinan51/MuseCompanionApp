@@ -40,7 +40,9 @@ stage that stays still. A picture is cover-cropped onto a 64×64 grid and
 drawn as a smaller portrait inside that disc, with hard pixels, the way the
 full-UI boards on [gadgets.muse.ai](https://gadgets.muse.ai/) scale a pixel
 avatar. Rings, sparkles, thought dots, and sound waves orbit the fixed
-disc. Only the portrait bobs, leans, blinks, and breathes. Animated GIF and
+disc. On a picture, the body bobs inside the frame and the feet stay
+put, the way the board's pixel avatar moves. The whole image does not
+slide. Animated GIF and
 WebP frames keep their timing. A GLB plays in the same circle. Captions sit
 under the stage. The last picture is cached and shown again after a restart.
 A tap does not dismiss it.

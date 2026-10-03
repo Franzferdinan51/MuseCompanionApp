@@ -77,6 +77,66 @@ void main() {
     expect(listenBezelArc(-1).sweep, 0);
   });
 
+  test('a flat backdrop is removed and the feet stay planted', () {
+    final rgba = Uint8List(pixelGrid * pixelGrid * 4);
+    for (var i = 0; i < rgba.length; i += 4) {
+      rgba[i + 3] = 255;
+    }
+    for (var y = 10; y <= 40; y++) {
+      for (var x = 20; x <= 34; x++) {
+        final i = (y * pixelGrid + x) * 4;
+        rgba[i] = 240;
+        rgba[i + 1] = 220;
+        rgba[i + 2] = 40;
+        rgba[i + 3] = 255;
+      }
+    }
+    final keyed = keyCharacter(rgba);
+    expect(keyed.frame.keyed, isTrue);
+    expect(keyed.frame.left, 20);
+    expect(keyed.frame.top, 10);
+    expect(keyed.frame.right, 34);
+    expect(keyed.frame.bottom, 40);
+    expect(keyed.rgba[3], 0);
+    expect(keyed.rgba[(10 * pixelGrid + 20) * 4 + 3], 255);
+    expect(keyed.frame.lift(10), 1);
+    expect(keyed.frame.lift(40), 0);
+    expect(keyed.frame.lift(25), closeTo(0.5, 1e-9));
+
+    final feet = bodyRowShift(
+      lift: 0,
+      bob: 1,
+      lean: 2,
+      hop: 3,
+      gazeX: 0.5,
+      gazeY: 0.5,
+    );
+    expect(feet.dy, closeTo(-0.9, 1e-9));
+    expect(feet.dx, closeTo(0.9, 1e-9));
+    final head = bodyRowShift(
+      lift: 1,
+      bob: 1,
+      lean: 2,
+      hop: 3,
+      gazeX: 0.5,
+      gazeY: 0.5,
+    );
+    expect(head.dy, closeTo(1 - 3 + 0.5, 1e-9));
+    expect(head.dx, closeTo(2 + 0.5, 1e-9));
+
+    final busy = Uint8List(pixelGrid * pixelGrid * 4);
+    for (var i = 0; i < busy.length; i += 4) {
+      busy[i] = i % 255;
+      busy[i + 1] = 80;
+      busy[i + 2] = 10;
+      busy[i + 3] = 255;
+    }
+    final photo = keyCharacter(busy);
+    expect(photo.frame.keyed, isFalse);
+    expect(photo.frame.bottom, pixelGrid - 1);
+    expect(identical(photo.rgba, busy), isTrue);
+  });
+
   test('cover crop keeps the centre of a wide image', () {
     final wide = Uint8List(4 * 2 * 4);
     for (var y = 0; y < 2; y++) {

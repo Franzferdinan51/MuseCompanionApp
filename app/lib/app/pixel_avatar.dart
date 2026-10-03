@@ -163,6 +163,158 @@ Uint8List coverCropGrid(Uint8List rgba, int width, int height) {
   return out;
 }
 
+/// Where the character sits in the 64×64 frame.
+///
+/// [keyed] means the flat backdrop (or already-transparent pixels) was
+/// cleared, so only the body is drawn. [lift] is 1 on the head row and 0
+/// on the foot row. muse_pixel.c keeps the feet near the ground and bobs
+/// the body above them. The phone must not slide the whole picture.
+class CharacterFrame {
+  const CharacterFrame({
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+    required this.keyed,
+  });
+
+  const CharacterFrame.full()
+    : left = 0,
+      top = 0,
+      right = pixelGrid - 1,
+      bottom = pixelGrid - 1,
+      keyed = false;
+
+  final int left;
+  final int top;
+  final int right;
+  final int bottom;
+  final bool keyed;
+
+  /// 1 at the head, 0 at the feet.
+  double lift(double row) {
+    final span = (bottom - top).toDouble();
+    if (span <= 0) return 0;
+    final t = (bottom - row) / span;
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return t;
+  }
+}
+
+/// A 64×64 RGBA grid with the backdrop removed when it is a flat colour.
+class KeyedCharacter {
+  const KeyedCharacter(this.rgba, this.frame);
+
+  final Uint8List rgba;
+  final CharacterFrame frame;
+}
+
+/// Drop a flat backdrop so the body can move inside the frame.
+///
+/// Corners that agree are the backdrop, the same way the pixel avatar
+/// clears `C_BG` before drawing the body. A busy photograph is left
+/// whole; its bottom edge still stays put while the upper rows bob.
+KeyedCharacter keyCharacter(Uint8List rgba) {
+  const full = CharacterFrame.full();
+  final need = pixelGrid * pixelGrid * 4;
+  if (rgba.length < need) return KeyedCharacter(rgba, full);
+
+  int at(int x, int y) => (y * pixelGrid + x) * 4;
+  final corners = <int>[
+    at(0, 0),
+    at(pixelGrid - 1, 0),
+    at(0, pixelGrid - 1),
+    at(pixelGrid - 1, pixelGrid - 1),
+  ];
+  var ar = 0, ag = 0, ab = 0, aa = 0;
+  for (final i in corners) {
+    ar += rgba[i];
+    ag += rgba[i + 1];
+    ab += rgba[i + 2];
+    aa += rgba[i + 3];
+  }
+  ar ~/= 4;
+  ag ~/= 4;
+  ab ~/= 4;
+  aa ~/= 4;
+  var flat = true;
+  for (final i in corners) {
+    if ((rgba[i] - ar).abs() > 28 ||
+        (rgba[i + 1] - ag).abs() > 28 ||
+        (rgba[i + 2] - ab).abs() > 28 ||
+        (rgba[i + 3] - aa).abs() > 36) {
+      flat = false;
+      break;
+    }
+  }
+  final transparentBg = aa < 16;
+  if (!flat && !transparentBg) return KeyedCharacter(rgba, full);
+
+  final out = Uint8List.fromList(rgba);
+  var left = pixelGrid;
+  var top = pixelGrid;
+  var right = -1;
+  var bottom = -1;
+  var count = 0;
+  for (var y = 0; y < pixelGrid; y++) {
+    for (var x = 0; x < pixelGrid; x++) {
+      final i = at(x, y);
+      final alpha = rgba[i + 3];
+      final nearKey =
+          (rgba[i] - ar).abs() <= 20 &&
+          (rgba[i + 1] - ag).abs() <= 20 &&
+          (rgba[i + 2] - ab).abs() <= 20 &&
+          (transparentBg || (alpha - aa).abs() <= 40);
+      final background = alpha < 16 || (flat && nearKey);
+      if (background) {
+        out[i + 3] = 0;
+        continue;
+      }
+      count++;
+      if (x < left) left = x;
+      if (y < top) top = y;
+      if (x > right) right = x;
+      if (y > bottom) bottom = y;
+    }
+  }
+  if (count < 12 || right < left || bottom < top) {
+    return KeyedCharacter(rgba, full);
+  }
+  return KeyedCharacter(
+    out,
+    CharacterFrame(
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+      keyed: true,
+    ),
+  );
+}
+
+/// Shift of one source row, in grid cells.
+///
+/// [lift] is 1 at the head and 0 at the feet. Bob and gaze move the body.
+/// Hop lifts the body and only a little of the feet, matching muse_pixel.c
+/// (`feet stay near the ground`, feet hop by `0.3`).
+({double dx, double dy}) bodyRowShift({
+  required double lift,
+  required double bob,
+  required double lean,
+  required double hop,
+  required double gazeX,
+  required double gazeY,
+}) {
+  var w = lift;
+  if (w < 0) w = 0;
+  if (w > 1) w = 1;
+  return (
+    dx: lean * (0.45 + 0.55 * w) + gazeX * w,
+    dy: bob * w - hop * (0.3 + 0.7 * w) + gazeY * w,
+  );
+}
+
 /// One thought dot, in cells relative to the cluster's origin.
 class ThoughtDot {
   const ThoughtDot(this.dx, this.dy, this.active);
