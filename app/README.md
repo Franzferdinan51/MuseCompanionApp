@@ -14,21 +14,54 @@ or desktop port would reuse.
 
 - **Pair and connect** over Bluetooth LE (pairing v5), then keep a Noise
   session to your Muse. The pairing screen is in the app.
-- **Show your Muse's character** from `display.draw_url` (JPEG, PNG, WebP,
-  animated GIF, animated WebP, or a GLB). The picture is cover-cropped to
-  a 64×64 pixel sprite on a black round stage and moves through idle,
-  listening, thinking, and speaking the way the Waveshare avatar does.
-  An https PNG, JPEG, WebP, or GIF link in a finished chat reply is drawn
-  the same way.
+- **Show your Muse's character** on a 64×64 pixel stage. See [Avatar](#avatar-v024).
 - **Hold the character to talk.** That posts a voice note. It does not place
   a phone call.
 - **Captions and speech.** Replies show under the character and are spoken.
   Say it again repeats the last one.
-- **Dashboard.** The header heart and Settings → Dashboard show link health,
-  the last command, and whether `link.result` left the phone.
+- **Dashboard.** The heart icon opens link and command diagnostics. See
+  [Dashboard](#dashboard).
 - **Diagnostics, theme, and the call/text gates.** Placing a call or sending
   a text stays off until you turn it on. Opening the dialer or the composer
   does not need those toggles.
+
+Version 0.2.4.
+
+### Avatar (v0.2.4)
+
+The home screen is a black round stage. A picture is cover-cropped onto a
+64×64 grid and drawn with hard pixels, the way the Waveshare
+ESP32-S3-Touch-AMOLED-1.75C scales its pixel avatar. Captions sit under the
+stage. Until a picture arrives, the stage shows a plain tile and "Waiting
+for character" or "Asking your Muse for a character…".
+
+| State | On the stage |
+| --- | --- |
+| Idle | Label **READY**. A slow bob. |
+| Listening | A faster bob, expanding rings, and a centred meter. Hold the portrait to record a voice note. |
+| Thinking | A lean, three thought dots, and an accent arc. |
+| Speaking | A scale pulse and rings. |
+
+The picture is set in either of two ways:
+
+1. **`display.draw_url`.** Muse invokes the command with an image URL. The phone downloads it, caches it, and draws it. JPEG, PNG, WebP, animated GIF, animated WebP, and GLB are accepted. A GLB stays inside the same circle.
+2. **An image URL in a finished chat reply (v0.2.4).** When the reply text contains an `https` URL whose path ends in `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`, the phone downloads that URL with the same downloader. A query string is kept. The first matching link is the one used. This path does not wait for `device.invoke`.
+
+### Dashboard
+
+The heart icon to the left of the name opens the dashboard. Settings →
+Dashboard opens the same page. It shows the pixel stage, the caption, link
+state, battery, pose, speech volume, invokes seen, results sent, the last
+command, the last result, and the recent link log.
+
+### Known issue: `device.invoke`
+
+Chat replies reach the phone. A `device.invoke` from the Muse platform often
+does not: Muse reports a timeout, and the dashboard stays at **Invokes seen
+0**. The app sends `link.result` when an invoke does arrive (`link.invoke`,
+`device.invoke`, a bare command, or a body on another stream). Until the
+platform delivers those frames, set the portrait by putting an `https` image
+URL in a chat reply.
 
 ### Companion command set
 
@@ -39,7 +72,7 @@ The commands it drives:
 | --- | --- |
 | `companion.set_status` / `pocket.set_status` | Set the Muse's status text (≤ 4000 chars). |
 | `companion.set_display` | Theme, keep-screen-on, and whether replies are spoken. |
-| `display.draw_url` | Draw an image fetched from a URL onto the display. |
+| `display.draw_url` | Download an image URL and draw it on the pixel stage. A finished chat reply can supply the same kind of URL when this invoke does not arrive. |
 | `display.show_animation` | Return to the neutral placeholder. |
 | `device.health` | Read the device's battery level. |
 | `vision.capture` / `voice.listen` | Post a camera photo or a voice note into chat. |
