@@ -22,7 +22,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/model.dart';
+import 'package:muse_companion/app/phone_bridge.dart';
+import 'package:muse_companion/app/storage.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
 void main() {
@@ -141,6 +144,8 @@ void main() {
       expect(settings.cameraFacing, 'back');
       expect(settings.allowCalls, isFalse);
       expect(settings.allowSendSms, isFalse);
+      expect(settings.speechVolume, 80);
+      expect(settings.speechVoice, isEmpty);
       expect(CompanionSettings.themeOptions, <String>[
         'light',
         'dark',
@@ -172,13 +177,66 @@ void main() {
         CompanionSettings.fromMap({'camera_facing': 'front'}).cameraFacing,
         'front',
       );
+      expect(
+        CompanionSettings.fromMap({
+          'speech_voice': 'en-us-x-iog-network',
+        }).speechVoice,
+        'en-us-x-iog-network',
+      );
+      expect(
+        CompanionSettings.fromMap({'speech_voice': '../bad'}).speechVoice,
+        isEmpty,
+      );
+      expect(
+        CompanionSettings.fromMap({'speech_voice': 'has space'}).speechVoice,
+        isEmpty,
+      );
     });
 
     test('copyWith changes only the supplied field', () {
-      const base = CompanionSettings(theme: 'light', keepScreenOn: true);
+      const base = CompanionSettings(
+        theme: 'light',
+        keepScreenOn: true,
+        speechVoice: 'en-us-x-iog-network',
+      );
       final next = base.copyWith(theme: 'dark');
       expect(next.theme, 'dark');
       expect(next.keepScreenOn, isTrue);
+      expect(next.speechVoice, 'en-us-x-iog-network');
+      expect(next.speechVolume, 80);
+      expect(base.copyWith(speechVoice: '').speechVoice, isEmpty);
+    });
+
+    test('a chosen voice is saved on its own', () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = await SettingsStore.init();
+      await store.saveSettings(
+        const CompanionSettings(speechVoice: 'en-us-x-iog-network'),
+      );
+      final loaded = store.loadSettings();
+      expect(loaded.speechVoice, 'en-us-x-iog-network');
+      expect(loaded.speechVolume, 80);
+      expect(loaded.toMap()['speech_voice'], 'en-us-x-iog-network');
+    });
+  });
+
+  group('SpeechVoice', () {
+    test('labels keep two voices of the same quality distinct', () {
+      const online = SpeechVoice(
+        name: 'en-us-x-iog-network',
+        language: 'English',
+        region: 'United States',
+        quality: 'Very high',
+        network: true,
+        sameLanguage: true,
+      );
+      expect(
+        online.label,
+        'English (United States) · Very high · Online · iog',
+      );
+      expect(speechVoiceTag('en-US-Neural2-C'), 'Neural2');
+      expect(speechVoiceTag('en-us-x-sfg-local'), 'sfg');
+      expect(speechVoiceTag(''), isEmpty);
     });
   });
 

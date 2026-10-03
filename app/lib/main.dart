@@ -86,6 +86,7 @@ Future<void> main() async {
     settings: settings,
   );
   final phone = const PhoneBridge();
+  await phone.applySpeechVoice(presentation.settings.speechVoice);
   final poster = _ChatPoster();
   final executor = CompanionExecutor(
     display: display,

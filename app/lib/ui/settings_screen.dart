@@ -17,8 +17,8 @@
 // Values load from SettingsStore on entry and are persisted (and pushed to
 // the presentation state) as the user changes them. Theme, keep-screen-on
 // and spoken replies are also writable by the Muse through
-// `companion.set_display`. Calls, texts, and the saved camera are not:
-// only this screen can change those.
+// `companion.set_display`. Calls, texts, the saved camera, speech volume,
+// and the spoken voice are not: only this screen can change those.
 
 import 'dart:async';
 
@@ -28,6 +28,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../app/foreground.dart';
 import '../app/model.dart';
+import '../app/phone_bridge.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import 'dashboard_screen.dart';
@@ -54,6 +55,13 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool? _sdkSet;
   bool _grantsArmed = false;
   Map<String, Object?> _grants = const {};
+  List<SpeechVoice> _voices = const [];
+  String _speechEngine = '';
+  bool _voicesLoaded = false;
+  bool _voicesArmed = false;
+  bool _showAllVoices = false;
+  int _voiceLookupGeneration = 0;
+  Timer? _voiceLookup;
 
   @override
   void initState() {
@@ -63,7 +71,12 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshGrants();
+    if (state != AppLifecycleState.resumed) return;
+    _refreshGrants();
+    if (_voicesLoaded && _voices.isEmpty) {
+      _voicesLoaded = false;
+      _loadVoices();
+    }
   }
 
   @override
@@ -90,6 +103,40 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (!_grantsArmed) {
       _grantsArmed = true;
       _refreshGrants();
+    }
+    if (!_voicesArmed) {
+      _voicesArmed = true;
+      _loadVoices();
+    }
+  }
+
+  Future<void> _loadVoices() async {
+    final phone = AppScope.of(context).phone;
+    final generation = ++_voiceLookupGeneration;
+    _voiceLookup?.cancel();
+    // A widget test has no speech engine, so this lookup never answers.
+    // The timer is cancelled in dispose and must not outlive the screen.
+    _voiceLookup = Timer(const Duration(seconds: 8), () {
+      if (!mounted || generation != _voiceLookupGeneration) return;
+      setState(() => _voicesLoaded = true);
+    });
+    try {
+      final catalog = await phone.listVoices();
+      if (generation != _voiceLookupGeneration) return;
+      _voiceLookup?.cancel();
+      _voiceLookup = null;
+      if (!mounted) return;
+      setState(() {
+        _voices = catalog.voices;
+        _speechEngine = catalog.engine;
+        _voicesLoaded = true;
+      });
+    } on PhoneActionException {
+      if (generation != _voiceLookupGeneration) return;
+      _voiceLookup?.cancel();
+      _voiceLookup = null;
+      if (!mounted) return;
+      setState(() => _voicesLoaded = true);
     }
   }
 
@@ -199,6 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   void dispose() {
+    _voiceLookup?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _connectionSub?.cancel();
     super.dispose();
@@ -210,6 +258,134 @@ class _SettingsScreenState extends State<SettingsScreen>
     scope.presentation.applySettings(next);
     if (!mounted) return;
     setState(() => _settings = next);
+  }
+
+  String _voiceSummary() {
+    final name = _settings.speechVoice;
+    if (name.isEmpty) return 'Automatic';
+    for (final voice in _voices) {
+      if (voice.name == name) return voice.label;
+    }
+    if (!_voicesLoaded) return 'Saved voice';
+    return 'Automatic';
+  }
+
+  String _voiceSubtitle() {
+    if (!_voicesLoaded) return 'Looking up voices…';
+    final engine = switch (_speechEngine) {
+      'com.google.android.tts' => 'Google speech engine',
+      '' => 'Speech engine',
+      _ => "This phone's speech engine",
+    };
+    final name = _settings.speechVoice;
+    final missing =
+        name.isNotEmpty && !_voices.any((voice) => voice.name == name);
+    if (missing) {
+      return '$engine. The saved voice is not installed, so the clearest voice is used.';
+    }
+    if (name.isEmpty) return '$engine. Clearest voice for this language.';
+    return engine;
+  }
+
+  List<SpeechVoice> _visibleVoices() {
+    if (_showAllVoices) return _voices;
+    final same = _voices.where((voice) => voice.sameLanguage).toList();
+    final selected = _settings.speechVoice;
+    if (selected.isEmpty || same.any((voice) => voice.name == selected)) {
+      return same;
+    }
+    return [...same, ..._voices.where((voice) => voice.name == selected)];
+  }
+
+  Future<void> _openVoicePicker() async {
+    final hasOthers = _voices.any((voice) => !voice.sameLanguage);
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final shown = _visibleVoices();
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(sheetContext).height * 0.6,
+            child: Column(
+              children: [
+                if (hasOthers)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => Navigator.of(
+                        sheetContext,
+                      ).pop(_showAllVoices ? '__language__' : '__all__'),
+                      child: Text(
+                        _showAllVoices ? 'This language' : 'Other languages',
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      ListTile(
+                        title: const Text('Automatic'),
+                        subtitle: const Text('Clearest voice for this phone'),
+                        selected: _settings.speechVoice.isEmpty,
+                        onTap: () => Navigator.of(sheetContext).pop(''),
+                      ),
+                      for (final voice in shown)
+                        ListTile(
+                          title: Text(voice.label),
+                          selected: voice.name == _settings.speechVoice,
+                          onTap: () =>
+                              Navigator.of(sheetContext).pop(voice.name),
+                        ),
+                      if (shown.isEmpty)
+                        const ListTile(
+                          title: Text('No other voices are installed'),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || chosen == null) return;
+    if (chosen == '__all__' || chosen == '__language__') {
+      setState(() => _showAllVoices = chosen == '__all__');
+      await _openVoicePicker();
+      return;
+    }
+    await _pickVoice(chosen);
+  }
+
+  Future<void> _pickVoice(String name) async {
+    final next = _settings.copyWith(speechVoice: name);
+    await _commit(next);
+    if (!mounted) return;
+    final phone = AppScope.of(context).phone;
+    try {
+      await phone.applySpeechVoice(next.speechVoice);
+      await phone.run('phone.volume', {'level': next.speechVolume});
+      await phone.speak('Hi, this is how I sound.');
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _openTtsSettings() async {
+    try {
+      await AppScope.of(context).phone.openTtsSettings();
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _unpair() async {
@@ -474,6 +650,30 @@ class _SettingsScreenState extends State<SettingsScreen>
                       child: Text('${_settings.speechVolume}'),
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Voice',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Spoken replies use the clearest voice on this phone. Pick one to hear a sample. Muse cannot change this.',
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.record_voice_over_outlined),
+                  title: Text(_voiceSummary()),
+                  subtitle: Text(_voiceSubtitle()),
+                  trailing: const Icon(Icons.unfold_more),
+                  onTap: _openVoicePicker,
+                ),
+                TextButton(
+                  onPressed: _openTtsSettings,
+                  child: const Text('Get clearer voices'),
                 ),
               ],
             ),

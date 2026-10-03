@@ -33,7 +33,9 @@ same session code is what a later iOS or desktop port would use.
   screen's mic is hold-to-record only. This is a voice note in the Muse
   chat, not a phone call. The header moon sleeps the screen locally.
 - **Captions and a speaker.** A reply is drawn under the character while it
-  streams, then spoken. Settings has a speech-volume dial. Say it again
+  streams, then spoken. Settings has a speech-volume dial and a voice
+  picker. Spoken replies use the clearest installed voice unless you pick
+  another. Say it again
   repeats the last reply. A voice-note transcript replaces the "Voice note"
   bubble when one arrives.
 - **Dashboard.** The heart icon in the header, and Dashboard in Settings,
@@ -47,7 +49,8 @@ same session code is what a later iOS or desktop port would use.
   panel rather than toggling silently. The dialer and the message composer
   open without extra toggles. Placing a call or sending a text directly
   stays off until you turn it on in Settings. Muse cannot grant itself
-  those toggles, and it cannot change the speech volume. There is no shell.
+  those toggles, and it cannot change the speech volume or the spoken
+  voice. There is no shell.
 
 ## Status
 

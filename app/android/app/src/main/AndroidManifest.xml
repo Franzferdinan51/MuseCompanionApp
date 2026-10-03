@@ -114,5 +114,10 @@
         <intent>
             <action android:name="android.intent.action.SET_TIMER" />
         </intent>
+        <!-- See installed speech engines so a high-quality voice can be chosen.
+             This is not a package-wide query. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 </manifest>

@@ -80,7 +80,8 @@ Map<String, Object?> companionCommandSpecs({
   final displayDescription =
       'Adjust the companion display preferences. All parameters are '
       'optional and applied together; omitted ones are left unchanged. '
-      'Settings are saved on the device.';
+      'Settings are saved on the device. Speech volume and the spoken '
+      'voice are chosen in Settings and cannot be changed here.';
 
   final healthDescription =
       'Report companion health: battery level (percent), whether it is '
@@ -321,7 +322,9 @@ Map<String, Object?> companionCommandSpecs({
       'optional': <String, Object?>{},
     },
     'phone.speak': {
-      'description': 'Speak text aloud on the phone speaker.',
+      'description':
+          'Speak text aloud on the phone speaker, using the voice chosen '
+          'in Companion Settings.',
       'required': {'text': stringParam('What to say.')},
       'optional': <String, Object?>{},
     },

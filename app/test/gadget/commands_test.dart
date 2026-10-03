@@ -202,6 +202,15 @@ void main() {
       expect(result['ok'], isTrue);
       expect(display.theme, 'dark');
       expect(display.keepScreenOn, isTrue);
+
+      final ignored = await executor.run('companion.set_display', {
+        'speech_voice': 'en-us-x-iog-network',
+        'speech_volume': 10,
+      }, null);
+      expect(ignored['ok'], isTrue);
+      final payload = ignored['payload'] as Map;
+      expect(payload.containsKey('speech_voice'), isFalse);
+      expect(payload.containsKey('speech_volume'), isFalse);
     });
 
     test('health reports the platform payload', () async {

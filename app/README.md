@@ -21,7 +21,9 @@ The app registers as `device_family` `companion`, `model_id` `companion-app`,
   posts a voice note. The chat screen's mic is hold-to-record only.
 - **Captions and speech.** A reply is drawn under the character while it
   streams, then spoken. Speech is on by default. Settings has the volume
-  dial (default 80). Say it again repeats the last reply.
+  dial (default 80) and a voice picker. Spoken replies use the clearest
+  installed voice unless you pick another. Say it again repeats the last
+  reply.
 - **Dashboard.** The heart icon shows whether commands are reaching the
   phone. See [Dashboard](#dashboard).
 - **Phone commands.** Links, apps, alarms, timers, camera, microphone,
@@ -30,8 +32,8 @@ The app registers as `device_family` `companion`, `model_id` `companion-app`,
   a short screen wake are included. Wi-Fi, Bluetooth, NFC, mobile data, and
   airplane mode open the system panel. Placing a call or sending a text
   directly stays off until you turn that on in Settings. Muse cannot grant
-  itself those toggles, and it cannot change the speech volume. There is
-  no shell.
+  itself those toggles, and it cannot change the speech volume or the
+  spoken voice. There is no shell.
 
 ## Avatar
 

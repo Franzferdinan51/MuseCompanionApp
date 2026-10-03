@@ -99,6 +99,7 @@ class CompanionSettings {
     this.allowCalls = false,
     this.allowSendSms = false,
     this.speechVolume = 80,
+    this.speechVoice = '',
     this.cameraFacing = 'back',
   });
 
@@ -121,6 +122,10 @@ class CompanionSettings {
   /// dial for the phone speaker. Muse cannot change it.
   final int speechVolume;
 
+  /// Installed speech-engine voice name. Empty means the clearest voice
+  /// for this phone's language. Muse cannot change it.
+  final String speechVoice;
+
   /// `back` or `front`. Used by the camera button and by vision.capture
   /// when Muse does not name a camera. Muse cannot change the saved choice.
   final String cameraFacing;
@@ -132,6 +137,7 @@ class CompanionSettings {
     bool? allowCalls,
     bool? allowSendSms,
     int? speechVolume,
+    String? speechVoice,
     String? cameraFacing,
   }) {
     return CompanionSettings(
@@ -141,6 +147,7 @@ class CompanionSettings {
       allowCalls: allowCalls ?? this.allowCalls,
       allowSendSms: allowSendSms ?? this.allowSendSms,
       speechVolume: speechVolume ?? this.speechVolume,
+      speechVoice: speechVoice ?? this.speechVoice,
       cameraFacing: cameraFacing ?? this.cameraFacing,
     );
   }
@@ -157,6 +164,7 @@ class CompanionSettings {
     'allow_calls': allowCalls,
     'allow_send_sms': allowSendSms,
     'speech_volume': speechVolume.clamp(0, 100),
+    'speech_voice': speechVoice,
     'camera_facing': cameraFacing,
   };
 
@@ -171,12 +179,28 @@ class CompanionSettings {
       allowCalls: map['allow_calls'] == true,
       allowSendSms: map['allow_send_sms'] == true,
       speechVolume: _speechVolume(map['speech_volume']),
+      speechVoice: _speechVoice(map['speech_voice']),
       cameraFacing: _cameraFacing(map['camera_facing']),
     );
   }
 
   static String _cameraFacing(Object? value) =>
       value == 'front' ? 'front' : 'back';
+
+  /// Voice names are engine ids such as `en-us-x-iog-network`. Anything
+  /// else is treated as automatic so a bad stored value cannot be applied.
+  static String _speechVoice(Object? value) {
+    if (value is! String) return '';
+    final name = value.trim();
+    if (name.isEmpty || name.length > 160) return '';
+    for (final unit in name.codeUnits) {
+      final printable = unit >= 0x21 && unit <= 0x7e;
+      final forbidden =
+          unit == 0x22 || unit == 0x27 || unit == 0x2f || unit == 0x5c;
+      if (!printable || forbidden) return '';
+    }
+    return name;
+  }
 
   static int _speechVolume(Object? value) {
     final number = value is num ? value.round() : 80;

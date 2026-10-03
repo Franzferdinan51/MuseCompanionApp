@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.bluetooth.BluetoothManager
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -51,6 +52,7 @@ import android.provider.ContactsContract
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.telephony.SmsManager
 import android.util.Size
 import android.view.KeyEvent
@@ -87,9 +89,17 @@ class PhoneBridge(private val activity: MainActivity) {
     private val speakLock = Any()
     private var speakGeneration = 0
     private var pendingSpeak: MethodChannel.Result? = null
+    private var ttsReady = false
+    private var ttsFellBack = false
+    private var enginePackage = ""
+    @Volatile private var requestedVoice = ""
+    private val voiceQueries = mutableListOf<MethodChannel.Result>()
+    private var queuedSpeak: String? = null
+    private var queuedAwait: String? = null
+    private var queuedAwaitGeneration = 0
 
     fun register(messenger: BinaryMessenger) {
-        tts = TextToSpeech(context) { }
+        startTts()
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
@@ -113,6 +123,17 @@ class PhoneBridge(private val activity: MainActivity) {
                         }
                     }
                     "speak" -> speakAwait(call.argument<String>("text") ?: "", result)
+                    "setSpeechVoice" -> {
+                        requestedVoice = sanitizeVoice(call.argument<String>("name") ?: "")
+                        val engine = tts
+                        if (ttsReady && engine != null) prepareEngine(engine)
+                        result.success(null)
+                    }
+                    "listVoices" -> listVoices(result)
+                    "openTtsSettings" -> {
+                        openTtsSettings()
+                        result.success(null)
+                    }
                     "openNotificationAccess" -> {
                         openNotificationAccess()
                         result.success(null)
@@ -529,9 +550,14 @@ class PhoneBridge(private val activity: MainActivity) {
     }
 
     private fun speak(text: String) {
-        val engine = tts ?: return
+        if (text.isBlank()) return
+        val engine = tts
+        if (engine == null || !ttsReady) {
+            queuedSpeak = text
+            return
+        }
         prepareEngine(engine)
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "muse-reply")
+        utter(engine, text)
     }
 
     /// Completes [result] when the utterance finishes, errors, or times out.
@@ -539,8 +565,7 @@ class PhoneBridge(private val activity: MainActivity) {
     /// The callback is posted to the main thread; the main thread is never blocked.
     private fun speakAwait(text: String, result: MethodChannel.Result) {
         finishPendingSpeak()
-        val engine = tts
-        if (text.isBlank() || engine == null) {
+        if (text.isBlank()) {
             result.success(null)
             return
         }
@@ -550,43 +575,267 @@ class PhoneBridge(private val activity: MainActivity) {
         main.postDelayed({
             if (generation == speakGeneration) finishPendingSpeak()
         }, timeout)
-        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-
-            override fun onDone(utteranceId: String?) {
-                if (utteranceId == "muse-reply") {
-                    main.post {
-                        if (generation == speakGeneration) finishPendingSpeak()
-                    }
-                }
-            }
-
-            @Deprecated("Required by UtteranceProgressListener")
-            override fun onError(utteranceId: String?) {
-                if (utteranceId == "muse-reply") {
-                    main.post {
-                        if (generation == speakGeneration) finishPendingSpeak()
-                    }
-                }
-            }
-
-            override fun onError(utteranceId: String?, errorCode: Int) {
-                onError(utteranceId)
-            }
-        })
+        val engine = tts
+        if (engine == null || !ttsReady) {
+            queuedSpeak = null
+            queuedAwait = text
+            queuedAwaitGeneration = generation
+            return
+        }
+        engine.setOnUtteranceProgressListener(utteranceListener(generation))
         prepareEngine(engine)
-        val code = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "muse-reply")
-        if (code == TextToSpeech.ERROR) finishPendingSpeak()
+        if (utter(engine, text) == TextToSpeech.ERROR) finishPendingSpeak()
     }
 
+    private fun startTts() {
+        val listener = object : TextToSpeech.OnInitListener {
+            override fun onInit(status: Int) {
+                if (status != TextToSpeech.SUCCESS && enginePackage == GOOGLE_TTS && !ttsFellBack) {
+                    ttsFellBack = true
+                    tts?.shutdown()
+                    enginePackage = ""
+                    tts = TextToSpeech(context, this)
+                    return
+                }
+                ttsReady = status == TextToSpeech.SUCCESS
+                val engine = tts
+                if (ttsReady && engine != null) {
+                    enginePackage = engine.defaultEngine ?: enginePackage
+                    prepareEngine(engine)
+                    val awaitText = queuedAwait
+                    val generation = queuedAwaitGeneration
+                    queuedAwait = null
+                    if (awaitText != null && generation == speakGeneration) {
+                        queuedSpeak = null
+                        engine.setOnUtteranceProgressListener(utteranceListener(generation))
+                        if (utter(engine, awaitText) == TextToSpeech.ERROR) finishPendingSpeak()
+                    } else {
+                        val fire = queuedSpeak
+                        queuedSpeak = null
+                        if (!fire.isNullOrBlank()) utter(engine, fire)
+                    }
+                } else {
+                    queuedAwait = null
+                    queuedSpeak = null
+                    finishPendingSpeak()
+                }
+                val waiting = voiceQueries.toList()
+                voiceQueries.clear()
+                for (pending in waiting) {
+                    try {
+                        if (ttsReady) pending.success(voicePayload())
+                        else pending.success(mapOf("engine" to "", "voices" to emptyList<Any>()))
+                    } catch (_: IllegalStateException) {
+                        // The Flutter side already timed out.
+                    }
+                }
+            }
+        }
+        val google = googleTtsInstalled()
+        enginePackage = if (google) GOOGLE_TTS else ""
+        tts = if (google) TextToSpeech(context, listener, GOOGLE_TTS) else TextToSpeech(context, listener)
+    }
+
+    private fun googleTtsInstalled(): Boolean {
+        val intent = Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE)
+        return context.packageManager.queryIntentServices(intent, 0).any { info ->
+            info.serviceInfo?.packageName == GOOGLE_TTS
+        }
+    }
+
+    private fun listVoices(result: MethodChannel.Result) {
+        if (!ttsReady || tts == null) {
+            voiceQueries.add(result)
+            return
+        }
+        try {
+            result.success(voicePayload())
+        } catch (e: Exception) {
+            result.error("phone", e.message ?: "voices unavailable", null)
+        }
+    }
+
+    private fun voicePayload(): Map<String, Any?> {
+        val engine = tts
+        val target = Locale.getDefault()
+        val voices = engine?.voices?.filter { usable(it) } ?: emptyList()
+        val sorted = voices.sortedWith(
+            compareByDescending<Voice> { sameLanguage(it, target) }
+                .thenByDescending { voiceScore(it, target, online()) }
+                .thenBy { it.latency }
+                .thenBy { it.name }
+        )
+        val same = sorted.filter { sameLanguage(it, target) }
+        val others = sorted.filter { !sameLanguage(it, target) }.take(40)
+        val listed = (same + others).toMutableList()
+        val requested = requestedVoice
+        if (requested.isNotEmpty() && listed.none { it.name == requested }) {
+            voices.firstOrNull { it.name == requested }?.let { listed.add(it) }
+        }
+        return mapOf(
+            "engine" to (engine?.defaultEngine ?: enginePackage),
+            "voices" to listed.map { voiceMap(it, target) },
+        )
+    }
+
+    private fun voiceMap(voice: Voice, target: Locale): Map<String, Any?> {
+        val language = voice.locale.displayLanguage.ifBlank { voice.locale.language }
+        return mapOf(
+            "name" to voice.name,
+            "language" to language,
+            "region" to voice.locale.displayCountry,
+            "quality" to qualityLabel(voice.quality),
+            "network" to voice.isNetworkConnectionRequired,
+            "sameLanguage" to sameLanguage(voice, target),
+        )
+    }
+
+    private fun openTtsSettings() {
+        val intent = Intent("com.android.settings.TTS_SETTINGS")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            throw IllegalStateException("speech settings are not available")
+        }
+    }
+
+    /// [setLanguage] after [TextToSpeech.setVoice] clears the chosen voice
+    /// on some engines, so language is only the fallback when no voice matches.
     private fun prepareEngine(engine: TextToSpeech) {
-        engine.language = Locale.getDefault()
         engine.setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
         )
+        engine.setSpeechRate(1.0f)
+        engine.setPitch(1.0f)
+        val chosen = chooseVoice(engine)
+        if (chosen != null) {
+            engine.voice = chosen
+        } else {
+            engine.language = Locale.getDefault()
+        }
+    }
+
+    private fun chooseVoice(engine: TextToSpeech): Voice? {
+        val voices = engine.voices ?: return null
+        val requested = requestedVoice
+        if (requested.isNotEmpty()) {
+            val match = voices.firstOrNull { it.name == requested && usable(it) }
+            if (match != null) {
+                if (match.isNetworkConnectionRequired && !online()) {
+                    return bestVoice(voices, allowNetwork = false) ?: match
+                }
+                return match
+            }
+        }
+        return bestVoice(voices, allowNetwork = online())
+    }
+
+    private fun bestVoice(voices: Collection<Voice>, allowNetwork: Boolean): Voice? {
+        val target = Locale.getDefault()
+        val usableVoices = voices.filter { usable(it) }
+        val same = usableVoices.filter { sameLanguage(it, target) }
+        val pool = if (same.isNotEmpty()) same else usableVoices
+        val local = pool.filter { !it.isNetworkConnectionRequired }
+        val ranked = when {
+            allowNetwork -> pool
+            local.isNotEmpty() -> local
+            else -> pool
+        }
+        return ranked.maxWithOrNull(
+            compareBy<Voice> { voiceScore(it, target, allowNetwork) }
+                .thenBy { -it.latency }
+                .thenBy { it.name }
+        )
+    }
+
+    private fun utter(engine: TextToSpeech, text: String): Int {
+        var code = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE)
+        if (code == TextToSpeech.ERROR) {
+            val local = bestVoice(engine.voices ?: emptySet(), allowNetwork = false)
+            if (local != null && local.name != engine.voice?.name) {
+                engine.voice = local
+                code = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE)
+            }
+        }
+        return code
+    }
+
+    private fun utteranceListener(generation: Int) = object : UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) {}
+
+        override fun onDone(utteranceId: String?) {
+            if (utteranceId == UTTERANCE) {
+                main.post {
+                    if (generation == speakGeneration) finishPendingSpeak()
+                }
+            }
+        }
+
+        @Deprecated("Required by UtteranceProgressListener")
+        override fun onError(utteranceId: String?) {
+            if (utteranceId == UTTERANCE) {
+                main.post {
+                    if (generation == speakGeneration) finishPendingSpeak()
+                }
+            }
+        }
+
+        override fun onError(utteranceId: String?, errorCode: Int) {
+            onError(utteranceId)
+        }
+    }
+
+    private fun usable(voice: Voice): Boolean {
+        val features = voice.features ?: emptySet()
+        if (features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) return false
+        return !voice.locale?.language.isNullOrBlank()
+    }
+
+    private fun sameLanguage(voice: Voice, target: Locale): Boolean {
+        return voice.locale?.language.equals(target.language, ignoreCase = true)
+    }
+
+    /// Higher is better. A network voice gets a modest bump when online so a
+    /// high-quality online voice beats the compact on-device voice, while a
+    /// very-high local voice still wins over a merely high online one.
+    private fun voiceScore(voice: Voice, target: Locale, allowNetwork: Boolean): Int {
+        var score = voice.quality
+        if (voice.locale?.country.equals(target.country, ignoreCase = true)) score += 30
+        if (voice.isNetworkConnectionRequired) score += if (allowNetwork) 50 else -1000
+        return score
+    }
+
+    private fun qualityLabel(quality: Int): String = when {
+        quality >= Voice.QUALITY_VERY_HIGH -> "Very high"
+        quality >= Voice.QUALITY_HIGH -> "High"
+        quality >= Voice.QUALITY_NORMAL -> "Normal"
+        quality >= Voice.QUALITY_LOW -> "Low"
+        else -> "Very low"
+    }
+
+    private fun online(): Boolean {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = manager.activeNetwork ?: return false
+        val caps = manager.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun sanitizeVoice(raw: String): String {
+        val name = raw.trim()
+        if (name.isEmpty() || name.length > 160) return ""
+        if (name.any { unit ->
+                val code = unit.code
+                code < 0x21 || code > 0x7e || unit == '"' || unit == '\'' || unit == '/' || unit == '\\'
+            }
+        ) {
+            return ""
+        }
+        return name
     }
 
     private fun finishPendingSpeak() {
@@ -1384,5 +1633,7 @@ class PhoneBridge(private val activity: MainActivity) {
 
     companion object {
         const val CHANNEL = "dev.musecompanion/phone"
+        private const val GOOGLE_TTS = "com.google.android.tts"
+        private const val UTTERANCE = "muse-reply"
     }
 }

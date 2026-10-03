@@ -124,6 +124,7 @@ class SettingsStore {
       'allow_send_sms':
           _prefs.getBool('${_settingsPrefix}allow_send_sms') ?? false,
       'speech_volume': _prefs.getInt('${_settingsPrefix}speech_volume'),
+      'speech_voice': _prefs.getString('${_settingsPrefix}speech_voice'),
       'camera_facing': _prefs.getString('${_settingsPrefix}camera_facing'),
     });
   }
@@ -146,6 +147,10 @@ class SettingsStore {
     await _prefs.setInt(
       '${_settingsPrefix}speech_volume',
       settings.speechVolume,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}speech_voice',
+      settings.speechVoice,
     );
     await _prefs.setString(
       '${_settingsPrefix}camera_facing',
