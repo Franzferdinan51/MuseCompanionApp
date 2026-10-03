@@ -56,25 +56,20 @@ class ChatEvent {
 
 /// Body of `POST /chat/stream`.
 ///
-/// Includes `output_modality`. Typed turns and camera frames use `text`.
-/// A voice note uses `voice`, matching the ESP32 note head in
-/// muse_chat_priv.h: an empty message, `audio/wav` `voice_note.wav`, and
-/// `output_modality` voice. Without the field the VM accepts the post and
-/// never streams a reply. A text turn that only carries the WAV is acked
-/// and then ignored, so the bot never hears the note. Attachments use the
-/// phone app's file-item shape.
+/// Includes `output_modality`. All turns use `text`; voice notes send the
+/// transcript as the message with the WAV as an attachment. The backend's
+/// `voice` modality transcription produces duplicate `[Voice note]` /
+/// `[Auto-transcript]` markers, so we avoid it. Attachments use the phone
+/// app's file-item shape.
 Map<String, Object?> buildChatRequest({
   required String message,
   required String deviceId,
   String? sessionId,
   List<ChatAttachment> attachments = const [],
 }) {
-  final voice = attachments.any(
-    (item) => item.mimeType.toLowerCase().startsWith('audio/'),
-  );
   final body = <String, Object?>{
     'message': message,
-    'output_modality': voice ? 'voice' : 'text',
+    'output_modality': 'text',
     'device_id': deviceId,
   };
   if (sessionId != null && sessionId.isNotEmpty) {

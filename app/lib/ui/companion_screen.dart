@@ -467,7 +467,7 @@ class _CharacterState extends State<_Character> {
       final wav = await scope.phone.stopRecording();
       if (!mounted) return;
       final id = scope.chat.addSending('Voice note');
-      final result = await scope.service.sendChat('', null, [
+      final result = await scope.service.sendChat('\U0001f3a4 Voice note', null, [
         ChatAttachment(
           mimeType: 'audio/wav',
           filename: 'voice_note.wav',

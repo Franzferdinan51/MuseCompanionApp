@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:muse_companion/src/gadget/chat_events.dart';
 
 void main() {
-  test('a voice note is a voice turn and a photo stays text', () {
+  test('a voice note sends as text with audio attachment', () {
     final body = buildChatRequest(
       message: '',
       deviceId: 'node-1',
@@ -17,7 +17,7 @@ void main() {
         ),
       ],
     );
-    expect(body['output_modality'], 'voice');
+    expect(body['output_modality'], 'text');
     expect(body['message'], '');
     expect(body.containsKey('session_id'), isFalse);
     final items = body['items'] as List;
@@ -37,7 +37,7 @@ void main() {
         ),
       ],
     );
-    expect(prompted['output_modality'], 'voice');
+    expect(prompted['output_modality'], 'text');
     expect(prompted['message'], 'what did I say?');
 
     final photo = buildChatRequest(

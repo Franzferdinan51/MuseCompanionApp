@@ -136,7 +136,8 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final wav = await scope.phone.stopRecording();
       final note = _controller.text.trim();
-      await _post(note, [
+      final message = note.isEmpty ? '\U0001f3a4 Voice note' : note;
+      await _post(message, [
         ChatAttachment(
           mimeType: 'audio/wav',
           filename: 'voice_note.wav',
