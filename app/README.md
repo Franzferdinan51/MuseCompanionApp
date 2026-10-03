@@ -16,38 +16,54 @@ The app registers as `device_family` `companion`, `model_id` `companion-app`,
 - **Pairs** with protocol v5. The phone advertises as `MuseGadget` plus six
   hex digits. Add it from the Muse app: Settings → Devices → Add gadget.
 - **Shows a pixel avatar** on the home screen. See [Avatar](#avatar).
-- **Hold the portrait to talk.** Release posts a voice note in the Muse chat.
-  The chat screen's mic does the same thing.
+- **Tap the portrait to pet it. Hold it to talk.** A press shorter than
+  about 220 ms is a pet. A longer hold starts listening and, on release,
+  posts a voice note. The chat screen's mic is hold-to-record only.
 - **Captions and speech.** A reply is drawn under the character while it
   streams, then spoken. Speech is on by default. Settings has the volume
   dial (default 80). Say it again repeats the last reply.
 - **Dashboard.** The heart icon shows whether commands are reaching the
   phone. See [Dashboard](#dashboard).
-- **Phone commands.** Links, apps, alarms, camera, microphone, clipboard,
-  flashlight, notifications, contacts, calendar, location, and the dialer.
-  Placing a call or sending a text directly stays off until you turn that
-  on in Settings. Muse cannot grant itself those toggles, and it cannot
-  change the speech volume.
+- **Phone commands.** Links, apps, alarms, timers, camera, microphone,
+  clipboard, flashlight, notifications, contacts, calendar, location, and
+  the dialer. Ringer, Do Not Disturb, rotation, brightness, vibration, and
+  a short screen wake are included. Wi-Fi, Bluetooth, NFC, mobile data, and
+  airplane mode open the system panel. Placing a call or sending a text
+  directly stays off until you turn that on in Settings. Muse cannot grant
+  itself those toggles, and it cannot change the speech volume. There is
+  no shell.
 
 ## Avatar
 
-The home screen is a black round stage. A picture is cover-cropped onto a
-64×64 grid and drawn with hard pixels, the way the Waveshare
-ESP32-S3-Touch-AMOLED-1.75C scales its pixel avatar. Animated GIF and WebP
-frames keep their timing. A GLB plays in the same circle. Captions sit under
-the stage. The last picture is cached and shown again after a restart.
+The home screen uses the glossy backdrop. The avatar sits in a black round
+stage that stays still. A picture is cover-cropped onto a 64×64 grid and
+drawn as a smaller portrait inside that disc, with hard pixels, the way the
+full-UI boards on [gadgets.muse.ai](https://gadgets.muse.ai/) scale a pixel
+avatar. Rings, sparkles, thought dots, and sound waves orbit the fixed
+disc. Only the portrait bobs, leans, blinks, and breathes. Animated GIF and
+WebP frames keep their timing. A GLB plays in the same circle. Captions sit
+under the stage. The last picture is cached and shown again after a restart.
+A tap does not dismiss it.
 
-Until a picture arrives, the stage shows a plain tile and the line "Waiting
-for character" or "Asking your Muse for a character…".
+Until a picture arrives, the stage shows an original round face (not the
+SDK's default character) and the line "Waiting for character" or "Asking
+your Muse for a character…".
 
 | State | Label | Motion |
 | --- | --- | --- |
-| Idle | READY | Slow bob. |
-| Listening | LISTENING | Faster bob, expanding rings, centred meter. |
-| Thinking | THINKING | Lean, three thought dots, accent arc. |
-| Speaking | SPEAKING | Scale pulse and rings. |
+| Boot | BOOT | One short squash when the screen opens on an idle portrait, then idle. |
+| Idle | READY | Slow bob. While the link is connecting the word is CONNECTING; while it is waiting to retry, RECONNECTING. Not paired stays on the bottom bar. |
+| Listening | LISTENING | Faster bob, expanding rings, centred meter. The bezel fills from the top across 15 seconds of a hold. The mic beside the word lights only in this state. |
+| Thinking | THINKING | Lean, three thought dots, and a 60° spinner on the bezel (300°/s, starting at the top). |
+| Speaking | SPEAKING | Scale pulse and rings. The bezel stays empty. |
+| Error | ERROR | A short shake, then a still error face. |
+| Off | OFF | The link was stopped. Fade. This is not the sleep button. |
 
-Hold the portrait while the stage is listening to record. Release to send.
+The header moon covers the screen locally. Tap the cover or the moon to
+wake. That does not change the link pose.
+
+Tap the portrait to pet it. Hold it (about 220 ms) to start listening, then
+release to send. The hint on the home screen is "Tap to pet, hold to talk".
 
 ### How the picture is set
 
@@ -56,8 +72,8 @@ Both paths use the same downloader and the same stage.
 1. **`display.draw_url`.** Muse invokes the command with an `http` or `https`
    image URL. The phone downloads it, caches it, and draws it. JPEG, PNG,
    WebP, animated GIF, animated WebP, and GLB are accepted.
-   `display.show_animation` clears the picture and brings the tile back. The
-   caption stays.
+   `display.show_animation` clears the picture and brings the round face
+   back. The caption stays.
 2. **An image URL in a finished chat reply.** When the reply text contains
    an `https` URL whose path ends in `.png`, `.jpg`, `.jpeg`, `.webp`, or
    `.gif`, the phone downloads that URL. A query string is kept. The first
@@ -112,27 +128,33 @@ survive. The dashboard counters are the record that stays.
 | Command | What the phone does |
 | --- | --- |
 | `display.draw_url` | Download an image URL and draw it on the pixel stage. |
-| `display.show_animation` | Clear the picture and show the tile again. |
+| `display.show_animation` | Clear the picture and show the round face again. |
 | `companion.set_status`, `pocket.set_status` | Set the caption. Up to 4000 characters. The stage shows a shorter wrap. |
 | `companion.set_display` | Theme, keep-screen-on, and whether replies are spoken. |
 | `device.health` | Battery percent, charging, model, OS version, and app version. |
-| `vision.capture` | Take a camera photo and post it to chat. |
+| `vision.capture` | Take a camera photo and post it to chat. Facing follows Settings (Back or Front) unless the command sets `facing`. |
 | `voice.listen` | Record 1–20 seconds (default 5) and post a voice note. |
 | `phone.open_url` | Open an `http` or `https` URL. |
 | `phone.launch_app`, `phone.list_apps` | Open an app by package or name, or list launchable apps. |
 | `phone.clipboard` | Read or set the clipboard. |
 | `phone.flashlight` | Torch on or off. |
-| `phone.volume`, `phone.brightness` | Media volume, or screen brightness when the system grant exists. |
+| `phone.volume`, `phone.brightness` | Volume on music, ring, alarm, notification, or voice (default music). Brightness level or auto/manual, when the system grant exists. |
 | `phone.location` | Last known location, after the user grants it. |
 | `phone.notify` | Show a notification. |
-| `phone.alarm` | Set a clock alarm. |
+| `phone.alarm`, `phone.timer` | Set a clock alarm, or start a timer. |
 | `phone.dial` | Open the dialer with a number filled in. The user places the call. |
 | `phone.call` | Place a call. Requires "Allow Muse to place calls" in Settings. |
 | `phone.sms` | Open the message composer. `send=true` sends only after "Allow Muse to send texts". |
 | `phone.messages`, `phone.notifications` | Read the SMS inbox, or posted notifications, after those grants. |
 | `phone.contacts`, `phone.events` | Search contacts, or list upcoming calendar events. |
 | `phone.share`, `phone.speak`, `phone.media` | Share sheet, speak text, or a media key. |
-| `phone.capabilities` | Which controls and permissions are available now. |
+| `phone.capabilities` | Which controls and permissions are available now, including camera facing and the grants below. |
+| `phone.ringer`, `phone.dnd`, `phone.vibrate` | Ringer mode, Do Not Disturb (opens the system page if needed), or a short vibration. |
+| `phone.rotation` | Auto, portrait, landscape, or locked, when write-settings is granted. |
+| `phone.radio` | Report Wi-Fi, Bluetooth, NFC, mobile data, or airplane mode, or open that system panel. It does not toggle them silently. |
+| `phone.settings` | Open one whitelisted system page (display, sound, apps, battery, and the radio pages). |
+| `phone.device` | Manufacturer, model, Android release, battery, storage, ringer, and radio status. No accounts, IMEI, or serial. |
+| `phone.screen` | Whether the screen is on, or wake it for a few seconds. |
 
 ## Architecture
 
@@ -141,8 +163,9 @@ lib/
 ├── main.dart                      # Wires identity, service, executor, and UI
 ├── app/
 │   ├── model.dart                 # PresentationState and CompanionSettings
-│   ├── pixel_avatar.dart          # 64×64 scale map, accents, blink, meter
-│   ├── avatar_motion.dart         # Idle, listening, thinking, speaking motion
+│   ├── pixel_avatar.dart          # 64×64 scale map, accents, blink, meter, bezel arcs
+│   ├── avatar_life.dart           # Palette, gaze, blink shapes, sparkles, pet
+│   ├── avatar_motion.dart         # Idle, listening, thinking, speaking, boot, error, off
 │   ├── captions.dart              # Caption and spoken-reply clipping
 │   ├── chat.dart                  # In-memory chat history for this launch
 │   ├── companion_platform.dart    # Image download, cache, and display bridge
@@ -151,8 +174,9 @@ lib/
 │   ├── phone_bridge.dart          # Android method channel for phone commands
 │   └── foreground.dart            # Link foreground service and notification
 ├── ui/
-│   ├── companion_screen.dart      # Home: stage, captions, hold-to-talk
-│   ├── pixel_stage.dart           # Shared pixel renderer
+│   ├── companion_screen.dart      # Home: stage, captions, pet, hold-to-talk, sleep
+│   ├── pixel_stage.dart           # Fixed disc; the portrait moves inside it
+│   ├── muse_theme.dart            # Glossy backdrop, logo, ink and mist colours
 │   ├── dashboard_screen.dart      # Heart-icon diagnostics
 │   ├── chat_screen.dart
 │   ├── settings_screen.dart

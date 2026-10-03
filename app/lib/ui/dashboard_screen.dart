@@ -21,6 +21,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
 
 import '../app/model.dart';
+import '../app/pixel_avatar.dart';
 import '../src/gadget/service.dart';
 import 'muse_theme.dart';
 import 'pixel_stage.dart';
@@ -100,7 +101,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           MuseBubble(
             child: Column(
               children: [
-                _Row('Link', _connectionLabel(connection)),
+                _Row('Link', connectionStatusLabel(connection)),
                 if (presentation.statusDetail.isNotEmpty)
                   _Row('Detail', presentation.statusDetail),
                 _Row(
@@ -109,7 +110,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ? 'Unknown'
                       : '${presentation.battery}%',
                 ),
-                _Row('Pose', presentation.pose.name),
+                _Row('Pose', avatarStateLabel(presentation.pose)),
                 _Row('Speech volume', '${presentation.settings.speechVolume}'),
               ],
             ),
@@ -173,21 +174,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
-  }
-
-  String _connectionLabel(ConnectionState state) {
-    switch (state) {
-      case ConnectionState.connected:
-        return 'Connected';
-      case ConnectionState.connecting:
-        return 'Connecting';
-      case ConnectionState.waiting:
-        return 'Waiting';
-      case ConnectionState.unpaired:
-        return 'Not paired';
-      case ConnectionState.stopped:
-        return 'Stopped';
-    }
   }
 }
 

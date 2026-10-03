@@ -17,16 +17,20 @@ same session code is what a later iOS or desktop port would use.
   Noise session with your Muse and can hold it in a foreground service.
 - **Shows your Muse's character.** `display.draw_url` accepts a full-color
   JPEG, PNG, or WebP, an animated GIF or animated WebP, or a GLB. The phone
-  cover-crops the picture onto a 64×64 grid and draws it with hard pixels
-  on a black round stage, the way the Waveshare screen scales its pixel
-  avatar. Idle, listening, thinking, and speaking use that screen's timing:
-  bob, rings, thought dots, and a listening meter. Captions sit under the
-  stage. A finished chat reply that contains an https link to a PNG, JPEG,
-  WebP, or GIF is drawn the same way, without `display.draw_url`. The art
-  is yours; the app does not substitute the stock character.
-- **Hold the character to talk.** Press and hold the portrait to record a
-  voice note, then release to post it. The chat screen's mic does the same
-  thing. This is a voice note in the Muse chat, not a phone call.
+  cover-crops the picture onto a 64×64 grid and draws that portrait inside
+  a fixed round stage. The disc stays put. The portrait bobs, blinks, and
+  breathes, with the full-UI board timing from
+  [gadgets.muse.ai](https://gadgets.muse.ai/): rings, thought dots, a
+  listening meter, a 60° thinking spinner, and a listen ring that fills
+  from the top. Captions sit under the stage. A finished chat reply that
+  contains an https link to a PNG, JPEG, WebP, or GIF is drawn the same
+  way, without `display.draw_url`. The picture stays until it is replaced.
+  The art is yours; the app does not substitute the stock character. Until
+  a picture arrives, the stage shows an original round face.
+- **Tap to pet, hold to talk.** A short tap pets the portrait. Holding it
+  for about 220 ms starts a voice note, and release posts it. The chat
+  screen's mic is hold-to-record only. This is a voice note in the Muse
+  chat, not a phone call. The header moon sleeps the screen locally.
 - **Captions and a speaker.** A reply is drawn under the character while it
   streams, then spoken. Settings has a speech-volume dial. Say it again
   repeats the last reply. A voice-note transcript replaces the "Voice note"
@@ -34,12 +38,15 @@ same session code is what a later iOS or desktop port would use.
 - **Dashboard.** The heart icon in the header, and Dashboard in Settings,
   show the character, the caption, link state, and the command channel:
   invokes seen, results sent, the last command, and the recent link log.
-- **Phone commands.** Your Muse can open links and apps, set an alarm, read
-  notifications after you grant access, and use the camera and microphone.
-  The dialer and the message composer open without extra toggles. Placing a
-  call or sending a text directly stays off until you turn it on in Settings.
-  Muse cannot grant itself those toggles, and it cannot change the speech
-  volume.
+- **Phone commands.** Your Muse can open links and apps, set an alarm or a
+  timer, read notifications after you grant access, and use the camera and
+  microphone. Settings chooses the back or front camera. Ringer, Do Not
+  Disturb, rotation, vibration, and a short screen wake are included.
+  Wi-Fi, Bluetooth, NFC, mobile data, and airplane mode open the system
+  panel rather than toggling silently. The dialer and the message composer
+  open without extra toggles. Placing a call or sending a text directly
+  stays off until you turn it on in Settings. Muse cannot grant itself
+  those toggles, and it cannot change the speech volume. There is no shell.
 
 ## Status
 
@@ -100,8 +107,8 @@ app/
       identity.dart      # stable device identity
       service.dart       # connection loop, backoff, token rotation
       commands.dart      # companion command set + executor
-    app/                 # storage, presentation, captions, avatar motion
-    ui/                  # companion, dashboard, settings, pairing, chat
+    app/                 # storage, presentation, captions, avatar motion and life
+    ui/                  # companion, pixel stage, theme, dashboard, settings, pairing, chat
   test/
     gadget/              # protocol unit tests + pairing vectors
     testdata/            # official link_pairing_v5 vectors
@@ -136,19 +143,22 @@ Commands registered with `link.register`:
 | `vision.capture` | Take a photo and post it into chat so the Muse can see it |
 | `voice.listen` | Record a short voice note and post it into chat |
 | `phone.open_url`, `phone.launch_app`, `phone.list_apps` | Open a link or an installed app, or list launchable apps |
-| `phone.clipboard`, `phone.flashlight`, `phone.volume`, `phone.brightness` | Clipboard, torch, media volume, screen brightness |
+| `phone.clipboard`, `phone.flashlight`, `phone.volume`, `phone.brightness` | Clipboard, torch, volume (music, ring, alarm, notification, or voice), screen brightness |
 | `phone.location` | Last known location, then one fresh update |
-| `phone.notify`, `phone.alarm` | Show a notification, or open the alarm clock |
+| `phone.notify`, `phone.alarm`, `phone.timer` | Show a notification, set an alarm, or start a timer |
 | `phone.dial`, `phone.call` | Open the dialer. `phone.call` places the call only if Settings allows it |
 | `phone.sms`, `phone.messages` | Open the composer, or send directly if Settings allows it; read recent inbox texts |
 | `phone.notifications`, `phone.contacts`, `phone.events` | Recent notifications, contact search, upcoming calendar events |
 | `phone.share`, `phone.speak`, `phone.media`, `phone.capabilities` | Share sheet, speak text, media keys, report what this phone can do |
+| `phone.ringer`, `phone.dnd`, `phone.vibrate`, `phone.rotation` | Ringer mode, Do Not Disturb, a short vibration, screen rotation |
+| `phone.radio`, `phone.settings` | Radio status, or open a system panel or settings page. No silent radio toggle |
+| `phone.device`, `phone.screen` | Device status (no IMEI or serial), or wake the screen |
 
 There is no shell command. The phone is controlled through this list.
 
 ## Roadmap
 
-- Signed release APK/AAB on GitHub Releases
+- A Play-signed release APK/AAB. Public v0.2.4 is on GitHub Releases and is signed with the debug keystore
 - iOS (CoreBluetooth peripheral), then macOS and Windows
 
 ## Contributing
@@ -163,9 +173,10 @@ when behavior changes.
   Muse gadget this app is modeled on.
 - [muse-gadget-sdk](https://github.com/facebookincubator/muse-gadget-sdk)
   by Meta Platforms, Inc. — the reference gadget SDK and the docs at
-  [gadgets.muse.ai](https://gadgets.muse.ai/). The Waveshare board's avatar
-  timing and the reTerminal status screen are the references for motion and
-  the dashboard. The phone does not copy the SDK's default pixel character.
+  [gadgets.muse.ai](https://gadgets.muse.ai/). The full-UI boards' avatar
+  timing (thinking spinner, listen ring, pet, sleep) and the reTerminal
+  status screen are the references for motion and the dashboard. The phone
+  does not copy the SDK's default pixel character.
 - The Meta Muse team for the Muse platform itself.
 
 ## License

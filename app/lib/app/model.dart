@@ -27,6 +27,24 @@ import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
+/// Short link label shared by the home bar, the dashboard, and Settings.
+///
+/// Chat banners stay full sentences. Diagnostics keep the raw enum name.
+String connectionStatusLabel(ConnectionState state) {
+  switch (state) {
+    case ConnectionState.connected:
+      return 'Connected';
+    case ConnectionState.connecting:
+      return 'Connecting…';
+    case ConnectionState.waiting:
+      return 'Waiting to retry';
+    case ConnectionState.unpaired:
+      return 'Not paired';
+    case ConnectionState.stopped:
+      return 'Stopped';
+  }
+}
+
 /// Maximum number of status lines drawn below the character.
 const int kMaxStatusLines = 4;
 

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +37,44 @@ void main() {
     expect(avatarStateLabel(AvatarPose.boot), 'BOOT');
     expect(avatarStateLabel(AvatarPose.off), 'OFF');
     expect(avatarCaptionRgb, 0xd8d2ff);
+    expect(avatarFaceWord(AvatarPose.idle), 'READY');
+    expect(avatarFaceWord(AvatarPose.idle, connecting: true), 'CONNECTING');
+    expect(avatarFaceWord(AvatarPose.idle, reconnecting: true), 'RECONNECTING');
+    expect(avatarFaceWord(AvatarPose.listening, connecting: true), 'LISTENING');
+    expect(avatarStateLabel(AvatarPose.idle), 'READY');
+  });
+
+  test('bezel arcs match the board ring', () {
+    final think = thinkingBezelArc(0);
+    expect(think.start, closeTo(-math.pi / 2, 1e-9));
+    expect(think.sweep, closeTo(math.pi / 3, 1e-9));
+    final later = thinkingBezelArc(0.5);
+    expect(later.start, closeTo(-math.pi / 2 + 150 * math.pi / 180, 1e-9));
+    expect(later.sweep, think.sweep);
+    // One second is 300° and stays inside a single turn.
+    var travel = thinkingBezelArc(1).start - think.start;
+    if (travel < 0) travel += math.pi * 2;
+    expect(travel, closeTo(300 * math.pi / 180, 1e-9));
+    // A full 360° of travel lands back on the top.
+    final lap = thinkingBezelArc(1.2);
+    var back = lap.start - (-math.pi / 2);
+    back = back % (math.pi * 2);
+    if (back > math.pi) back -= math.pi * 2;
+    expect(back.abs(), lessThan(1e-6));
+
+    expect(listenRingSeconds, 15);
+    expect(listenRingProgress(Duration.zero), 0);
+    expect(listenRingProgress(const Duration(milliseconds: -1)), 0);
+    expect(
+      listenRingProgress(const Duration(milliseconds: 7500)),
+      closeTo(0.5, 1e-9),
+    );
+    expect(listenRingProgress(const Duration(seconds: 20)), 1);
+    final listen = listenBezelArc(0.25);
+    expect(listen.start, closeTo(-math.pi / 2, 1e-9));
+    expect(listen.sweep, closeTo(math.pi / 2, 1e-9));
+    expect(listenBezelArc(2).sweep, closeTo(math.pi * 2, 1e-9));
+    expect(listenBezelArc(-1).sweep, 0);
   });
 
   test('cover crop keeps the centre of a wide image', () {

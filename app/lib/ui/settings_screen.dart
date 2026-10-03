@@ -724,7 +724,7 @@ class _PairingCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  paired ? _labelFor(connection) : 'Not paired',
+                  paired ? connectionStatusLabel(connection) : 'Not paired',
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: paired
                         ? theme.colorScheme.onPrimaryContainer
@@ -757,21 +757,6 @@ class _PairingCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _labelFor(ConnectionState state) {
-    switch (state) {
-      case ConnectionState.connected:
-        return 'Connected';
-      case ConnectionState.connecting:
-        return 'Connecting…';
-      case ConnectionState.waiting:
-        return 'Waiting';
-      case ConnectionState.unpaired:
-        return 'Not paired';
-      case ConnectionState.stopped:
-        return 'Stopped';
-    }
   }
 }
 

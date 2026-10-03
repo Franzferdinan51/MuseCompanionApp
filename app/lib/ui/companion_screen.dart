@@ -13,10 +13,10 @@
 // limitations under the License.
 //
 // The primary companion surface: name + battery header, the pixel avatar
-// on a black round stage, captions below it, and a bottom bar showing
-// connection state. The stage follows the Waveshare screen: a 64x64
-// portrait, state word, and the gadget life from muse_pixel.c: blinks,
-// gaze, boot, shutdown, and a short-tap pet.
+// inside a fixed round stage, captions below it, and a bottom bar showing
+// connection state. The stage follows the full-UI boards: a portrait that
+// moves inside the disc, a state word, blinks, gaze, boot, shutdown, a
+// short-tap pet, a thinking spinner, and a listen ring on the bezel.
 
 import 'dart:async';
 
@@ -55,6 +55,7 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
   StreamSubscription<void>? _presentationSub;
   bool _routeVisible = true;
   bool _bootArmed = false;
+  bool _asleep = false;
   Timer? _bootTimer;
 
   @override
@@ -147,9 +148,17 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
     _applyWakelock();
   }
 
+  /// Local screen sleep, like the board's dark overlay. It does not set
+  /// the link pose to off, and a stopped link is not treated as sleep.
+  void _toggleSleep() {
+    setState(() => _asleep = !_asleep);
+    _applyWakelock();
+  }
+
   Future<void> _applyWakelock() async {
     final scope = AppScope.of(context);
-    final enable = _routeVisible && scope.presentation.settings.keepScreenOn;
+    final enable =
+        _routeVisible && !_asleep && scope.presentation.settings.keepScreenOn;
     try {
       await WakelockPlus.toggle(enable: enable);
     } on MissingPluginException {
@@ -164,16 +173,22 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
     final scope = AppScope.of(context);
     return StreamBuilder<void>(
       stream: scope.presentation.stream,
-      builder: (context, _) => _Surface(scope: scope),
+      builder: (context, _) =>
+          _Surface(scope: scope, asleep: _asleep, onSleep: _toggleSleep),
     );
   }
 }
 
 class _Surface extends StatelessWidget {
-  const _Surface({required this.scope})
-    : super(key: const ValueKey('companion_surface'));
+  const _Surface({
+    required this.scope,
+    required this.asleep,
+    required this.onSleep,
+  }) : super(key: const ValueKey('companion_surface'));
 
   final AppScope scope;
+  final bool asleep;
+  final VoidCallback onSleep;
 
   @override
   Widget build(BuildContext context) {
@@ -189,26 +204,58 @@ class _Surface extends StatelessWidget {
               _Header(
                 name: presentation.name ?? 'Muse',
                 battery: presentation.battery,
+                asleep: asleep,
+                onSleep: onSleep,
               ),
               Expanded(
-                child: Column(
+                child: Stack(
                   children: [
-                    Expanded(child: _Character(presentation: presentation)),
-                    Text(
-                      'Hold the character to talk',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: museMist.withValues(alpha: 0.82),
-                      ),
+                    Column(
+                      children: [
+                        Expanded(
+                          child: _Character(
+                            presentation: presentation,
+                            asleep: asleep,
+                          ),
+                        ),
+                        Text(
+                          'Tap to pet, hold to talk',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: museMist.withValues(alpha: 0.82),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _StatusLines(lines: presentation.lines),
+                        const SizedBox(height: 12),
+                        _BottomBar(
+                          state:
+                              presentation.connection ??
+                              ConnectionState.unpaired,
+                          detail: presentation.statusDetail,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
+                    if (asleep)
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onSleep,
+                          child: ColoredBox(
+                            color: museInk.withValues(alpha: 0.94),
+                            child: Center(
+                              child: Text(
+                                'Tap to wake',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: museMist,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
-              ),
-              _StatusLines(lines: presentation.lines),
-              const SizedBox(height: 12),
-              _BottomBar(
-                state: presentation.connection ?? ConnectionState.unpaired,
-                detail: presentation.statusDetail,
               ),
             ],
           ),
@@ -219,11 +266,17 @@ class _Surface extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.name, required this.battery})
-    : super(key: const ValueKey('companion_header'));
+  const _Header({
+    required this.name,
+    required this.battery,
+    required this.asleep,
+    required this.onSleep,
+  }) : super(key: const ValueKey('companion_header'));
 
   final String name;
   final int? battery;
+  final bool asleep;
+  final VoidCallback onSleep;
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +313,15 @@ class _Header extends StatelessWidget {
                   letterSpacing: 0.2,
                 ),
                 overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              tooltip: asleep ? 'Wake' : 'Sleep',
+              onPressed: onSleep,
+              icon: Icon(
+                asleep ? Icons.wb_sunny_outlined : Icons.bedtime_outlined,
+                color: theme.colorScheme.primary,
+                size: 22,
               ),
             ),
             _BatteryIndicator(battery: battery),
@@ -309,10 +371,11 @@ class _BatteryIndicator extends StatelessWidget {
 }
 
 class _Character extends StatefulWidget {
-  const _Character({required this.presentation})
+  const _Character({required this.presentation, required this.asleep})
     : super(key: const ValueKey('companion_character'));
 
   final PresentationState presentation;
+  final bool asleep;
 
   @override
   State<_Character> createState() => _CharacterState();
@@ -323,6 +386,7 @@ class _CharacterState extends State<_Character> {
   bool _pointerDown = false;
   int _bounce = 0;
   int _pets = 0;
+  DateTime? _listenStarted;
   Timer? _arm;
 
   @override
@@ -341,6 +405,7 @@ class _CharacterState extends State<_Character> {
   static const _armDelay = Duration(milliseconds: 220);
 
   void _holdStart() {
+    if (widget.asleep) return;
     _pointerDown = true;
     setState(() => _bounce++);
     if (_holding || _arm != null) return;
@@ -370,8 +435,11 @@ class _CharacterState extends State<_Character> {
     scope.presentation.applyStatus('Listening…');
     try {
       await scope.phone.startRecording();
+      _listenStarted = DateTime.now();
+      if (mounted) setState(() {});
     } on PhoneActionException catch (e) {
       _holding = false;
+      _listenStarted = null;
       if (!mounted) return;
       scope.presentation.applyPose(AvatarPose.idle);
       ScaffoldMessenger.of(
@@ -391,6 +459,7 @@ class _CharacterState extends State<_Character> {
     }
     if (!_holding) return;
     _holding = false;
+    _listenStarted = null;
     final scope = AppScope.of(context);
     scope.presentation.applyPose(AvatarPose.thinking);
     scope.presentation.applyStatus('Thinking…');
@@ -417,12 +486,14 @@ class _CharacterState extends State<_Character> {
         scope.presentation.applyPose(AvatarPose.idle);
       }
     } on PhoneActionException catch (e) {
+      _listenStarted = null;
       if (!mounted) return;
       scope.presentation.applyPose(AvatarPose.idle);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
+      _listenStarted = null;
       if (!mounted) return;
       scope.presentation.applyPose(AvatarPose.idle);
     }
@@ -435,24 +506,48 @@ class _CharacterState extends State<_Character> {
     final bytes = presentation.character;
     final connected = presentation.connection == ConnectionState.connected;
     final accent = Color(0xFF000000 | avatarAccent(presentation.pose));
+    final link = presentation.connection;
+    final face = avatarFaceWord(
+      presentation.pose,
+      connecting: link == ConnectionState.connecting,
+      reconnecting: link == ConnectionState.waiting,
+    );
     return Listener(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) => _holdStart(),
-      onPointerUp: (_) => _holdEnd(),
-      onPointerCancel: (_) => _holdEnd(),
+      onPointerDown: widget.asleep ? null : (_) => _holdStart(),
+      onPointerUp: widget.asleep ? null : (_) => _holdEnd(),
+      onPointerCancel: widget.asleep ? null : (_) => _holdEnd(),
       child: Column(
         children: [
           TweenAnimationBuilder<Color?>(
             tween: ColorTween(end: accent),
             duration: const Duration(milliseconds: 420),
-            builder: (context, color, _) => Text(
-              avatarStateLabel(presentation.pose),
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: color ?? accent,
-                letterSpacing: 3,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            builder: (context, color, _) {
+              final ink = color ?? accent;
+              final live = presentation.pose == AvatarPose.listening;
+              return FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.mic,
+                      size: 18,
+                      color: live ? ink : ink.withValues(alpha: 0.28),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      face,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: ink,
+                        letterSpacing: 3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -461,6 +556,7 @@ class _CharacterState extends State<_Character> {
               bytes: bytes,
               bounceGeneration: _bounce,
               petGeneration: _pets,
+              listenStarted: _listenStarted,
             ),
           ),
           if (bytes == null)
@@ -523,7 +619,7 @@ class _BottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final status = detail.isEmpty ? _labelFor(state) : detail;
+    final status = detail.isEmpty ? connectionStatusLabel(state) : detail;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Row(
@@ -605,21 +701,6 @@ class _BottomBar extends StatelessWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  String _labelFor(ConnectionState state) {
-    switch (state) {
-      case ConnectionState.connected:
-        return 'Connected';
-      case ConnectionState.connecting:
-        return 'Connecting…';
-      case ConnectionState.waiting:
-        return 'Waiting to retry';
-      case ConnectionState.unpaired:
-        return 'Not paired';
-      case ConnectionState.stopped:
-        return 'Stopped';
     }
   }
 }

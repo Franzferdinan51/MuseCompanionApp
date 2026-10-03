@@ -8,8 +8,9 @@
 // It does not draw the firmware's default character. That art is Meta's,
 // and the gadget recipe says the Apache license does not grant it. The
 // phone pixelates the picture Muse sends of itself. Until that picture
-// arrives, the screen shows a plain tile, not the stock hood.
+// arrives, the screen shows an original round face, not the stock hood.
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'avatar_life.dart';
@@ -72,6 +73,63 @@ String avatarStateLabel(AvatarPose pose) {
     case AvatarPose.idle:
       return 'READY';
   }
+}
+
+/// Face word above the portrait.
+///
+/// Idle follows the Muse link the way `idle_name` in muse_ui.c follows
+/// Wi-Fi: connecting, reconnecting, or READY. Other poses keep
+/// [avatarStateLabel]. That helper still returns READY for a plain idle
+/// pose, which the tests lock.
+String avatarFaceWord(
+  AvatarPose pose, {
+  bool connecting = false,
+  bool reconnecting = false,
+}) {
+  if (pose == AvatarPose.idle) {
+    if (connecting) return 'CONNECTING';
+    if (reconnecting) return 'RECONNECTING';
+  }
+  return avatarStateLabel(pose);
+}
+
+/// Board push-to-talk cap (`MAX_SECS` in muse_voice.c). The bezel fills
+/// across this span. The phone may keep the microphone slightly longer.
+const double listenRingSeconds = 15;
+
+/// Hold progress in 0..1 for the listen arc.
+double listenRingProgress(Duration elapsed) {
+  final seconds = elapsed.inMicroseconds / 1000000.0;
+  if (seconds <= 0) return 0;
+  final progress = seconds / listenRingSeconds;
+  if (progress >= 1) return 1;
+  return progress;
+}
+
+/// One stroke on the fixed stage bezel. [start] is a Flutter canvas angle
+/// (0 at the right, clockwise). The board's arc widget is rotated 270°,
+/// so its zero sits at the top, which is `-pi/2` here.
+class BezelArc {
+  const BezelArc(this.start, this.sweep);
+
+  final double start;
+  final double sweep;
+}
+
+/// Thinking indicator: 60° (`RING_RANGE / 6`) traveling at 300°/s.
+BezelArc thinkingBezelArc(double seconds) {
+  const cycle = math.pi * 2;
+  var travel = (seconds * 300 * math.pi / 180) % cycle;
+  if (travel < 0) travel += cycle;
+  return BezelArc(-math.pi / 2 + travel, math.pi / 3);
+}
+
+/// Listen arc. A full hold is one turn starting at the top.
+BezelArc listenBezelArc(double progress) {
+  var p = progress;
+  if (p < 0) p = 0;
+  if (p > 1) p = 1;
+  return BezelArc(-math.pi / 2, p * math.pi * 2);
 }
 
 /// Caption colour from muse_ui.c (`COLOR_CAPTION`).

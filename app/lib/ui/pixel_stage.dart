@@ -28,6 +28,7 @@ class PixelStage extends StatefulWidget {
     required this.bytes,
     this.bounceGeneration = 0,
     this.petGeneration = 0,
+    this.listenStarted,
   });
 
   final AvatarPose pose;
@@ -38,6 +39,11 @@ class PixelStage extends StatefulWidget {
 
   /// Increment to play the happy pet reaction. Ignored while in error.
   final int petGeneration;
+
+  /// When the current push-to-talk hold began. The fixed bezel fills over
+  /// [listenRingSeconds]. Null leaves the listen arc empty. Speaking does
+  /// not use this; the board only fills the ring while recording.
+  final DateTime? listenStarted;
 
   @override
   State<PixelStage> createState() => _PixelStageState();
@@ -83,6 +89,7 @@ class _StageClock extends ChangeNotifier {
   double nudge = 0;
   double modeT = 0;
   double happy = 0;
+  double listenProgress = 0;
   int hot = 0xf4e8ff;
   int mid = 0x9a6bff;
   int deep = 0x5b3fd9;
@@ -109,6 +116,7 @@ class _StageClock extends ChangeNotifier {
     required double nudge,
     required double modeT,
     required double happy,
+    required double listenProgress,
     required AvatarLife life,
     required int hot,
     required int mid,
@@ -125,6 +133,7 @@ class _StageClock extends ChangeNotifier {
     this.nudge = nudge;
     this.modeT = modeT;
     this.happy = happy;
+    this.listenProgress = listenProgress;
     this.life = life;
     this.hot = hot;
     this.mid = mid;
@@ -230,6 +239,14 @@ class _PixelStageState extends State<PixelStage>
     _publish(image, _blink.advance(dt), elapsed.inMicroseconds / 1000000);
   }
 
+  /// Ring fill for the hold that is in progress. Wall time, not the
+  /// animation clock, so a paused ticker cannot stretch the 15 seconds.
+  double _listenProgress() {
+    final started = widget.listenStarted;
+    if (started == null) return 0;
+    return listenRingProgress(DateTime.now().difference(started));
+  }
+
   void _publish(ui.Image? image, double shut, double seconds) {
     final level = avatarLevel(_shown, seconds);
     _clock.tick(
@@ -243,6 +260,7 @@ class _PixelStageState extends State<PixelStage>
       nudge: _nudge,
       modeT: _modeT,
       happy: _happy,
+      listenProgress: _listenProgress(),
       life: avatarLife(
         pose: _shown,
         seconds: seconds,
@@ -471,24 +489,29 @@ class _StagePainter extends CustomPainter {
       );
     }
 
+    // Bezel chrome stays on the fixed disc. muse_ui.c draws a 60° spinner
+    // at 300°/s while thinking, and a progress arc from the top while the
+    // microphone is held. Speaking leaves the arc empty.
     final thinking = _poseWeight(AvatarPose.thinking, smooth);
+    final listening = _poseWeight(AvatarPose.listening, smooth);
+    final speaking = _poseWeight(AvatarPose.speaking, smooth);
     if (thinking > 0.04) {
+      final arc = thinkingBezelArc(seconds);
       final sweep = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = bezel.strokeWidth
         ..strokeCap = StrokeCap.butt
         ..color = accent.withValues(alpha: thinking);
-      canvas.drawArc(
-        bezelRect,
-        (seconds * 0.7) % 1 * math.pi * 2,
-        1.15,
-        false,
-        sweep,
-      );
+      canvas.drawArc(bezelRect, arc.start, arc.sweep, false, sweep);
+    } else if (listening > 0.04 && clock.listenProgress > 0.004) {
+      final arc = listenBezelArc(clock.listenProgress);
+      final ring = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = bezel.strokeWidth
+        ..strokeCap = StrokeCap.butt
+        ..color = accent.withValues(alpha: listening);
+      canvas.drawArc(bezelRect, arc.start, arc.sweep, false, ring);
     }
-
-    final listening = _poseWeight(AvatarPose.listening, smooth);
-    final speaking = _poseWeight(AvatarPose.speaking, smooth);
 
     canvas.save();
     canvas.clipPath(

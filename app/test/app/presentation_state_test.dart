@@ -26,6 +26,14 @@ import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
 void main() {
+  test('connection labels match the home bar', () {
+    expect(connectionStatusLabel(ConnectionState.connected), 'Connected');
+    expect(connectionStatusLabel(ConnectionState.connecting), 'Connecting…');
+    expect(connectionStatusLabel(ConnectionState.waiting), 'Waiting to retry');
+    expect(connectionStatusLabel(ConnectionState.unpaired), 'Not paired');
+    expect(connectionStatusLabel(ConnectionState.stopped), 'Stopped');
+  });
+
   group('deriveStatusLines', () {
     test('a single short line returns one line', () {
       expect(deriveStatusLines('Hello'), <String>['Hello']);
