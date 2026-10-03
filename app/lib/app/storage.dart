@@ -119,6 +119,11 @@ class SettingsStore {
       'theme': _prefs.getString('${_settingsPrefix}theme'),
       'keep_screen_on':
           _prefs.getBool('${_settingsPrefix}keep_screen_on') ?? false,
+      'speak_replies':
+          _prefs.getBool('${_settingsPrefix}speak_replies') ?? true,
+      'allow_calls': _prefs.getBool('${_settingsPrefix}allow_calls') ?? false,
+      'allow_send_sms':
+          _prefs.getBool('${_settingsPrefix}allow_send_sms') ?? false,
     });
   }
 
@@ -127,6 +132,12 @@ class SettingsStore {
         '${_settingsPrefix}theme', settings.theme);
     await _prefs.setBool(
         '${_settingsPrefix}keep_screen_on', settings.keepScreenOn);
+    await _prefs.setBool(
+        '${_settingsPrefix}speak_replies', settings.speakReplies);
+    await _prefs.setBool(
+        '${_settingsPrefix}allow_calls', settings.allowCalls);
+    await _prefs.setBool(
+        '${_settingsPrefix}allow_send_sms', settings.allowSendSms);
   }
 
   String loadStatus() => _prefs.getString(_statusKey) ?? '';

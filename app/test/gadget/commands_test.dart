@@ -1,5 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:muse_companion/src/gadget/chat_events.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
+import 'package:muse_companion/src/gadget/phone_actions.dart';
 
 class _FakeDisplay implements CompanionDisplay {
   String status = '';
@@ -30,8 +34,11 @@ class _FakeDisplay implements CompanionDisplay {
   }
 
   @override
-  Future<Map<String, Object?>> setDisplay(
-      {String? theme, bool? keepScreenOn}) async {
+  Future<Map<String, Object?>> setDisplay({
+    String? theme,
+    bool? keepScreenOn,
+    bool? speakReplies,
+  }) async {
     if (theme != null) this.theme = theme;
     if (keepScreenOn != null) this.keepScreenOn = keepScreenOn;
     return {'theme': this.theme, 'keep_screen_on': this.keepScreenOn};
@@ -46,6 +53,30 @@ class _FakeHealth implements CompanionHealth {
   @override
   Future<Map<String, Object?>> health() async =>
       {'battery_level': 80, 'charging': true};
+}
+
+class _FakePhone implements PhoneActions {
+  final List<(String, Map<String, Object?>)> calls = [];
+
+  @override
+  Future<Uint8List> captureJpeg() async => Uint8List.fromList([1, 2, 3]);
+
+  @override
+  Future<Uint8List> recordWav(int seconds) async =>
+      Uint8List.fromList([4, 5]);
+
+  @override
+  Future<void> speak(String text) async {}
+
+  @override
+  Future<void> openNotificationAccess() async {}
+
+  @override
+  Future<Map<String, Object?>> run(
+      String command, Map<String, Object?> params) async {
+    calls.add((command, params));
+    return {...params, 'command': command};
+  }
 }
 
 void main() {
@@ -153,6 +184,62 @@ void main() {
     test('unknown commands fail cleanly', () async {
       final result = await executor.run('nope.nope', {}, null);
       expect(result['ok'], isFalse);
+    });
+
+    test('calls and texts stay off until the user allows them', () async {
+      final phone = _FakePhone();
+      var allowCalls = false;
+      var allowSms = false;
+      final gated = CompanionExecutor(
+        display: display,
+        health: _FakeHealth(),
+        phone: phone,
+        allowCalls: () => allowCalls,
+        allowSendSms: () => allowSms,
+      );
+      final blocked =
+          await gated.run('phone.call', {'number': '555'}, null);
+      expect(blocked['ok'], isFalse);
+      expect(phone.calls, isEmpty);
+
+      allowCalls = true;
+      final placed =
+          await gated.run('phone.call', {'number': '555'}, null);
+      expect(placed['ok'], isTrue);
+      expect(phone.calls.single.$1, 'phone.call');
+
+      final composer = await gated.run(
+          'phone.sms', {'to': '555', 'body': 'hi', 'send': true}, null);
+      expect((composer['payload'] as Map)['send'], isFalse);
+
+      allowSms = true;
+      final sent = await gated.run(
+          'phone.sms', {'to': '555', 'body': 'hi', 'send': true}, null);
+      expect((sent['payload'] as Map)['send'], isTrue);
+    });
+
+    test('vision posts the camera bytes into chat', () async {
+      final phone = _FakePhone();
+      String? posted;
+      List<ChatAttachment>? items;
+      final seeing = CompanionExecutor(
+        display: display,
+        health: _FakeHealth(),
+        phone: phone,
+        postToMuse: (message, attachments) async {
+          posted = message;
+          items = attachments;
+          return {'ok': true};
+        },
+      );
+      final result = await seeing.run('vision.capture', {}, null);
+      expect(result['ok'], isTrue);
+      expect(display.status, 'Looking through the camera');
+      expect(posted, contains('photo'));
+      expect(items, hasLength(1));
+      expect(items!.single.mimeType, 'image/jpeg');
+      expect(items!.single.filename, 'camera.jpg');
+      expect(items!.single.bytes, [1, 2, 3]);
     });
   });
 

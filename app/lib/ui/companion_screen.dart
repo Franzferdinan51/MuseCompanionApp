@@ -260,7 +260,9 @@ class _Character extends StatelessWidget {
               child: Container(
                 color: theme.colorScheme.surfaceContainerHighest,
                 child: bytes == null
-                    ? const _Placeholder()
+                    ? _Placeholder(
+                        connected: presentation.connection ==
+                            ConnectionState.connected)
                     : _CharacterImage(bytes: bytes),
               ),
             ),
@@ -272,7 +274,9 @@ class _Character extends StatelessWidget {
 }
 
 class _Placeholder extends StatelessWidget {
-  const _Placeholder();
+  const _Placeholder({required this.connected});
+
+  final bool connected;
 
   @override
   Widget build(BuildContext context) {
@@ -284,9 +288,17 @@ class _Placeholder extends StatelessWidget {
           Icon(Icons.image_outlined,
               size: 96, color: theme.colorScheme.outline),
           const SizedBox(height: 12),
-          Text('Waiting for character',
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              connected
+                  ? 'Asking your Muse for a character…'
+                  : 'Waiting for character',
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.outline)),
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ),
         ],
       ),
     );
@@ -330,9 +342,12 @@ class _CharacterImageState extends State<_CharacterImage> {
     final modelPath = _modelPath;
     // The 2D path is byte-for-byte the historical behavior.
     if (modelPath == null) {
-      return FittedBox(
+      return Image.memory(
+        widget.bytes,
         fit: BoxFit.cover,
-        child: Image.memory(widget.bytes, gaplessPlayback: true),
+        width: double.infinity,
+        height: double.infinity,
+        gaplessPlayback: true,
       );
     }
     return FutureBuilder<String>(

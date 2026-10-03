@@ -1,4 +1,4 @@
-platform :osx, '10.15'
+platform :osx, '12.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -38,5 +38,12 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
+    # This Xcode requires a macOS deployment target of at least 12.0, but many
+    # plugins pin lower versions (and Flutter's hook deletes the setting for
+    # inheritable targets). Force every pod build configuration to 12.0 so the
+    # native build succeeds while still satisfying speech_to_text's >= 11.0 floor.
+    target.build_configurations.each do |build_configuration|
+      build_configuration.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '12.0'
+    end
   end
 end

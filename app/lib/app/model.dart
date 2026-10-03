@@ -58,16 +58,37 @@ class CompanionSettings {
   const CompanionSettings({
     this.theme = 'system',
     this.keepScreenOn = false,
+    this.speakReplies = true,
+    this.allowCalls = false,
+    this.allowSendSms = false,
   });
 
   /// One of `light`, `dark` or `system`.
   final String theme;
   final bool keepScreenOn;
 
-  CompanionSettings copyWith({String? theme, bool? keepScreenOn}) {
+  /// Speak assistant chat replies on the phone speaker.
+  final bool speakReplies;
+
+  /// Let Muse place calls with `phone.call`. Off until the user opts in.
+  final bool allowCalls;
+
+  /// Let Muse send texts directly with `phone.sms`. Off until the user opts in.
+  final bool allowSendSms;
+
+  CompanionSettings copyWith({
+    String? theme,
+    bool? keepScreenOn,
+    bool? speakReplies,
+    bool? allowCalls,
+    bool? allowSendSms,
+  }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
+      speakReplies: speakReplies ?? this.speakReplies,
+      allowCalls: allowCalls ?? this.allowCalls,
+      allowSendSms: allowSendSms ?? this.allowSendSms,
     );
   }
 
@@ -81,6 +102,9 @@ class CompanionSettings {
   Map<String, Object?> toMap() => {
         'theme': theme,
         'keep_screen_on': keepScreenOn,
+        'speak_replies': speakReplies,
+        'allow_calls': allowCalls,
+        'allow_send_sms': allowSendSms,
       };
 
   static CompanionSettings fromMap(Map<String, Object?> map) {
@@ -90,6 +114,11 @@ class CompanionSettings {
           ? theme
           : 'system',
       keepScreenOn: map['keep_screen_on'] == true,
+      speakReplies: map['speak_replies'] is bool
+          ? map['speak_replies']! as bool
+          : true,
+      allowCalls: map['allow_calls'] == true,
+      allowSendSms: map['allow_send_sms'] == true,
     );
   }
 }

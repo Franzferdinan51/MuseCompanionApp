@@ -30,6 +30,7 @@
 import 'dart:io';
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 const int _linkServiceId = 0xC0FFEE;
 const String _stopButtonId = 'stop';
@@ -113,6 +114,13 @@ Future<bool> startLinkService(String notificationText) async {
         await FlutterForegroundTask.checkNotificationPermission();
     if (permission != NotificationPermission.granted) {
       await FlutterForegroundTask.requestNotificationPermission();
+    }
+    // Android 14+ refuses a connectedDevice foreground service until a
+    // nearby-device permission is actually granted, not only declared.
+    final nearby = await Permission.bluetoothConnect.status;
+    if (!nearby.isGranted) {
+      final asked = await Permission.bluetoothConnect.request();
+      if (!asked.isGranted) return false;
     }
     final result = await FlutterForegroundTask.startService(
       serviceId: _linkServiceId,

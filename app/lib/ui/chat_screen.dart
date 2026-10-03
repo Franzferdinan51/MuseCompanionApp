@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Message screen: send chat messages from this device to the Muse.
+// Message screen: text, hold-to-talk, and a camera frame.
 //
-// One-sided by protocol design — the Muse replies through display
-// commands rendered on the companion screen, not through chat — so the
-// list shows outgoing messages with their delivery state, and the
-// composer explains when the link is not ready instead of failing
-// silently.
+// Replies arrive on the chat subscription and show up as assistant
+// bubbles. A voice note and a photo go out as chat attachments, the
+// same shape the Muse gadget firmware uses.
 
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:muse_companion/src/gadget/chat_events.dart';
+import 'package:muse_companion/src/gadget/phone_actions.dart';
 
 import '../app/chat.dart';
 import '../src/gadget/service.dart';
@@ -40,6 +40,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   StreamSubscription<ConnectionState>? _connectionSub;
   ConnectionState _connection = ConnectionState.unpaired;
+  bool _listening = false;
+  bool _capturing = false;
 
   @override
   void didChangeDependencies() {
@@ -67,11 +69,21 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+    await _post(text);
+  }
+
+  Future<void> _post(String text,
+      [List<ChatAttachment> attachments = const []]) async {
     final scope = AppScope.of(context);
     _controller.clear();
-    final id = scope.chat.addSending(text);
+    final shown = text.isEmpty
+        ? (attachments.any((item) => item.mimeType.startsWith('audio/'))
+            ? 'Voice note'
+            : 'Photo')
+        : text;
+    final id = scope.chat.addSending(shown);
     _scrollToEnd();
-    final result = await scope.service.sendChat(text);
+    final result = await scope.service.sendChat(text, null, attachments);
     if (!mounted) return;
     if (result['ok'] == true) {
       scope.chat.markSent(id);
@@ -81,6 +93,65 @@ class _ChatScreenState extends State<ChatScreen> {
           id, error is String && error.isNotEmpty ? error : 'send failed');
     }
     _scrollToEnd();
+  }
+
+  Future<void> _startVoice() async {
+    if (_listening || !_ready) return;
+    setState(() => _listening = true);
+    try {
+      await AppScope.of(context).phone.startRecording();
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      setState(() => _listening = false);
+      _showError(e.message);
+    }
+  }
+
+  Future<void> _stopVoice() async {
+    if (!_listening) return;
+    setState(() => _listening = false);
+    final scope = AppScope.of(context);
+    try {
+      final wav = await scope.phone.stopRecording();
+      final note = _controller.text.trim();
+      await _post(note, [
+        ChatAttachment(
+          mimeType: 'audio/wav',
+          filename: 'voice_note.wav',
+          bytes: wav,
+        ),
+      ]);
+    } on PhoneActionException catch (e) {
+      if (mounted) _showError(e.message);
+    }
+  }
+
+  Future<void> _capture() async {
+    if (_capturing || !_ready) return;
+    setState(() => _capturing = true);
+    final scope = AppScope.of(context);
+    try {
+      final jpeg = await scope.phone.captureJpeg();
+      final note = _controller.text.trim();
+      await _post(
+        note.isEmpty ? 'What do you see?' : note,
+        [
+          ChatAttachment(
+            mimeType: 'image/jpeg',
+            filename: 'camera.jpg',
+            bytes: jpeg,
+          ),
+        ],
+      );
+    } on PhoneActionException catch (e) {
+      if (mounted) _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _scrollToEnd() {
@@ -109,6 +180,12 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           children: [
             if (!_ready) _OfflineBanner(connection: _connection),
+            if (_listening || scope.chat.activity.isNotEmpty)
+              _ActivityBanner(
+                text: _listening
+                    ? 'Listening… release to send'
+                    : scope.chat.activity,
+              ),
             Expanded(
               child: StreamBuilder<void>(
                 stream: scope.chat.stream,
@@ -131,8 +208,13 @@ class _ChatScreenState extends State<ChatScreen> {
             _Composer(
               controller: _controller,
               ready: _ready,
+              listening: _listening,
+              capturing: _capturing,
               connection: _connection,
               onSend: _send,
+              onListenStart: _startVoice,
+              onListenEnd: _stopVoice,
+              onCapture: _capture,
             ),
           ],
         ),
@@ -188,7 +270,7 @@ class _EmptyHint extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               ready
-                  ? 'Say hello — your Muse answers on the companion screen.'
+                  ? 'Say hello, hold the mic, or show the camera. Replies show up here.'
                   : 'Messages you send appear here with their delivery state.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
@@ -211,8 +293,9 @@ class _Bubble extends StatelessWidget {
     final theme = Theme.of(context);
     final time =
         '${message.sentAt.hour.toString().padLeft(2, '0')}:${message.sentAt.minute.toString().padLeft(2, '0')}';
+    final mine = message.role == ChatRole.user;
     return Align(
-      alignment: Alignment.centerRight,
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding:
@@ -223,14 +306,20 @@ class _Bubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: message.status == ChatStatus.failed
               ? theme.colorScheme.errorContainer
-              : theme.colorScheme.primaryContainer,
+              : mine
+                  ? theme.colorScheme.primaryContainer
+                  : theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment:
+              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(message.text, style: theme.textTheme.bodyMedium),
+            Text(
+              message.text.isEmpty && message.streaming ? '…' : message.text,
+              style: theme.textTheme.bodyMedium,
+            ),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -276,18 +365,45 @@ class _StatusIcon extends StatelessWidget {
   }
 }
 
+class _ActivityBanner extends StatelessWidget {
+  const _ActivityBanner({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: theme.colorScheme.primaryContainer,
+      child: Text(text, style: theme.textTheme.bodySmall),
+    );
+  }
+}
+
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.ready,
+    required this.listening,
+    required this.capturing,
     required this.connection,
     required this.onSend,
+    required this.onListenStart,
+    required this.onListenEnd,
+    required this.onCapture,
   });
 
   final TextEditingController controller;
   final bool ready;
+  final bool listening;
+  final bool capturing;
   final ConnectionState connection;
   final Future<void> Function() onSend;
+  final VoidCallback onListenStart;
+  final VoidCallback onListenEnd;
+  final VoidCallback onCapture;
 
   @override
   Widget build(BuildContext context) {
@@ -306,6 +422,30 @@ class _Composer extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          IconButton(
+            tooltip: 'Show the camera',
+            onPressed: ready && !capturing ? onCapture : null,
+            icon: capturing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.photo_camera_outlined),
+          ),
+          Listener(
+            onPointerDown: ready ? (_) => onListenStart() : null,
+            onPointerUp: (_) => onListenEnd(),
+            onPointerCancel: (_) => onListenEnd(),
+            child: IconButton(
+              tooltip: 'Hold to talk',
+              onPressed: ready ? () {} : null,
+              icon: Icon(
+                listening ? Icons.mic : Icons.mic_none,
+                color: listening ? theme.colorScheme.error : null,
+              ),
+            ),
+          ),
           Expanded(
             child: TextField(
               controller: controller,

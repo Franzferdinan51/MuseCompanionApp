@@ -83,4 +83,40 @@ void main() {
     expect(events, 4);
     await sub.cancel();
   });
+
+  test('subscribe deltas become one assistant reply', () {
+    final history = ChatHistory();
+    addTearDown(history.close);
+    final spoken = <String>[];
+    history.onAssistantDone = spoken.add;
+    history.applyServerEvent('delta.message_start', {'message_id': 'm1'});
+    history.applyServerEvent(
+        'delta.text_append', {'message_id': 'm1', 'text': 'Hel'});
+    history.applyServerEvent(
+        'delta.text_append', {'message_id': 'm1', 'text': 'lo'});
+    history.applyServerEvent('delta.message_done', {
+      'message_id': 'm1',
+      'display_text': 'Hello',
+    });
+    history.applyServerEvent('message.assistant', {
+      'message_id': 'm1',
+      'content': 'Hello',
+    });
+    expect(history.messages, hasLength(1));
+    expect(history.messages.single.role, ChatRole.assistant);
+    expect(history.messages.single.text, 'Hello');
+    expect(history.messages.single.status, ChatStatus.sent);
+    expect(spoken, ['Hello']);
+  });
+
+  test('user echoes and activity codes do not add bubbles', () {
+    final history = ChatHistory();
+    addTearDown(history.close);
+    history.applyServerEvent(
+        'message.assistant', {'role': 'user', 'text': 'mine'});
+    history.applyServerEvent(
+        'agent.status', {'activity_code': 'thinking'});
+    expect(history.messages, isEmpty);
+    expect(history.activity, 'thinking');
+  });
 }

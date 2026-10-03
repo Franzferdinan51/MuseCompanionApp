@@ -27,14 +27,16 @@ import 'package:muse_companion/app/chat.dart';
 import 'package:muse_companion/app/companion_platform.dart';
 import 'package:muse_companion/app/foreground.dart';
 import 'package:muse_companion/app/model.dart';
+import 'package:muse_companion/app/phone_bridge.dart';
 import 'package:muse_companion/app/storage.dart';
+import 'package:muse_companion/src/gadget/chat_events.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
 import 'ui/companion_screen.dart';
 import 'ui/scope.dart';
 
-const String _appVersion = '0.1.0';
+const String _appVersion = '0.2.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,13 +51,26 @@ Future<void> main() async {
   if (savedStatus.isNotEmpty) {
     presentation.applyStatus(savedStatus);
   }
+  final cachedCharacter = await AppCompanionDisplay.loadCachedCharacter();
+  if (cachedCharacter != null) {
+    presentation.applyCharacter(cachedCharacter);
+  }
 
   final health = AppCompanionHealth(appVersion: _appVersion);
   final display = AppCompanionDisplay(
     listener: _DisplayListener(presentation),
     settings: settings,
   );
-  final executor = CompanionExecutor(display: display, health: health);
+  final phone = const PhoneBridge();
+  final poster = _ChatPoster();
+  final executor = CompanionExecutor(
+    display: display,
+    health: health,
+    phone: phone,
+    postToMuse: poster.send,
+    allowCalls: () => presentation.settings.allowCalls,
+    allowSendSms: () => presentation.settings.allowSendSms,
+  );
 
   final screen = _screenSize();
   final pairingStore = SecurePairingStore();
@@ -72,7 +87,20 @@ Future<void> main() async {
     version: _appVersion,
     sdkToken: savedSdkToken?.isEmpty == true ? null : savedSdkToken,
     displayName: 'Muse Companion',
+    onCharacterUrl: (url) async {
+      await executor.run('display.draw_url', {'url': url}, null);
+    },
   );
+  poster.bind(service);
+  final chat = ChatHistory();
+  service.onChatEvent.listen((event) {
+    chat.applyServerEvent(event.event, event.payload);
+  });
+  chat.onAssistantDone = (text) {
+    if (presentation.settings.speakReplies) {
+      unawaited(phone.speak(text));
+    }
+  };
   final ble = BlePeripheralManager(
     identity: identity.identity,
     pairingStore: pairingStore,
@@ -88,9 +116,26 @@ Future<void> main() async {
     presentation: presentation,
     settings: settings,
     ble: ble,
-    chat: ChatHistory(),
+    chat: chat,
     sdkTokens: sdkTokens,
+    phone: phone,
   ));
+}
+
+/// Lets the executor post a photo or voice note before the service exists.
+class _ChatPoster {
+  GadgetService? _service;
+
+  void bind(GadgetService service) => _service = service;
+
+  Future<Map<String, Object?>> send(
+      String message, List<ChatAttachment> attachments) {
+    final service = _service;
+    if (service == null) {
+      return Future.value({'ok': false, 'error': 'not ready'});
+    }
+    return service.sendChat(message, null, attachments);
+  }
 }
 
 /// Physical pixels of the primary view; the Muse sizes art from this.
@@ -140,6 +185,7 @@ class MuseCompanionApp extends StatefulWidget {
     required this.ble,
     required this.chat,
     required this.sdkTokens,
+    required this.phone,
   });
 
   final GadgetService service;
@@ -148,6 +194,7 @@ class MuseCompanionApp extends StatefulWidget {
   final BlePeripheralManager ble;
   final ChatHistory chat;
   final SecureSdkTokenStore sdkTokens;
+  final PhoneBridge phone;
 
   @override
   State<MuseCompanionApp> createState() => _MuseCompanionAppState();
@@ -242,6 +289,7 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
         ble: widget.ble,
         chat: widget.chat,
         sdkTokens: widget.sdkTokens,
+        phone: widget.phone,
         child: MaterialApp(
           title: 'Muse Companion',
           debugShowCheckedModeBanner: false,

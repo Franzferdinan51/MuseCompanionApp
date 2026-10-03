@@ -23,6 +23,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         peripheral = GadgetBlePeripheral(applicationContext, bleListener)
+        PhoneBridge(this).register(flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL

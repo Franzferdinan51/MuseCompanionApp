@@ -24,7 +24,9 @@
 //   * VM -> device: the register reply, `link.invoke` requests, and events
 //     such as `link.unpaired`.
 // Messages the device sends to the Muse ([LinkSession.sendChat]) go as
-// separate `POST /chat/stream` requests on the same session.
+// separate `POST /chat/stream` requests on the same session. Assistant
+// replies are not in that response: they arrive as NDJSON on a long-lived
+// `POST /chat/subscribe` stream opened after `link.register` succeeds.
 
 import 'dart:async';
 import 'dart:convert';
@@ -32,6 +34,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'chat_events.dart';
 import 'envelope.dart';
 import 'noise_xx.dart';
 import 'transport.dart';
@@ -199,6 +202,10 @@ class _Request {
   final BytesBuilder body = BytesBuilder();
   int bodyLength = 0;
 
+  /// When set, chunks are delivered as they arrive instead of being
+  /// buffered until the stream ends. Used by `/chat/subscribe`.
+  void Function(int status, Uint8List data, bool ended)? onChunk;
+
   void onFrame(DecryptedFrame frame) {
     if (done.isCompleted) return;
     if (frame.kind == DecryptedFrameKind.reset) {
@@ -217,6 +224,12 @@ class _Request {
       final chunk = frame.bodyChunk!;
       data = chunk.data ?? Uint8List(0);
       ended = chunk.endBody;
+    }
+    final chunkHandler = onChunk;
+    if (chunkHandler != null) {
+      chunkHandler(status, data, ended);
+      if (ended) done.complete((status, Uint8List(0)));
+      return;
     }
     body.add(data);
     bodyLength += data.length;
@@ -271,6 +284,20 @@ class LinkSession {
   /// Called once the VM accepts `link.register`.
   void Function()? onRegistered;
 
+  /// Called once the reply subscription has been written to the socket,
+  /// so a following chat post is not missed.
+  void Function()? onSubscribed;
+
+  /// Fires for each assistant event on `/chat/subscribe`.
+  void Function(ChatEvent event)? onChatEvent;
+
+  /// Fires with the decoded `GET /identity` result object.
+  void Function(Map<String, Object?> result)? onIdentity;
+
+  int _subscribeAttempts = 0;
+  bool _subscribeOpen = false;
+  bool _alive = true;
+
   Future<Outcome> run(Future<void> Function()? waitForStop) async {
     late final LinkSocket socket;
     try {
@@ -301,6 +328,7 @@ class LinkSession {
       }
       return await readFuture;
     } finally {
+      _alive = false;
       for (final request in _requests.values) {
         if (!request.done.isCompleted) {
           request.done.completeError(StateError('session ended'));
@@ -392,12 +420,15 @@ class LinkSession {
               await request.done.future.timeout(requestTimeout);
           if (status == 200 && response.isNotEmpty) {
             final decoded = json.decode(utf8.decode(response));
-            final result =
-                decoded is Map ? decoded['result'] : null;
-            final name = result is Map ? result['name'] : null;
-            if (name is String && name.isNotEmpty) {
-              agentName = name;
-              onStatus?.call('identity:$name');
+            final result = decoded is Map ? decoded['result'] : null;
+            if (result is Map) {
+              final cast = result.cast<String, Object?>();
+              final name = cast['name'];
+              if (name is String && name.isNotEmpty) {
+                agentName = name;
+                onStatus?.call('identity:$name');
+              }
+              onIdentity?.call(cast);
             }
           }
         } finally {
@@ -413,22 +444,26 @@ class LinkSession {
   ///
   /// [sessionId] targets a side chat; an id the Muse has not seen before
   /// starts a new one. Without it the message goes to the main chat.
+  /// [attachments] are voice notes or camera frames. The HTTP body is only
+  /// an acknowledgement; the reply arrives through [onChatEvent].
   Future<Map<String, Object?>> sendChat(String message,
-      [String? sessionId]) async {
+      [String? sessionId, List<ChatAttachment> attachments = const []]) async {
     final transport = _transport;
     if (transport == null) {
       return {'ok': false, 'error': 'not connected to the Muse'};
     }
+    if (message.trim().isEmpty && attachments.isEmpty) {
+      return {'ok': false, 'error': 'message is empty'};
+    }
     // Note: no registered gate here; the service layer refuses chats
     // until the VM accepts link.register (mirroring the reference).
     try {
-      final requestBody = <String, Object?>{
-        'message': message,
-        'device_id': _device.nodeId,
-      };
-      if (sessionId != null && sessionId.isNotEmpty) {
-        requestBody['session_id'] = sessionId;
-      }
+      final requestBody = buildChatRequest(
+        message: message,
+        deviceId: _device.nodeId,
+        sessionId: sessionId,
+        attachments: attachments,
+      );
       final body = Uint8List.fromList(utf8.encode(json.encode(requestBody)));
       final headers = [
         const Header('Content-Type', 'application/json'),
@@ -548,6 +583,9 @@ class LinkSession {
       if (message['error'] == null) {
         registeredAt = DateTime.now();
         onRegistered?.call();
+        final task = _openChatSubscription();
+        _tasks.add(task);
+        task.whenComplete(() => _tasks.remove(task));
       }
       return null;
     }
@@ -584,6 +622,73 @@ class LinkSession {
       await send({'method': 'link.result', 'id': invokeId, ...result});
     } catch (_) {
       // The session is gone; nothing left to report to.
+    }
+  }
+
+  /// Long-lived reply stream. Opened after register so events that follow
+  /// the intro message are not missed. Failures are reported and retried
+  /// a few times; command serving does not depend on it.
+  Future<void> _openChatSubscription() async {
+    if (_subscribeOpen || _transport == null || _socket == null) return;
+    if (_subscribeAttempts >= 3) return;
+    _subscribeAttempts += 1;
+    final transport = _transport!;
+    final body = Uint8List.fromList(utf8.encode('{}'));
+    final headers = [
+      const Header('Content-Type', 'application/json'),
+      const Header('Accept', 'application/x-ndjson'),
+      Header('x-request-id', newUuid()),
+      const Header('x-app-id', appId),
+    ];
+    final encrypted = await transport.encryptHttpRequest(
+        'POST', chatSubscribePath,
+        body: body, headers: headers);
+    final request = _Request();
+    final decoder = NdjsonEventDecoder();
+    request.onChunk = (status, data, ended) {
+      if (status >= 400) {
+        onStatus?.call('subscribe:$status');
+        return;
+      }
+      if (data.isNotEmpty) {
+        try {
+          for (final event in decoder.add(data)) {
+            onChatEvent?.call(event);
+          }
+        } on StateError catch (e) {
+          onStatus?.call('subscribe:$e');
+        }
+      }
+      if (ended) {
+        for (final event in decoder.flush()) {
+          onChatEvent?.call(event);
+        }
+        _subscribeOpen = false;
+      }
+    };
+    _requests[encrypted.streamId] = request;
+    _subscribeOpen = true;
+    var announced = false;
+    try {
+      await _sendFrames(encrypted.frames);
+      onStatus?.call('subscribed');
+      announced = true;
+      onSubscribed?.call();
+      await request.done.future;
+    } catch (e) {
+      onStatus?.call('subscribe ended: $e');
+    } finally {
+      _requests.remove(encrypted.streamId);
+      _subscribeOpen = false;
+    }
+    if (!announced && _subscribeAttempts >= 3) {
+      onSubscribed?.call();
+    }
+    if (_alive && registeredAt != null && _subscribeAttempts < 3) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (_alive && registeredAt != null) {
+        await _openChatSubscription();
+      }
     }
   }
 

@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import '../app/ble_peripheral.dart';
 import '../app/chat.dart';
 import '../app/model.dart';
+import '../app/phone_bridge.dart';
 import '../app/storage.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
@@ -33,6 +34,7 @@ class AppScope extends InheritedWidget {
     required this.ble,
     required this.chat,
     required this.sdkTokens,
+    this.phone = const PhoneBridge(),
     required super.child,
   });
 
@@ -42,6 +44,7 @@ class AppScope extends InheritedWidget {
   final BlePeripheralManager ble;
   final ChatHistory chat;
   final SecureSdkTokenStore sdkTokens;
+  final PhoneBridge phone;
 
   static AppScope of(BuildContext context) {
     final scope =
@@ -57,5 +60,6 @@ class AppScope extends InheritedWidget {
       settings != oldWidget.settings ||
       ble != oldWidget.ble ||
       chat != oldWidget.chat ||
-      sdkTokens != oldWidget.sdkTokens;
+      sdkTokens != oldWidget.sdkTokens ||
+      phone != oldWidget.phone;
 }

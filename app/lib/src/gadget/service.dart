@@ -26,6 +26,8 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
+import 'chat_events.dart';
+import 'commands.dart';
 import 'identity.dart';
 import 'link_client.dart';
 import 'muse_api.dart';
@@ -119,6 +121,7 @@ class GadgetService {
     LinkConnector? connect,
     http.Client? httpClient,
     ServiceLogger logger = _nullLogger,
+    this.onCharacterUrl,
   })  : _identity = identity,
         _commands = commands,
         _runCommand = runCommand,
@@ -141,8 +144,13 @@ class GadgetService {
   final http.Client? _httpClient;
   final ServiceLogger _logger;
 
+  /// Draws a character image discovered on `GET /identity`.
+  final Future<void> Function(String url)? onCharacterUrl;
+
   final StreamController<ConnectionState> _state =
       StreamController<ConnectionState>.broadcast();
+  final StreamController<ChatEvent> _chatEvents =
+      StreamController<ChatEvent>.broadcast();
 
   ConnectionState _connectionState = ConnectionState.stopped;
   String _statusDetail = '';
@@ -155,9 +163,13 @@ class GadgetService {
   LinkSession? _current;
   String? _agentName;
   Future<void>? _loop;
+  bool _introSent = false;
 
   /// Broadcast connection-state changes for the UI.
   Stream<ConnectionState> get onStateChanged => _state.stream;
+
+  /// Assistant events from `/chat/subscribe`.
+  Stream<ChatEvent> get onChatEvent => _chatEvents.stream;
 
   ConnectionState get connectionState => _connectionState;
 
@@ -220,19 +232,24 @@ class GadgetService {
   }
 
   /// Send a message to the Muse from this device.
+  ///
+  /// [attachments] carry a voice note or a camera frame. The returned map
+  /// is the post acknowledgement; the reply is delivered on [onChatEvent].
   Future<Map<String, Object?>> sendChat(String message,
-      [String? sessionId]) async {
+      [String? sessionId,
+      List<ChatAttachment> attachments = const []]) async {
     final session = _current;
     if (session == null || session.registeredAt == null) {
       return {'ok': false, 'error': 'not connected to the Muse'};
     }
-    return session.sendChat(message, sessionId);
+    return session.sendChat(message, sessionId, attachments);
   }
 
   /// Forget the saved pairing. The device identity is kept.
   Future<void> unpair() async {
     await _pairingStore.delete();
     _agentName = null;
+    _introSent = false;
   }
 
   /// Update the SDK token reported on token refresh (null clears it).
@@ -356,8 +373,21 @@ class GadgetService {
         }
       }
     };
+    session.onIdentity = (result) {
+      final url = avatarUrlFromIdentity(result);
+      final draw = onCharacterUrl;
+      if (url != null && draw != null) {
+        unawaited(draw(url));
+      }
+    };
+    session.onChatEvent = (event) {
+      if (!_chatEvents.isClosed) _chatEvents.add(event);
+    };
     session.onRegistered = () {
       _setState(ConnectionState.connected, _agentName ?? 'registered');
+    };
+    session.onSubscribed = () {
+      unawaited(_introduce(session));
     };
     _logger('connecting to ${vm.vmName.isNotEmpty ? vm.vmName : vm.vmId}');
     _setState(ConnectionState.connecting, 'connecting to your Muse…');
@@ -381,6 +411,21 @@ class GadgetService {
         : DateTime.now().difference(registeredAt).inMilliseconds / 1000;
     _logger('session ended: ${outcome.name}');
     return (outcome, lasted);
+  }
+
+  /// Ask the Muse to draw its character. Pocket does this once the session
+  /// is registered; without it a successful connection never shows an avatar.
+  /// Retried on the next session when the post is not accepted.
+  Future<void> _introduce(LinkSession session) async {
+    if (_introSent || !identical(_current, session)) return;
+    if (session.registeredAt == null) return;
+    final result = await session.sendChat(companionIntroMessage());
+    if (result['ok'] == true && identical(_current, session)) {
+      _introSent = true;
+      _logger('asked the Muse for its character');
+    } else if (identical(_current, session)) {
+      _logger('character intro was not accepted: ${result['error'] ?? result['status']}');
+    }
   }
 
   /// Return current pairing, rotating tokens first if they are due.

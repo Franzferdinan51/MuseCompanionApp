@@ -12,21 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Outgoing message history for the Message screen.
+// Message history for the Message screen.
 //
-// The link protocol carries device-to-Muse chat only; the Muse answers
-// through display commands, not chat messages. So this history is
-// honestly one-sided: what this device sent, when, and whether the
-// send was acknowledged. It lives for the app session and never touches
-// the network itself — the screen drives `GadgetService.sendChat`.
+// What this phone sends is recorded here, and so are the assistant
+// replies that arrive on `/chat/subscribe` (`delta.text_append` and
+// `delta.message_done`). The screen drives `GadgetService.sendChat`;
+// this class never touches the network itself.
 
 import 'dart:async';
 
-/// Delivery state of one outgoing message.
+/// Delivery state of one message.
 enum ChatStatus {
   sending,
   sent,
   failed,
+}
+
+/// Who wrote the bubble.
+enum ChatRole {
+  user,
+  assistant,
 }
 
 class ChatMessage {
@@ -36,13 +41,21 @@ class ChatMessage {
     required this.sentAt,
     required this.status,
     this.error = '',
+    this.role = ChatRole.user,
+    this.streaming = false,
+    this.serverId,
   });
 
   final int id;
-  final String text;
+  String text;
   final DateTime sentAt;
   ChatStatus status;
   String error;
+  final ChatRole role;
+  bool streaming;
+
+  /// Muse message id, so streamed deltas land on the same bubble.
+  String? serverId;
 }
 
 /// Session-scoped outgoing messages, oldest first, bounded in memory.
@@ -54,6 +67,13 @@ class ChatHistory {
   final StreamController<void> _changes =
       StreamController<void>.broadcast();
   int _nextId = 1;
+  String _activity = '';
+
+  /// Spoken when an assistant reply finishes.
+  void Function(String text)? onAssistantDone;
+
+  /// Short Muse activity label from `agent.status`, or empty.
+  String get activity => _activity;
 
   /// Fires on every add or status change.
   Stream<void> get stream => _changes.stream;
@@ -69,9 +89,7 @@ class ChatHistory {
       status: ChatStatus.sending,
     );
     _messages.add(message);
-    while (_messages.length > maxMessages) {
-      _messages.removeAt(0);
-    }
+    _trim();
     _emit();
     return message.id;
   }
@@ -102,6 +120,100 @@ class ChatHistory {
     message.error = '';
     _emit();
   }
+
+  /// Fold one `/chat/subscribe` event into the history.
+  void applyServerEvent(String name, Map<String, Object?> payload) {
+    final role = _text(payload['role']) ?? _text(payload['author']);
+    if (role == 'user' || role == 'human') return;
+    if (name == 'agent.status' || name == 'task.status') {
+      final code = _text(payload['activity_code']) ?? _text(payload['status']);
+      _activity = code ?? '';
+      _emit();
+      return;
+    }
+    final serverId = _text(payload['message_id']) ??
+        _text(payload['id']) ??
+        'assistant';
+    if (name == 'delta.message_start') {
+      _beginAssistant(serverId);
+    } else if (name == 'delta.text_append') {
+      final text = _text(payload['text']);
+      if (text != null && text.isNotEmpty) _appendAssistant(serverId, text);
+    } else if (name == 'delta.message_done' || name == 'message.assistant') {
+      final full = _text(payload['display_text']) ??
+          _text(payload['content']) ??
+          _text(payload['text']);
+      _finishAssistant(serverId, full);
+    }
+  }
+
+  void _beginAssistant(String serverId) {
+    if (_byServer(serverId) != null) return;
+    _messages.add(ChatMessage(
+      id: _nextId++,
+      text: '',
+      sentAt: DateTime.now(),
+      status: ChatStatus.sending,
+      role: ChatRole.assistant,
+      streaming: true,
+      serverId: serverId,
+    ));
+    _trim();
+    _emit();
+  }
+
+  void _appendAssistant(String serverId, String chunk) {
+    final message = _byServer(serverId) ?? _createAssistant(serverId);
+    message.text = message.text + chunk;
+    message.streaming = true;
+    message.status = ChatStatus.sending;
+    _emit();
+  }
+
+  void _finishAssistant(String serverId, String? full) {
+    final message = _byServer(serverId) ?? _createAssistant(serverId);
+    if (full != null && full.length >= message.text.length) {
+      message.text = full;
+    }
+    final finishedNow = message.streaming || message.status != ChatStatus.sent;
+    message.streaming = false;
+    message.status = ChatStatus.sent;
+    _emit();
+    if (finishedNow && message.text.trim().isNotEmpty) {
+      onAssistantDone?.call(message.text);
+    }
+  }
+
+  ChatMessage _createAssistant(String serverId) {
+    final message = ChatMessage(
+      id: _nextId++,
+      text: '',
+      sentAt: DateTime.now(),
+      status: ChatStatus.sending,
+      role: ChatRole.assistant,
+      streaming: true,
+      serverId: serverId,
+    );
+    _messages.add(message);
+    _trim();
+    return message;
+  }
+
+  ChatMessage? _byServer(String serverId) {
+    for (final message in _messages) {
+      if (message.serverId == serverId) return message;
+    }
+    return null;
+  }
+
+  void _trim() {
+    while (_messages.length > maxMessages) {
+      _messages.removeAt(0);
+    }
+  }
+
+  String? _text(Object? value) =>
+      value is String && value.isNotEmpty ? value : null;
 
   ChatMessage? _find(int id) {
     for (final message in _messages) {

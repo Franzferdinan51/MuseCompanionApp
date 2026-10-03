@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// The settings surface: color theme and keep-screen-on. Values load from
-// SettingsStore on entry and are persisted (and pushed to the presentation
-// state) as the user changes them. The same preferences are writable by the
-// Muse through `companion.set_display`.
+// The settings surface: color theme, keep-screen-on, spoken replies, and
+// the opt-in gates for real calls and texts. Values load from SettingsStore
+// on entry and are persisted (and pushed to the presentation state) as the
+// user changes them. Theme, keep-screen-on and spoken replies are also
+// writable by the Muse through `companion.set_display`. Calls and texts are
+// not: only this screen can turn those on.
 
 import 'dart:async';
 
@@ -23,6 +25,7 @@ import 'package:flutter/material.dart' hide ConnectionState;
 
 import '../app/foreground.dart';
 import '../app/model.dart';
+import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import 'diagnostics_screen.dart';
 import 'pairing_screen.dart';
@@ -356,9 +359,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Speak replies',
+            child: Row(
+              children: [
+                const Icon(Icons.record_voice_over_outlined),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Read Muse replies aloud on this phone',
+                  ),
+                ),
+                Switch(
+                  value: _settings.speakReplies,
+                  onChanged: (v) =>
+                      _commit(_settings.copyWith(speakReplies: v)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Phone actions',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your Muse can open the dialer, the message composer, '
+                  'apps, and the camera without these. Placing a call or '
+                  'sending a text directly stays off until you turn it on.',
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Allow Muse to place calls'),
+                  value: _settings.allowCalls,
+                  onChanged: (v) =>
+                      _commit(_settings.copyWith(allowCalls: v)),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Allow Muse to send texts'),
+                  value: _settings.allowSendSms,
+                  onChanged: (v) =>
+                      _commit(_settings.copyWith(allowSendSms: v)),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _openNotificationAccess,
+                  icon: const Icon(Icons.notifications_outlined),
+                  label: const Text('Notification access'),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openNotificationAccess() async {
+    try {
+      await AppScope.of(context).phone.openNotificationAccess();
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
   }
 }
 

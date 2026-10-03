@@ -32,10 +32,12 @@ The commands it drives:
 | Command | Purpose |
 | --- | --- |
 | `companion.set_status` / `pocket.set_status` | Set the Muse's status text (≤ 4000 chars). |
-| `companion.set_display` | Update display settings on the device. |
+| `companion.set_display` | Theme, keep-screen-on, and whether replies are spoken. |
 | `display.draw_url` | Draw an image fetched from a URL onto the display. |
-| `display.show_animation` | Show an animation on the display. |
+| `display.show_animation` | Return to the neutral placeholder. |
 | `device.health` | Read the device's battery level. |
+| `vision.capture` / `voice.listen` | Post a camera photo or a voice note into chat. |
+| `phone.*` | Open links and apps, dial, message, notifications, location, and the rest of the phone command set. Direct calls and texts require the Settings toggles. |
 
 ---
 

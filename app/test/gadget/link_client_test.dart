@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:muse_companion/src/gadget/chat_events.dart';
 import 'package:muse_companion/src/gadget/envelope.dart';
 import 'package:muse_companion/src/gadget/framing.dart';
 import 'package:muse_companion/src/gadget/link_client.dart';
@@ -89,19 +90,25 @@ class _FakeVm {
           final assembled = _decoder.decode(plain);
           if (assembled == null) continue;
           final frame = decodeRequestEnvelope(assembled);
-          if (frame.kind == ServiceFrameKind.request &&
-              (frame.value! as ApplicationRequest).path == identityPath) {
-            try {
-              await _answerIdentity(frame);
-            } on StateError {
-              // The test closed the socket mid-answer; done.
-              break;
+          if (frame.kind == ServiceFrameKind.request) {
+            final path = (frame.value! as ApplicationRequest).path;
+            if (path == identityPath || path == chatSubscribePath) {
+              try {
+                if (path == identityPath) {
+                  await _answerIdentity(frame);
+                } else {
+                  await _ackSubscribe(frame);
+                }
+              } on StateError {
+                // The test closed the socket mid-answer; done.
+                break;
+              }
+              continue;
             }
-          } else {
-            _frameQueue.add(frame);
-            _frameWaiter?.complete();
-            _frameWaiter = null;
           }
+          _frameQueue.add(frame);
+          _frameWaiter?.complete();
+          _frameWaiter = null;
         }
       } catch (_) {
         // Socket closed; the queue ends with it.
@@ -140,6 +147,13 @@ class _FakeVm {
         return messages.first;
       }
     }
+  }
+
+  /// Keep the reply stream open. The device opens it right after register.
+  Future<void> _ackSubscribe(ServiceFrame frame) async {
+    await sendFrame(ServiceFrame.response(
+        frame.streamId,
+        const ApplicationResponse(status: 200, endBody: false)));
   }
 
   Future<void> _answerIdentity(ServiceFrame frame) async {
@@ -342,6 +356,7 @@ void main() {
       expect(chat.endBody, isTrue);
       expect(json.decode(utf8.decode(chat.body!)), {
         'message': 'porch light on',
+        'output_modality': 'text',
         'device_id': 'homelink-abcdef',
         'session_id': 'side-1',
       });

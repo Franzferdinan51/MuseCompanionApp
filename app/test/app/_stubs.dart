@@ -44,9 +44,16 @@ class CompanionDisplayStub implements CompanionDisplay {
   }
 
   @override
-  Future<Map<String, Object?>> setDisplay(
-      {String? theme, bool? keepScreenOn}) async {
-    lastSetDisplay = {'theme': theme, 'keep_screen_on': keepScreenOn};
+  Future<Map<String, Object?>> setDisplay({
+    String? theme,
+    bool? keepScreenOn,
+    bool? speakReplies,
+  }) async {
+    lastSetDisplay = {
+      'theme': theme,
+      'keep_screen_on': keepScreenOn,
+      'speak_replies': speakReplies,
+    };
     return lastSetDisplay!;
   }
 

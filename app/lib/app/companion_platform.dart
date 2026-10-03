@@ -67,6 +67,9 @@ class AppCompanionDisplay implements CompanionDisplay {
 
   @override
   Future<ImageDrawResult> drawImageFromUrl(String url) async {
+    if (url.startsWith('data:')) {
+      return _drawBytes(_decodeDataUrl(url), fromCache: false);
+    }
     final client = _client ?? http.Client();
     final owned = _client == null;
     try {
@@ -97,51 +100,90 @@ class AppCompanionDisplay implements CompanionDisplay {
       // GLB 3D models are not images: pass them through to the 3D
       // viewer instead of decoding them. Same bytes-in pipeline, no
       // format restriction — .glb URLs work like image URLs.
-      if (isGlbModel(bytes)) {
-        listener.onCharacter(bytes, 0, 0);
-        return ImageDrawResult.ok(
-            width: 0, height: 0, bytes: bytes.length, fromCache: fromCache);
-      }
-      int width;
-      int height;
-      try {
-        final image = await _decode(bytes).timeout(
-            const Duration(seconds: 15));
-        width = image.width;
-        height = image.height;
-        image.dispose();
-      } on TimeoutException {
-        return const ImageDrawResult.failed('image decode timed out');
-      } catch (_) {
-        return const ImageDrawResult.failed(
-            'image could not be decoded');
-      }
-      listener.onCharacter(bytes, width, height);
-      return ImageDrawResult.ok(
-          width: width,
-          height: height,
-          bytes: bytes.length,
-          fromCache: fromCache);
+      return _drawBytes(bytes, fromCache: fromCache);
     } finally {
       if (owned) client.close();
     }
   }
 
-  @override
-  Future<void> showPlaceholder() async {
-    listener.onPlaceholder();
+  Future<ImageDrawResult> _drawBytes(Uint8List? bytes,
+      {required bool fromCache}) async {
+    if (bytes == null || bytes.isEmpty) {
+      return const ImageDrawResult.failed('image could not be decoded');
+    }
+    if (bytes.length > maxCharacterBytes) {
+      return ImageDrawResult.failed('image too large (${bytes.length} bytes)');
+    }
+    if (isGlbModel(bytes)) {
+      listener.onCharacter(bytes, 0, 0);
+      await _rememberCharacter(bytes);
+      return ImageDrawResult.ok(
+          width: 0, height: 0, bytes: bytes.length, fromCache: fromCache);
+    }
+    int width;
+    int height;
+    try {
+      final image = await _decode(bytes).timeout(const Duration(seconds: 15));
+      width = image.width;
+      height = image.height;
+      image.dispose();
+    } on TimeoutException {
+      return const ImageDrawResult.failed('image decode timed out');
+    } catch (_) {
+      return const ImageDrawResult.failed('image could not be decoded');
+    }
+    listener.onCharacter(bytes, width, height);
+    await _rememberCharacter(bytes);
+    return ImageDrawResult.ok(
+        width: width,
+        height: height,
+        bytes: bytes.length,
+        fromCache: fromCache);
   }
 
   @override
-  Future<Map<String, Object?>> setDisplay(
-      {String? theme, bool? keepScreenOn}) async {
+  Future<void> showPlaceholder() async {
+    listener.onPlaceholder();
+    try {
+      final file = File(await _lastCharacterPath());
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // The placeholder still shows if the cache file cannot be removed.
+    }
+  }
+
+  /// Last character the Muse sent, so a restart does not sit on the
+  /// placeholder until the next draw.
+  static Future<Uint8List?> loadCachedCharacter() async {
+    try {
+      final file = File(await _lastCharacterPath());
+      if (!await file.exists()) return null;
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty || bytes.length > maxCharacterBytes) return null;
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, Object?>> setDisplay({
+    String? theme,
+    bool? keepScreenOn,
+    bool? speakReplies,
+  }) async {
     final next = _settings.loadSettings().copyWith(
           theme: theme,
           keepScreenOn: keepScreenOn,
+          speakReplies: speakReplies,
         );
     await _settings.saveSettings(next);
     listener.onSettings(next);
-    return {'theme': next.theme, 'keep_screen_on': next.keepScreenOn};
+    return {
+      'theme': next.theme,
+      'keep_screen_on': next.keepScreenOn,
+      'speak_replies': next.speakReplies,
+    };
   }
 
   @override
@@ -150,7 +192,35 @@ class AppCompanionDisplay implements CompanionDisplay {
     return {
       'theme': current.theme,
       'keep_screen_on': current.keepScreenOn,
+      'speak_replies': current.speakReplies,
     };
+  }
+
+  Uint8List? _decodeDataUrl(String url) {
+    final comma = url.indexOf(',');
+    if (comma < 0 || !url.substring(0, comma).contains(';base64')) {
+      return null;
+    }
+    try {
+      return base64Decode(url.substring(comma + 1));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> _rememberCharacter(Uint8List bytes) async {
+    try {
+      final file = File(await _lastCharacterPath());
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes, flush: true);
+    } catch (_) {
+      // A missing cache must not fail the draw the user is already seeing.
+    }
+  }
+
+  static Future<String> _lastCharacterPath() async {
+    final dir = await getApplicationSupportDirectory();
+    return '${dir.path}/muse_character_last';
   }
 
   Future<String> _cachePath(String url) async {

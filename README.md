@@ -22,19 +22,26 @@ Android first; iOS, macOS and Windows follow from the same Flutter codebase.
 - **Live status captions** — short Unicode updates under the character
   whenever your Muse's activity changes.
 - **Chat from the device** — send messages to your Muse as coming from the
-  companion (main chat or a side chat).
+  companion (main chat or a side chat). Replies stream back on
+  `/chat/subscribe` and show up in the thread. Hold the mic for a voice
+  note, or show the camera so your Muse can see the photo.
 - **Muse-driven display** — your Muse can update the caption, swap the
   character, clear back to the placeholder, and adjust theme preferences
   through gadget commands; a health command reports battery and device info.
+- **Phone actions** — your Muse can open links and apps, set an alarm, read
+  notifications (after you grant access), and use the camera and mic. The
+  dialer and message composer open without extra toggles. Placing a call or
+  sending a text directly stays off until you turn it on in Settings.
 
 ## Status
 
-Under active development. The gadget protocol core (Noise XX session,
-BLE pairing v5, link client, connection loop with token rotation) is
-implemented in pure Dart with 160+ tests, including a byte-for-byte replay
-of the official pairing vectors and a Noise handshake transcript verified
-against the reference Python SDK. The Android BLE peripheral, pairing
-wizard, and release builds are being finished next.
+Version 0.2.0. The gadget protocol core (Noise XX session, BLE pairing v5,
+link client, connection loop with token rotation) is implemented in pure
+Dart, including a byte-for-byte replay of the official pairing vectors and
+a Noise handshake transcript verified against the reference Python SDK.
+The Android app pairs, keeps the link in a foreground service, shows the
+character (including a cached last image and GLB avatars), streams chat
+replies, and exposes voice, vision, and phone commands.
 
 ## Getting started
 
@@ -105,14 +112,21 @@ Commands registered with `link.register`:
 | `display.show_animation` | Back to the neutral placeholder |
 | `companion.set_status` | Unicode status caption |
 | `pocket.set_status` | Alias for Muses that learned Pocket |
-| `companion.set_display` | Theme (`light`/`dark`/`system`), keep-screen-on |
+| `companion.set_display` | Theme (`light`/`dark`/`system`), keep-screen-on, speak replies |
 | `device.health` | Battery, charging, model, OS, app version |
+| `vision.capture` | Take a photo and post it into chat so the Muse can see it |
+| `voice.listen` | Record a short voice note and post it into chat |
+| `phone.open_url`, `phone.launch_app`, `phone.list_apps` | Open a link or an installed app, or list launchable apps |
+| `phone.clipboard`, `phone.flashlight`, `phone.volume`, `phone.brightness` | Clipboard, torch, media volume, screen brightness |
+| `phone.location` | Last known location, then one fresh update |
+| `phone.notify`, `phone.alarm` | Show a notification, or open the alarm clock |
+| `phone.dial`, `phone.call` | Open the dialer. `phone.call` places the call only if Settings allows it |
+| `phone.sms`, `phone.messages` | Open the composer, or send directly if Settings allows it; read recent inbox texts |
+| `phone.notifications`, `phone.contacts`, `phone.events` | Recent notifications, contact search, upcoming calendar events |
+| `phone.share`, `phone.speak`, `phone.media`, `phone.capabilities` | Share sheet, speak text, media keys, report what this phone can do |
 
 ## Roadmap
 
-- Android BLE peripheral (advertising + GATT server) and pairing wizard
-- Chat UI, status history, diagnostics screen
-- Foreground service for a persistent connection
 - Signed release APK/AAB on GitHub Releases
 - iOS (CoreBluetooth peripheral), then macOS and Windows
 

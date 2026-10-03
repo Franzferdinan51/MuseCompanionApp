@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:muse_companion/src/gadget/chat_events.dart';
 import 'package:muse_companion/src/gadget/envelope.dart';
 import 'package:muse_companion/src/gadget/framing.dart';
 import 'package:muse_companion/src/gadget/identity.dart';
@@ -148,13 +149,9 @@ class _VmSide {
         final request = frame.value! as ApplicationRequest;
         if (request.path == identityPath) {
           identitySeen = true;
-          await sendFrame(ServiceFrame.response(
-              frame.streamId,
-              ApplicationResponse(
-                  status: 200,
-                  body: Uint8List.fromList(
-                      '{"result":{"name":"VM Muse"}}'.codeUnits),
-                  endBody: true)));
+          await _answerIdentity(frame);
+        } else if (request.path == chatSubscribePath) {
+          await _ackSubscribe(frame);
         }
         continue;
       }
@@ -170,12 +167,26 @@ class _VmSide {
   /// control stream; it races link.register, so it may arrive after it.
   Future<void> settleIdentity() async {
     if (identitySeen) return;
-    final frame = await nextFrame();
-    if (frame.kind != ServiceFrameKind.request ||
-        (frame.value! as ApplicationRequest).path != identityPath) {
-      throw StateError('expected the identity request, got $frame');
+    while (true) {
+      final frame = await nextFrame();
+      if (frame.kind != ServiceFrameKind.request) {
+        throw StateError('expected the identity request, got $frame');
+      }
+      final request = frame.value! as ApplicationRequest;
+      if (request.path == chatSubscribePath) {
+        await _ackSubscribe(frame);
+        continue;
+      }
+      if (request.path != identityPath) {
+        throw StateError('expected the identity request, got ${request.path}');
+      }
+      identitySeen = true;
+      await _answerIdentity(frame);
+      return;
     }
-    identitySeen = true;
+  }
+
+  Future<void> _answerIdentity(ServiceFrame frame) async {
     await sendFrame(ServiceFrame.response(
         frame.streamId,
         ApplicationResponse(
@@ -183,6 +194,12 @@ class _VmSide {
             body: Uint8List.fromList(
                 '{"result":{"name":"VM Muse"}}'.codeUnits),
             endBody: true)));
+  }
+
+  Future<void> _ackSubscribe(ServiceFrame frame) async {
+    await sendFrame(ServiceFrame.response(
+        frame.streamId,
+        const ApplicationResponse(status: 200, endBody: false)));
   }
 
   Future<void> sendFrame(ServiceFrame frame) async {
