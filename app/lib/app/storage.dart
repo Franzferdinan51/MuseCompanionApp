@@ -20,6 +20,7 @@
 // last caption are non-secret and live in shared_preferences.
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:muse_companion/src/gadget/identity.dart';
@@ -126,6 +127,12 @@ class SettingsStore {
       'speech_volume': _prefs.getInt('${_settingsPrefix}speech_volume'),
       'speech_voice': _prefs.getString('${_settingsPrefix}speech_voice'),
       'camera_facing': _prefs.getString('${_settingsPrefix}camera_facing'),
+      'auto_capture_enabled':
+          _prefs.getBool('${_settingsPrefix}auto_capture_enabled') ?? false,
+      'auto_capture_interval_minutes':
+          _prefs.getInt('${_settingsPrefix}auto_capture_interval_minutes') ?? 60,
+      'adb_info_sharing_enabled':
+          _prefs.getBool('${_settingsPrefix}adb_info_sharing_enabled') ?? false,
     });
   }
 
@@ -156,6 +163,35 @@ class SettingsStore {
       '${_settingsPrefix}camera_facing',
       settings.cameraFacing,
     );
+    await _prefs.setBool(
+      '${_settingsPrefix}auto_capture_enabled',
+      settings.autoCaptureEnabled,
+    );
+    await _prefs.setInt(
+      '${_settingsPrefix}auto_capture_interval_minutes',
+      settings.autoCaptureIntervalMinutes,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}adb_info_sharing_enabled',
+      settings.adbInfoSharingEnabled,
+    );
+    _notifyListeners();
+  }
+
+  final List<VoidCallback> _listeners = [];
+
+  /// Register a callback for settings changes.
+  void addListener(VoidCallback listener) => _listeners.add(listener);
+
+  /// Remove a settings change callback.
+  void removeListener(VoidCallback listener) => _listeners.remove(listener);
+
+  void _notifyListeners() {
+    for (final l in List<VoidCallback>.from(_listeners)) {
+      try {
+        l();
+      } catch (_) {}
+    }
   }
 
   String loadStatus() => _prefs.getString(_statusKey) ?? '';

@@ -101,6 +101,9 @@ class CompanionSettings {
     this.speechVolume = 80,
     this.speechVoice = '',
     this.cameraFacing = 'back',
+    this.autoCaptureEnabled = false,
+    this.autoCaptureIntervalMinutes = 60,
+    this.adbInfoSharingEnabled = false,
   });
 
   /// One of `light`, `dark` or `system`.
@@ -130,6 +133,18 @@ class CompanionSettings {
   /// when Muse does not name a camera. Muse cannot change the saved choice.
   final String cameraFacing;
 
+  /// Automatically capture and post photos on a schedule. When enabled,
+  /// the app takes a photo with the selected camera every
+  /// [autoCaptureIntervalMinutes] and posts it to the Muse chat.
+  final bool autoCaptureEnabled;
+
+  /// Minutes between automatic captures. 15, 30, 60, 120, or 240.
+  final int autoCaptureIntervalMinutes;
+
+  /// Share ADB/wireless-ADB connection info with Muse via chat so remote
+  /// troubleshooting is possible. Includes pairing status and port.
+  final bool adbInfoSharingEnabled;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -139,6 +154,9 @@ class CompanionSettings {
     int? speechVolume,
     String? speechVoice,
     String? cameraFacing,
+    bool? autoCaptureEnabled,
+    int? autoCaptureIntervalMinutes,
+    bool? adbInfoSharingEnabled,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -149,6 +167,11 @@ class CompanionSettings {
       speechVolume: speechVolume ?? this.speechVolume,
       speechVoice: speechVoice ?? this.speechVoice,
       cameraFacing: cameraFacing ?? this.cameraFacing,
+      autoCaptureEnabled: autoCaptureEnabled ?? this.autoCaptureEnabled,
+      autoCaptureIntervalMinutes:
+          autoCaptureIntervalMinutes ?? this.autoCaptureIntervalMinutes,
+      adbInfoSharingEnabled:
+          adbInfoSharingEnabled ?? this.adbInfoSharingEnabled,
     );
   }
 
@@ -166,6 +189,9 @@ class CompanionSettings {
     'speech_volume': speechVolume.clamp(0, 100),
     'speech_voice': speechVoice,
     'camera_facing': cameraFacing,
+    'auto_capture_enabled': autoCaptureEnabled,
+    'auto_capture_interval_minutes': autoCaptureIntervalMinutes,
+    'adb_info_sharing_enabled': adbInfoSharingEnabled,
   };
 
   static CompanionSettings fromMap(Map<String, Object?> map) {
@@ -181,11 +207,21 @@ class CompanionSettings {
       speechVolume: _speechVolume(map['speech_volume']),
       speechVoice: _speechVoice(map['speech_voice']),
       cameraFacing: _cameraFacing(map['camera_facing']),
+      autoCaptureEnabled: map['auto_capture_enabled'] == true,
+      autoCaptureIntervalMinutes:
+          _captureInterval(map['auto_capture_interval_minutes']),
+      adbInfoSharingEnabled: map['adb_info_sharing_enabled'] == true,
     );
   }
 
   static String _cameraFacing(Object? value) =>
       value == 'front' ? 'front' : 'back';
+
+  static int _captureInterval(Object? value) {
+    const allowed = [15, 30, 60, 120, 240];
+    if (value is int && allowed.contains(value)) return value;
+    return 60;
+  }
 
   /// Voice names are engine ids such as `en-us-x-iog-network`. Anything
   /// else is treated as automatic so a bad stored value cannot be applied.

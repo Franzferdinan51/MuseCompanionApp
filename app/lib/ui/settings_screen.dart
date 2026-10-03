@@ -711,6 +711,68 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 16),
           _SettingCard(
+            title: 'Auto-capture',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Automatically take photos and post them to the Muse chat. '
+                  'Works without remote commands.',
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  title: const Text('Enable auto-capture'),
+                  value: _settings.autoCaptureEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(autoCaptureEnabled: v),
+                  ),
+                ),
+                if (_settings.autoCaptureEnabled) ...[
+                  const SizedBox(height: 8),
+                  const Text('Photo interval'),
+                  const SizedBox(height: 8),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 15, label: Text('15m')),
+                      ButtonSegment(value: 30, label: Text('30m')),
+                      ButtonSegment(value: 60, label: Text('1h')),
+                      ButtonSegment(value: 120, label: Text('2h')),
+                      ButtonSegment(value: 240, label: Text('4h')),
+                    ],
+                    selected: {_settings.autoCaptureIntervalMinutes},
+                    onSelectionChanged: (next) => _commit(
+                      _settings.copyWith(
+                        autoCaptureIntervalMinutes: next.first,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'ADB info sharing',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Share ADB/wireless-ADB connection info with Muse via chat '
+                  'so remote troubleshooting is possible.',
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  title: const Text('Share ADB info'),
+                  value: _settings.adbInfoSharingEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(adbInfoSharingEnabled: v),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
             title: 'Screen control',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

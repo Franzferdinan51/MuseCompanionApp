@@ -99,6 +99,14 @@ Future<void> main() async {
   final phone = const PhoneBridge();
   await phone.applySpeechVoice(presentation.settings.speechVoice);
   final poster = _ChatPoster();
+  final autoCapture = _AutoCaptureScheduler(
+    settings: settings,
+    phone: phone,
+    poster: poster,
+  );
+  autoCapture.sync();
+  // Re-sync when settings change (presentation notifies via settings).
+  settings.addListener(autoCapture.sync);
   final executor = CompanionExecutor(
     display: display,
     health: health,
@@ -249,6 +257,73 @@ Future<void> _speakReply(
 }
 
 /// Lets the executor post a photo or voice note before the service exists.
+
+/// Automatically captures photos on a schedule and posts them to the Muse
+/// chat. Works without device.invoke - the app pushes photos itself via
+/// sendChat. Controlled by CompanionSettings.autoCaptureEnabled and
+/// autoCaptureIntervalMinutes.
+class _AutoCaptureScheduler {
+  _AutoCaptureScheduler({
+    required SettingsStore settings,
+    required PhoneBridge phone,
+    required _ChatPoster poster,
+  })  : _settings = settings,
+        _phone = phone,
+        _poster = poster;
+
+  final SettingsStore _settings;
+  final PhoneBridge _phone;
+  final _ChatPoster _poster;
+  Timer? _timer;
+
+  /// Start or restart the scheduler based on current settings.
+  void sync() {
+    _timer?.cancel();
+    _timer = null;
+    final s = _settings.loadSettings();
+    if (!s.autoCaptureEnabled) return;
+    final minutes = s.autoCaptureIntervalMinutes;
+    _timer = Timer.periodic(Duration(minutes: minutes), (_) => _capture());
+    debugPrint('[muse] auto-capture every $minutes minutes');
+  }
+
+  void dispose() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  Future<void> _capture() async {
+    try {
+      final s = _settings.loadSettings();
+      if (!s.autoCaptureEnabled) return;
+      final jpeg = await _phone.captureJpeg(facing: s.cameraFacing);
+      final now = DateTime.now();
+      final stamp =
+          '${now.year}-${_two(now.month)}-${_two(now.day)} '
+          '${_two(now.hour)}:${_two(now.minute)}';
+      var message = 'Auto-capture $stamp (${s.cameraFacing} camera)';
+      // Include ADB info if sharing is enabled.
+      if (s.adbInfoSharingEnabled) {
+        try {
+          final info = await _phone.adbInfo();
+          final adbOn = info['adb_enabled'] == true;
+          final model = info['model'] ?? 'unknown';
+          message += '\nADB: ${adbOn ? 'enabled' : 'disabled'} ($model)';
+        } catch (_) {}
+      }
+      await _poster.send(
+        message,
+        [ChatAttachment(mimeType: 'image/jpeg', filename: 'auto-capture.jpg', bytes: jpeg)],
+      );
+      debugPrint('[muse] auto-capture posted');
+    } catch (e) {
+      debugPrint('[muse] auto-capture failed: $e');
+    }
+  }
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+}
+
 class _ChatPoster {
   GadgetService? _service;
 

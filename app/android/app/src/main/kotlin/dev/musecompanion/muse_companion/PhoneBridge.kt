@@ -104,6 +104,7 @@ class PhoneBridge(private val activity: MainActivity) {
             try {
                 when (call.method) {
                     "captureJpeg" -> captureJpeg(result, call.argument<String>("facing") ?: "back")
+                    "adbInfo" -> adbInfo(result)
                     "startRecording" -> {
                         startRecording()
                         result.success(null)
@@ -155,6 +156,25 @@ class PhoneBridge(private val activity: MainActivity) {
             } catch (e: Exception) {
                 result.error("phone", e.message ?: e.javaClass.simpleName, null)
             }
+        }
+    }
+
+    private fun adbInfo(result: MethodChannel.Result) {
+        try {
+            val resolver = context.contentResolver
+            val adbEnabled = android.provider.Settings.Global.getInt(
+                resolver, android.provider.Settings.Global.ADB_ENABLED, 0
+            ) == 1
+            // Wireless debugging port is not directly readable without root.
+            // We report what we can: ADB enabled state and device model.
+            val info = mapOf(
+                "adb_enabled" to adbEnabled,
+                "model" to android.os.Build.MODEL,
+                "serial" to try { android.os.Build.getSerial() } catch (_: Exception) { "unknown" },
+            )
+            result.success(info)
+        } catch (e: Exception) {
+            result.error("adb_info_failed", e.message, null)
         }
     }
 

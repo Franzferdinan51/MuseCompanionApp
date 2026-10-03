@@ -103,6 +103,18 @@ class PhoneBridge implements PhoneActions {
     return bytes;
   }
 
+  /// Get ADB connection info for remote troubleshooting.
+  /// Returns a map with adb_enabled, model, and serial.
+  Future<Map<String, Object?>> adbInfo() async {
+    try {
+      final info = await _call<Map<Object?, Object?>>('adbInfo', {});
+      if (info == null) return {'error': 'no info returned'};
+      return info.map((k, v) => MapEntry(k.toString(), v));
+    } catch (e) {
+      return {'error': '$e'};
+    }
+  }
+
   @override
   Future<Uint8List> recordWav(int seconds) async {
     await _ensure(Permission.microphone, 'Microphone');
