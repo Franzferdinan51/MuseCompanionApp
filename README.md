@@ -30,8 +30,12 @@ same session code is what a later iOS or desktop port would use.
   a picture arrives, the stage shows an original round face.
 - **Tap to pet, hold to talk.** A short tap pets the portrait. Holding it
   for about 220 ms starts a voice note, and release posts it. The chat
-  screen's mic is hold-to-record only. This is a voice note in the Muse
-  chat, not a phone call. The header moon sleeps the screen locally.
+  screen's mic is hold-to-record only, and `voice.listen` records a timed
+  note. Each of those is a voice turn: the message may be empty or a short
+  prompt, the file is `audio/wav` named `voice_note.wav`, and
+  `output_modality` is `voice`. Typed messages and camera photos stay
+  `output_modality` `text`. This is a voice note in the Muse chat, not a
+  phone call. The header moon sleeps the screen locally.
 - **Captions and a speaker.** A reply is drawn under the character while it
   streams, then spoken. Settings has a speech-volume dial and a voice
   picker. Spoken replies use the clearest installed voice unless you pick
@@ -42,9 +46,12 @@ same session code is what a later iOS or desktop port would use.
   show the character, the caption, link state, and the command channel:
   invokes seen, results sent, the last command, and the recent link log.
 - **Phone commands.** Your Muse can open links and apps, set an alarm or a
-  timer, read notifications after you grant access, and use the camera and
-  microphone. Settings chooses the back or front camera. Ringer, Do Not
-  Disturb, rotation, vibration, and a short screen wake are included.
+  timer, and read notifications after you grant access. The microphone
+  posts voice notes as voice turns. Settings chooses the back or front
+  camera, and the camera button posts a photo as a text turn. Screen
+  control is an accessibility service you turn on; screenshots, reading
+  the screen, and taps need it. Ringer, Do Not Disturb, rotation,
+  vibration, and a short screen wake are included.
   Wi-Fi, Bluetooth, NFC, mobile data, and airplane mode open the system
   panel rather than toggling silently. The dialer and the message composer
   open without extra toggles. Placing a call or sending a text directly
@@ -54,11 +61,14 @@ same session code is what a later iOS or desktop port would use.
 
 ## Status
 
-Version 0.2.6. The app pairs, keeps the link up, answers `link.invoke` and
-Hatch `device.invoke` (including a command that arrives on another stream or
-as bare JSON) with `link.result`, streams chat replies, draws the Muse's
-picture sharply inside a fixed round stage, and exposes voice, vision,
-screen control, and phone commands.
+Version 0.2.7. The app pairs, keeps the link up, and answers with
+`link.result` when a command arrives (`link.invoke`, Hatch `device.invoke`,
+a bare command name, bare JSON, or a body chunk on another stream).
+`device.invoke` often never reaches the phone, so Muse requests such as
+`vision.capture` time out while Dashboard stays at Invokes seen 0. Chat
+replies, voice notes, the on-phone camera button, Screen control, and the
+other phone commands are in this build. The portrait is drawn sharply
+inside a fixed round stage.
 
 ## Getting started
 
@@ -85,9 +95,11 @@ Pairing:
    is asked for a character image and a status caption.
 
 If commands from Muse time out, open Dashboard. Invokes staying at 0 means
-the phone did not receive the command. Invokes climbing while results stay
-behind means the reply did not leave the phone. Logcat lines are prefixed
-with `[muse]`.
+the phone did not receive `device.invoke`. That includes `vision.capture`,
+`display.draw_url`, `companion.set_status`, and `device.health`. The camera
+button on the phone does not use that path. Invokes climbing while results
+stay behind means the reply did not leave the phone. Logcat lines are
+prefixed with `[muse]`.
 
 ## Project layout
 
@@ -144,8 +156,8 @@ Commands registered with `link.register`:
 | `pocket.set_status` | Alias for Muses that learned Pocket |
 | `companion.set_display` | Theme (`light`/`dark`/`system`), keep-screen-on, speak replies |
 | `device.health` | Battery, charging, model, OS, app version |
-| `vision.capture` | Take a photo and post it into chat so the Muse can see it |
-| `voice.listen` | Record a short voice note and post it into chat |
+| `vision.capture` | Take a photo and post it into chat. `device.invoke` often never reaches the phone, so a Muse request times out. The camera button in the app still posts a photo |
+| `voice.listen` | Record a short voice note and post it as a voice turn (`audio/wav` `voice_note.wav`, `output_modality` `voice`) |
 | `phone.open_url`, `phone.launch_app`, `phone.list_apps` | Open a link or an installed app, or list launchable apps. A query narrows the list. Opening from the background needs Screen control |
 | `phone.clipboard`, `phone.flashlight`, `phone.volume`, `phone.brightness` | Clipboard, torch, volume (music, ring, alarm, notification, or voice), screen brightness |
 | `phone.location` | Last known location, then one fresh update |
@@ -165,7 +177,7 @@ There is no shell command. The phone is controlled through this list.
 
 ## Roadmap
 
-- A Play-signed release APK/AAB. Public v0.2.6 is on GitHub Releases and is signed with the debug keystore
+- A Play-signed release APK/AAB. Public v0.2.7 is on GitHub Releases and is signed with the debug keystore
 - iOS (CoreBluetooth peripheral), then macOS and Windows
 
 ## Contributing

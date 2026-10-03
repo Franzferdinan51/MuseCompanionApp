@@ -1,6 +1,6 @@
 # Muse Companion
 
-Version 0.2.6 (versionCode 8). Android package
+Version 0.2.7 (versionCode 9). Android package
 `dev.musecompanion.muse_companion`.
 
 The phone is the Muse gadget. It pairs over Bluetooth LE, keeps a Noise
@@ -18,7 +18,11 @@ The app registers as `device_family` `companion`, `model_id` `companion-app`,
 - **Shows a pixel avatar** on the home screen. See [Avatar](#avatar).
 - **Tap the portrait to pet it. Hold it to talk.** A press shorter than
   about 220 ms is a pet. A longer hold starts listening and, on release,
-  posts a voice note. The chat screen's mic is hold-to-record only.
+  posts a voice note. The chat screen's mic is hold-to-record only, and
+  `voice.listen` records a timed note. A voice note is a voice turn: the
+  message may be empty or a short prompt, the file is `audio/wav` named
+  `voice_note.wav`, and `output_modality` is `voice`. Typed messages and
+  camera photos stay `output_modality` `text`.
 - **Captions and speech.** A reply is drawn under the character while it
   streams, then spoken. Speech is on by default. Settings has the volume
   dial (default 80) and a voice picker. Spoken replies use the clearest
@@ -26,9 +30,12 @@ The app registers as `device_family` `companion`, `model_id` `companion-app`,
   reply.
 - **Dashboard.** The heart icon shows whether commands are reaching the
   phone. See [Dashboard](#dashboard).
-- **Phone commands.** Links, apps, alarms, timers, camera, microphone,
-  clipboard, flashlight, notifications, contacts, calendar, location, and
-  the dialer. Ringer, Do Not Disturb, rotation, brightness, vibration, and
+- **Screen control.** You turn on an accessibility service named Muse
+  Companion. Screenshots, reading on-screen text, and taps, swipes, and
+  typing need it. Calls, direct texts, and a shell stay separate.
+- **Phone commands.** Links, apps, alarms, timers, the camera button, the
+  microphone, clipboard, flashlight, notifications, contacts, calendar,
+  location, and the dialer. Ringer, Do Not Disturb, rotation, brightness, vibration, and
   a short screen wake are included. Wi-Fi, Bluetooth, NFC, mobile data, and
   airplane mode open the system panel. Placing a call or sending a text
   directly stays off until you turn that on in Settings. Muse cannot grant
@@ -114,8 +121,11 @@ sends.
 
 `device.invoke` from the Muse platform often does not arrive. Muse then
 reports a timeout, and the dashboard stays at **Invokes seen 0**. That
-covers `display.draw_url`, `companion.set_status`, and `device.health` the
-same way. The app answers with `link.result` when a command does arrive, as
+covers `vision.capture`, `display.draw_url`, `companion.set_status`, and
+`device.health` the same way. A Muse camera request does not reach the
+phone on this path. The camera button in the app still takes a photo and
+posts it as a text turn. The app answers with `link.result` when a command
+does arrive, as
 `link.invoke`, `device.invoke`, a bare command name, bare JSON, or a body
 chunk on another stream.
 
@@ -135,8 +145,8 @@ survive. The dashboard counters are the record that stays.
 | `companion.set_status`, `pocket.set_status` | Set the caption. Up to 4000 characters. The stage shows a shorter wrap. |
 | `companion.set_display` | Theme, keep-screen-on, and whether replies are spoken. |
 | `device.health` | Battery percent, charging, model, OS version, and app version. |
-| `vision.capture` | Take a camera photo and post it to chat. Facing follows Settings (Back or Front) unless the command sets `facing`. |
-| `voice.listen` | Record 1–20 seconds (default 5) and post a voice note. |
+| `vision.capture` | Take a camera photo and post it to chat as a text turn. Facing follows Settings (Back or Front) unless the command sets `facing`. `device.invoke` often never reaches the phone, so a Muse request times out. The camera button does not use that path. |
+| `voice.listen` | Record 1–20 seconds (default 5) and post a voice turn (`audio/wav` `voice_note.wav`, `output_modality` `voice`). |
 | `phone.open_url` | Open an `http` or `https` URL. |
 | `phone.launch_app`, `phone.list_apps` | Open an app by package or name, or list launchable apps. A query narrows the list. Opening from the background needs Screen control. |
 | `phone.clipboard` | Read or set the clipboard. |
@@ -239,7 +249,7 @@ adb install -r build/app/outputs/flutter-apk/app-debug.apk
 
 Install the debug APK with `adb install -r`. Check the phone with
 `adb shell dumpsys package dev.musecompanion.muse_companion` and expect
-`versionName=0.2.6` and `versionCode=8`.
+`versionName=0.2.7` and `versionCode=9`.
 
 Narrower test runs:
 
@@ -272,7 +282,7 @@ MuseCompanionApp/
 │   ├── lib/
 │   ├── test/
 │   ├── android/
-│   └── pubspec.yaml     # version 0.2.6+8
+│   └── pubspec.yaml     # version 0.2.7+9
 ├── README.md
 └── LICENSE              # Apache-2.0
 ```
