@@ -41,7 +41,7 @@ import 'ui/companion_screen.dart';
 import 'ui/muse_theme.dart';
 import 'ui/scope.dart';
 
-const String _appVersion = '0.2.5';
+const String _appVersion = '0.2.6';
 
 /// Edge-to-edge, with the status and navigation bars hidden until a swipe.
 Future<void> _enterImmersive() {

@@ -1,6 +1,6 @@
 # Muse Companion
 
-Version 0.2.5 (versionCode 7). Android package
+Version 0.2.6 (versionCode 8). Android package
 `dev.musecompanion.muse_companion`.
 
 The phone is the Muse gadget. It pairs over Bluetooth LE, keeps a Noise
@@ -239,7 +239,7 @@ adb install -r build/app/outputs/flutter-apk/app-debug.apk
 
 Install the debug APK with `adb install -r`. Check the phone with
 `adb shell dumpsys package dev.musecompanion.muse_companion` and expect
-`versionName=0.2.5` and `versionCode=7`.
+`versionName=0.2.6` and `versionCode=8`.
 
 Narrower test runs:
 
@@ -272,7 +272,7 @@ MuseCompanionApp/
 │   ├── lib/
 │   ├── test/
 │   ├── android/
-│   └── pubspec.yaml     # version 0.2.5+7
+│   └── pubspec.yaml     # version 0.2.6+8
 ├── README.md
 └── LICENSE              # Apache-2.0
 ```
