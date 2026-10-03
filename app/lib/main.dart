@@ -79,13 +79,15 @@ Future<void> main() async {
       await settings.saveIntroSent(true);
     }
   } else {
-    // Fresh install: load the bundled Juno avatar as the default character.
+    // Fresh install: load the generic Muse logo as the default character.
+    // The user's personal avatar is fetched on pairing via the avatar URL
+    // mechanism (chat replies or link registration).
     try {
-      final data = await rootBundle.load('assets/juno-avatar.jpg');
+      final data = await rootBundle.load('assets/brand/juno-logo-glossy.png');
       presentation.applyCharacter(data.buffer.asUint8List());
-      debugPrint('[muse] loaded bundled Juno avatar as default');
+      debugPrint('[muse] loaded generic logo as default character');
     } catch (e) {
-      debugPrint('[muse] could not load bundled avatar: $e');
+      debugPrint('[muse] could not load default character: $e');
     }
   }
 
