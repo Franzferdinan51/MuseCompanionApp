@@ -58,4 +58,40 @@ void main() {
       isNull,
     );
   });
+
+  test('a finished reply yields the first https image url', () {
+    expect(httpsImageUrlInReply('no picture here'), isNull);
+    expect(
+      httpsImageUrlInReply('see https://example.com/help first'),
+      isNull,
+    );
+    expect(
+      httpsImageUrlInReply('http://cdn.example/a.png is not https'),
+      isNull,
+    );
+    expect(
+      httpsImageUrlInReply(
+          'portrait: https://cdn.example/me.PNG thanks'),
+      'https://cdn.example/me.PNG',
+    );
+    expect(
+      httpsImageUrlInReply(
+          '![avatar](https://cdn.example/face.webp)'),
+      'https://cdn.example/face.webp',
+    );
+    expect(
+      httpsImageUrlInReply(
+          'https://cdn.example/a.jpeg?token=abc&v=1.'),
+      'https://cdn.example/a.jpeg?token=abc&v=1',
+    );
+    expect(
+      httpsImageUrlInReply(
+          'page https://example.com/docs then https://cdn.example/a.gif'),
+      'https://cdn.example/a.gif',
+    );
+    expect(
+      httpsImageUrlInReply('<https://cdn.example/shot.jpg>'),
+      'https://cdn.example/shot.jpg',
+    );
+  });
 }

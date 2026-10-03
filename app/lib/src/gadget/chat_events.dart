@@ -212,3 +212,88 @@ String? _asImageUrl(Object? value) {
   }
   return null;
 }
+
+const List<String> _replyImageExtensions = [
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+];
+
+/// The first `https` image URL in a finished chat reply, if any.
+///
+/// `device.invoke` is not required. A reply that contains a PNG, JPEG,
+/// WebP, or GIF link is enough for the phone to download it. The path
+/// must end in that extension; a query string is kept. `http` links and
+/// ordinary web pages are ignored.
+String? httpsImageUrlInReply(String text) {
+  final lower = text.toLowerCase();
+  var from = 0;
+  while (from < lower.length) {
+    final at = lower.indexOf('https://', from);
+    if (at < 0) return null;
+    final raw = _trimUrlTail(text.substring(at, _urlEnd(text, at)));
+    final uri = Uri.tryParse(raw);
+    if (uri != null &&
+        uri.scheme == 'https' &&
+        uri.host.isNotEmpty &&
+        _isReplyImagePath(uri.path)) {
+      return raw;
+    }
+    from = at + 'https://'.length;
+  }
+  return null;
+}
+
+int _urlEnd(String text, int start) {
+  var i = start;
+  while (i < text.length) {
+    final c = text.codeUnitAt(i);
+    if (c <= 32 || c == 0x22 || c == 0x27 || c == 0x3C || c == 0x3E) break;
+    i++;
+  }
+  return i;
+}
+
+/// Drops punctuation and a markdown wrapper that is not part of the URL.
+String _trimUrlTail(String raw) {
+  var value = raw;
+  while (value.isNotEmpty) {
+    final last = value[value.length - 1];
+    if ('.,;:!?'.contains(last)) {
+      value = value.substring(0, value.length - 1);
+      continue;
+    }
+    if (last == ')' && _unbalanced(value, '(', ')')) {
+      value = value.substring(0, value.length - 1);
+      continue;
+    }
+    if (last == ']' && _unbalanced(value, '[', ']')) {
+      value = value.substring(0, value.length - 1);
+      continue;
+    }
+    break;
+  }
+  return value;
+}
+
+bool _unbalanced(String value, String open, String close) {
+  var depth = 0;
+  for (final char in value.split('')) {
+    if (char == open) {
+      depth++;
+    } else if (char == close) {
+      depth--;
+    }
+  }
+  return depth < 0;
+}
+
+bool _isReplyImagePath(String path) {
+  final lower = path.toLowerCase();
+  for (final extension in _replyImageExtensions) {
+    if (lower.endsWith(extension)) return true;
+  }
+  return false;
+}

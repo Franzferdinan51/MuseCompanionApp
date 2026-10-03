@@ -18,6 +18,8 @@ or desktop port would reuse.
   animated GIF, animated WebP, or a GLB). The picture is cover-cropped to
   a 64×64 pixel sprite on a black round stage and moves through idle,
   listening, thinking, and speaking the way the Waveshare avatar does.
+  An https PNG, JPEG, WebP, or GIF link in a finished chat reply is drawn
+  the same way.
 - **Hold the character to talk.** That posts a voice note. It does not place
   a phone call.
 - **Captions and speech.** Replies show under the character and are spoken.

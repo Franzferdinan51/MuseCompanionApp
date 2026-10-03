@@ -39,7 +39,7 @@ import 'package:muse_companion/src/gadget/service.dart';
 import 'ui/companion_screen.dart';
 import 'ui/scope.dart';
 
-const String _appVersion = '0.2.3';
+const String _appVersion = '0.2.4';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,6 +126,13 @@ Future<void> main() async {
     if (caption.isNotEmpty) presentation.applyStatus(caption);
   };
   chat.onAssistantDone = (text) {
+    final image = httpsImageUrlInReply(text);
+    if (image != null) {
+      final host = Uri.tryParse(image)?.host;
+      debugPrint('[muse] drawing character from chat'
+          '${host == null || host.isEmpty ? '' : ' ($host)'}');
+      unawaited(_drawChatCharacter(display, image));
+    }
     final caption = captionFromReply(text);
     if (caption.isNotEmpty) {
       presentation.applyStatus(caption);
@@ -161,6 +168,22 @@ Future<void> main() async {
     sdkTokens: sdkTokens,
     phone: phone,
   ));
+}
+
+/// Download a portrait Muse put in a chat reply. The invoke channel is
+/// not involved; [AppCompanionDisplay.drawImageFromUrl] is the same
+/// downloader `display.draw_url` uses.
+Future<void> _drawChatCharacter(AppCompanionDisplay display, String url) async {
+  try {
+    final result = await display.drawImageFromUrl(url);
+    if (!result.isOk) {
+      debugPrint('[muse] chat character was not drawn: ${result.error}');
+    } else {
+      debugPrint('[muse] chat character drawn');
+    }
+  } catch (e) {
+    debugPrint('[muse] chat character was not drawn: $e');
+  }
 }
 
 /// Set the speaker, then read [spoken]. The speaking pose lasts until the

@@ -21,7 +21,9 @@ same session code is what a later iOS or desktop port would use.
   on a black round stage, the way the Waveshare screen scales its pixel
   avatar. Idle, listening, thinking, and speaking use that screen's timing:
   bob, rings, thought dots, and a listening meter. Captions sit under the
-  stage. The art is yours; the app does not substitute the stock character.
+  stage. A finished chat reply that contains an https link to a PNG, JPEG,
+  WebP, or GIF is drawn the same way, without `display.draw_url`. The art
+  is yours; the app does not substitute the stock character.
 - **Hold the character to talk.** Press and hold the portrait to record a
   voice note, then release to post it. The chat screen's mic does the same
   thing. This is a voice note in the Muse chat, not a phone call.
@@ -41,7 +43,7 @@ same session code is what a later iOS or desktop port would use.
 
 ## Status
 
-Version 0.2.3. The app pairs, keeps the link up, answers `link.invoke` and
+Version 0.2.4. The app pairs, keeps the link up, answers `link.invoke` and
 Hatch `device.invoke` (including a command that arrives on another stream or
 as bare JSON) with `link.result`, streams chat replies, draws the Muse as a
 64×64 pixel avatar with Waveshare motion, and exposes voice, vision, and
