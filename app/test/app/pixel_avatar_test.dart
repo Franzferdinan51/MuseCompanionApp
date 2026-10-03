@@ -97,6 +97,8 @@ void main() {
     expect(keyed.frame.top, 10);
     expect(keyed.frame.right, 34);
     expect(keyed.frame.bottom, 40);
+    expect(keyed.frame.backdrop, 0xFF000000);
+    expect(keyed.rgba[0], 0);
     expect(keyed.rgba[3], 0);
     expect(keyed.rgba[(10 * pixelGrid + 20) * 4 + 3], 255);
     expect(keyed.frame.lift(10), 1);
@@ -134,7 +136,58 @@ void main() {
     final photo = keyCharacter(busy);
     expect(photo.frame.keyed, isFalse);
     expect(photo.frame.bottom, pixelGrid - 1);
+    expect(photo.frame.backdrop, 0);
     expect(identical(photo.rgba, busy), isTrue);
+
+    final place = placePortrait(keyed.frame);
+    expect(place.scale, closeTo(56 / 31, 1e-9));
+    expect(place.ground, closeTo(60, 1e-9));
+    expect(place.left, closeTo((64 - 15 * place.scale) / 2, 1e-9));
+    final fullPlace = placePortrait(const CharacterFrame.full());
+    expect(fullPlace.scale, 1);
+    expect(fullPlace.left, 0);
+    expect(fullPlace.ground, pixelGrid.toDouble());
+  });
+
+  test('a white shirt stays and a full-height body clears the ring', () {
+    final rgba = Uint8List(pixelGrid * pixelGrid * 4);
+    for (var i = 0; i < rgba.length; i += 4) {
+      rgba[i] = 250;
+      rgba[i + 1] = 250;
+      rgba[i + 2] = 250;
+      rgba[i + 3] = 255;
+    }
+    for (var y = 10; y <= 40; y++) {
+      for (var x = 20; x <= 34; x++) {
+        final edge = x == 20 || x == 34 || y == 10 || y == 40;
+        if (!edge) continue;
+        final i = (y * pixelGrid + x) * 4;
+        rgba[i] = 10;
+        rgba[i + 1] = 10;
+        rgba[i + 2] = 10;
+      }
+    }
+    final keyed = keyCharacter(rgba);
+    expect(keyed.frame.keyed, isTrue);
+    expect(keyed.frame.backdrop, 0xFFFAFAFA);
+    final shirt = (25 * pixelGrid + 27) * 4;
+    expect(keyed.rgba[shirt], 250);
+    expect(keyed.rgba[shirt + 3], 255);
+    expect(keyed.rgba[0], 0);
+    expect(keyed.rgba[3], 0);
+
+    final tall = CharacterFrame(
+      left: 17,
+      top: 0,
+      right: 46,
+      bottom: 63,
+      keyed: true,
+      backdrop: 0xFFF4F4F4,
+    );
+    final place = placePortrait(tall);
+    expect(place.scale, closeTo(56 / 64, 1e-9));
+    expect(place.ground, closeTo(60, 1e-9));
+    expect(place.ground - 64 * place.scale, closeTo(4, 1e-9));
   });
 
   test('cover crop keeps the centre of a wide image', () {

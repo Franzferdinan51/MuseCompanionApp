@@ -531,8 +531,18 @@ class _StagePainter extends CustomPainter {
       Path()..addOval(Rect.fromCircle(center: center, radius: side / 2 - 1)),
     );
     // Stage space. Rings, sparkles, and dots orbit this fixed disc.
-    // A picture stays in the frame: the body bobs, the feet stay put.
+    // A picture fills the circle. The body bobs, the feet stay inside.
     canvas.translate(origin.dx, origin.dy);
+    final backdrop = clock.body.backdrop;
+    if (!model && image != null && clock.body.keyed && backdrop != 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, side, side),
+        Paint()
+          ..color = Color(
+            backdrop,
+          ).withValues(alpha: life.fade.clamp(0.0, 1.0)),
+      );
+    }
 
     final sparks = sparkles(seconds, pose, life.boot);
     _sparks(canvas, side, cell, accent, sparks, behind: true, fade: life.fade);
@@ -560,8 +570,8 @@ class _StagePainter extends CustomPainter {
     final toLean = pose == AvatarPose.error ? life.lean : toMotion.lean;
     final lean = fromLean + (toLean - fromLean) * smooth + life.step;
     if (!model && image != null) {
-      // The picture stays in the frame. Rows above the feet pick up the
-      // bob, the way muse_pixel.c moves the body and leaves the feet.
+      // Rows above the feet pick up the bob, the way muse_pixel.c moves
+      // the body and leaves the feet. The backdrop fill stays still.
       _drawPlanted(
         canvas,
         image,
@@ -611,7 +621,8 @@ class _StagePainter extends CustomPainter {
   /// Draw [image] in grid order, feet on their own row.
   ///
   /// Each row above the feet takes more of [bob], [lean], and [scale].
-  /// A keyed backdrop is already transparent, so the square does not show.
+  /// A keyed body is scaled so the head and the feet sit inside the ring.
+  /// The backdrop itself is already painted and does not move.
   void _drawPlanted(
     Canvas canvas,
     ui.Image image,
@@ -627,15 +638,16 @@ class _StagePainter extends CustomPainter {
   }) {
     final srcW = frame.right - frame.left + 1;
     if (srcW <= 0 || frame.bottom < frame.top || cell <= 0) return;
+    final place = placePortrait(frame);
     final paint = Paint()
       ..filterQuality = FilterQuality.none
       ..color = Color.fromRGBO(255, 255, 255, fade.clamp(0.0, 1.0));
-    final destW = srcW * cell;
-    var y = (frame.bottom + 1) * cell;
+    final destW = srcW * place.scale * cell;
+    var y = place.ground * cell;
     for (var row = frame.bottom; row >= frame.top; row--) {
       final lift = frame.lift(row.toDouble());
       final grow = 1 + (scale - 1) * lift;
-      final height = cell * grow;
+      final height = place.scale * cell * grow;
       y -= height;
       final shift = bodyRowShift(
         lift: lift,
@@ -654,7 +666,7 @@ class _StagePainter extends CustomPainter {
           1,
         ),
         Rect.fromLTWH(
-          frame.left * cell + shift.dx * cell,
+          place.left * cell + shift.dx * cell,
           y + shift.dy * cell,
           destW,
           height + 0.75,

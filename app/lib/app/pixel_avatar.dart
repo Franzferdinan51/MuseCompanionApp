@@ -169,6 +169,10 @@ Uint8List coverCropGrid(Uint8List rgba, int width, int height) {
 /// cleared, so only the body is drawn. [lift] is 1 on the head row and 0
 /// on the foot row. muse_pixel.c keeps the feet near the ground and bobs
 /// the body above them. The phone must not slide the whole picture.
+///
+/// [backdrop] is the opaque key colour (`0xAARRGGBB`) when the picture has
+/// a flat backdrop. It fills the round stage so the photo fits the circle.
+/// Zero means there is nothing to fill.
 class CharacterFrame {
   const CharacterFrame({
     required this.left,
@@ -176,6 +180,7 @@ class CharacterFrame {
     required this.right,
     required this.bottom,
     required this.keyed,
+    this.backdrop = 0,
   });
 
   const CharacterFrame.full()
@@ -183,13 +188,15 @@ class CharacterFrame {
       top = 0,
       right = pixelGrid - 1,
       bottom = pixelGrid - 1,
-      keyed = false;
+      keyed = false,
+      backdrop = 0;
 
   final int left;
   final int top;
   final int right;
   final int bottom;
   final bool keyed;
+  final int backdrop;
 
   /// 1 at the head, 0 at the feet.
   double lift(double row) {
@@ -213,8 +220,12 @@ class KeyedCharacter {
 /// Drop a flat backdrop so the body can move inside the frame.
 ///
 /// Corners that agree are the backdrop, the same way the pixel avatar
-/// clears `C_BG` before drawing the body. A busy photograph is left
-/// whole; its bottom edge still stays put while the upper rows bob.
+/// clears `C_BG` before drawing the body. Only backdrop pixels that touch
+/// the edge are cleared, so a white shirt enclosed by the suit stays.
+/// Cleared pixels are `(0,0,0,0)` because the stage uploads premultiplied
+/// RGBA: straight white with alpha 0 paints as a solid column.
+/// A busy photograph is left whole; its bottom edge still stays put while
+/// the upper rows bob.
 KeyedCharacter keyCharacter(Uint8List rgba) {
   const full = CharacterFrame.full();
   final need = pixelGrid * pixelGrid * 4;
@@ -251,7 +262,51 @@ KeyedCharacter keyCharacter(Uint8List rgba) {
   final transparentBg = aa < 16;
   if (!flat && !transparentBg) return KeyedCharacter(rgba, full);
 
+  bool backgroundAt(int x, int y) {
+    final i = at(x, y);
+    final alpha = rgba[i + 3];
+    if (alpha < 16) return true;
+    if (!flat) return false;
+    return (rgba[i] - ar).abs() <= 20 &&
+        (rgba[i + 1] - ag).abs() <= 20 &&
+        (rgba[i + 2] - ab).abs() <= 20 &&
+        (transparentBg || (alpha - aa).abs() <= 40);
+  }
+
   final out = Uint8List.fromList(rgba);
+  final seen = Uint8List(pixelGrid * pixelGrid);
+  final stack = <int>[];
+  void consider(int x, int y) {
+    if (x < 0 || y < 0 || x >= pixelGrid || y >= pixelGrid) return;
+    final p = y * pixelGrid + x;
+    if (seen[p] != 0 || !backgroundAt(x, y)) return;
+    seen[p] = 1;
+    final i = p * 4;
+    out[i] = 0;
+    out[i + 1] = 0;
+    out[i + 2] = 0;
+    out[i + 3] = 0;
+    stack.add(p);
+  }
+
+  for (var x = 0; x < pixelGrid; x++) {
+    consider(x, 0);
+    consider(x, pixelGrid - 1);
+  }
+  for (var y = 1; y < pixelGrid - 1; y++) {
+    consider(0, y);
+    consider(pixelGrid - 1, y);
+  }
+  while (stack.isNotEmpty) {
+    final p = stack.removeLast();
+    final x = p % pixelGrid;
+    final y = p ~/ pixelGrid;
+    consider(x - 1, y);
+    consider(x + 1, y);
+    consider(x, y - 1);
+    consider(x, y + 1);
+  }
+
   var left = pixelGrid;
   var top = pixelGrid;
   var right = -1;
@@ -259,17 +314,13 @@ KeyedCharacter keyCharacter(Uint8List rgba) {
   var count = 0;
   for (var y = 0; y < pixelGrid; y++) {
     for (var x = 0; x < pixelGrid; x++) {
+      if (seen[y * pixelGrid + x] != 0) continue;
       final i = at(x, y);
-      final alpha = rgba[i + 3];
-      final nearKey =
-          (rgba[i] - ar).abs() <= 20 &&
-          (rgba[i + 1] - ag).abs() <= 20 &&
-          (rgba[i + 2] - ab).abs() <= 20 &&
-          (transparentBg || (alpha - aa).abs() <= 40);
-      final background = alpha < 16 || (flat && nearKey);
-      if (background) {
-        out[i + 3] = 0;
-        continue;
+      final alpha = out[i + 3];
+      if (alpha < 255) {
+        out[i] = out[i] * alpha ~/ 255;
+        out[i + 1] = out[i + 1] * alpha ~/ 255;
+        out[i + 2] = out[i + 2] * alpha ~/ 255;
       }
       count++;
       if (x < left) left = x;
@@ -281,6 +332,9 @@ KeyedCharacter keyCharacter(Uint8List rgba) {
   if (count < 12 || right < left || bottom < top) {
     return KeyedCharacter(rgba, full);
   }
+  final backdrop = !flat || transparentBg
+      ? 0
+      : 0xFF000000 | (ar << 16) | (ag << 8) | ab;
   return KeyedCharacter(
     out,
     CharacterFrame(
@@ -289,7 +343,49 @@ KeyedCharacter keyCharacter(Uint8List rgba) {
       right: right,
       bottom: bottom,
       keyed: true,
+      backdrop: backdrop,
     ),
+  );
+}
+
+/// Where a keyed body is drawn, in grid cells.
+///
+/// [scale] is destination cells per source pixel. [left] is the x of
+/// [CharacterFrame.left]. [ground] is the y just under the feet.
+class PortraitPlace {
+  const PortraitPlace({
+    required this.scale,
+    required this.left,
+    required this.ground,
+  });
+
+  final double scale;
+  final double left;
+  final double ground;
+}
+
+/// Fit a keyed body inside the round bezel.
+///
+/// Four cells of air keep the head and the feet off the stroke. Drawing
+/// the body at its native box left a full-height strip whose ends the
+/// circle cut off. An unkeyed picture already fills the grid.
+PortraitPlace placePortrait(CharacterFrame frame) {
+  final srcW = frame.right - frame.left + 1;
+  final srcH = frame.bottom - frame.top + 1;
+  if (!frame.keyed || srcW <= 0 || srcH <= 0) {
+    return PortraitPlace(scale: 1, left: 0, ground: pixelGrid.toDouble());
+  }
+  const margin = 4.0;
+  final box = pixelGrid - margin * 2;
+  var scale = box / srcH;
+  final fitWidth = box / srcW;
+  if (fitWidth < scale) scale = fitWidth;
+  final destW = srcW * scale;
+  final destH = srcH * scale;
+  return PortraitPlace(
+    scale: scale,
+    left: (pixelGrid - destW) / 2,
+    ground: (pixelGrid + destH) / 2,
   );
 }
 

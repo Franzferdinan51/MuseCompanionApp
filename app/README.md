@@ -37,10 +37,11 @@ The app registers as `device_family` `companion`, `model_id` `companion-app`,
 
 The home screen uses the glossy backdrop. The avatar sits in a black round
 stage that stays still. A picture is cover-cropped onto a 64×64 grid and
-drawn as a smaller portrait inside that disc, with hard pixels, the way the
+drawn inside that disc, with hard pixels, the way the
 full-UI boards on [gadgets.muse.ai](https://gadgets.muse.ai/) scale a pixel
-avatar. Rings, sparkles, thought dots, and sound waves orbit the fixed
-disc. On a picture, the body bobs inside the frame and the feet stay
+avatar. A flat backdrop fills the circle, and the character, head to feet,
+sits inside the ring. Rings, sparkles, thought dots, and sound waves orbit
+the fixed disc. On a picture, the body bobs and the feet stay
 put, the way the board's pixel avatar moves. The whole image does not
 slide. Animated GIF and
 WebP frames keep their timing. A GLB plays in the same circle. Captions sit
