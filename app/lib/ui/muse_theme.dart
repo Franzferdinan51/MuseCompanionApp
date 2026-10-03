@@ -2,7 +2,8 @@
 //
 // Facebook blue (#1877F2) is the primary. Surfaces are round, with a light
 // gloss band and a soft shadow, so controls read as bubbles rather than
-// flat Material tiles. Launcher art is separate and arrives later.
+// flat Material tiles. The full-screen backdrop and the in-app mark are
+// the glossy assets in assets/brand. Launcher mipmaps are separate.
 
 import 'package:flutter/material.dart';
 
@@ -11,6 +12,9 @@ const Color museBlueDeep = Color(0xFF0A3F86);
 const Color museInk = Color(0xFF07101C);
 const Color museNight = Color(0xFF0C1828);
 const Color museMist = Color(0xFFF4F8FF);
+
+const String museLogoAsset = 'assets/brand/juno-logo-glossy.png';
+const String museBackdropAsset = 'assets/brand/juno-bg-glossy.png';
 
 ThemeData museTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
@@ -25,7 +29,7 @@ ThemeData museTheme(Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: dark ? museInk : museMist,
+    scaffoldBackgroundColor: museInk,
     splashFactory: InkRipple.splashFactory,
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
@@ -33,7 +37,12 @@ ThemeData museTheme(Brightness brightness) {
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
-      foregroundColor: scheme.onSurface,
+      foregroundColor: Colors.white,
+      titleTextStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+      ),
     ),
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(
@@ -102,7 +111,7 @@ class MusePage extends StatelessWidget {
       extendBodyBehindAppBar: appBar != null,
       appBar: appBar,
       body: DecoratedBox(
-        decoration: museBackdrop(Theme.of(context).brightness),
+        decoration: museBackdrop(),
         child: SafeArea(
           child: Padding(
             padding: EdgeInsets.only(top: appBar == null ? 0 : kToolbarHeight),
@@ -184,16 +193,52 @@ class MuseBubble extends StatelessWidget {
   }
 }
 
-BoxDecoration museBackdrop(Brightness brightness) {
-  final dark = brightness == Brightness.dark;
-  return BoxDecoration(
-    gradient: LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: dark
-          ? const [Color(0xFF1A4E96), museInk, Color(0xFF05070C)]
-          : const [Color(0xFFD7E8FF), museMist, Color(0xFFE7F0FF)],
-      stops: const [0, 0.42, 1],
+/// Glossy duck mark. The source has a white margin, so the circle is
+/// zoomed until that margin falls outside the clip.
+class MuseLogo extends StatelessWidget {
+  const MuseLogo({super.key, this.size = 40});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: museBlue.withValues(alpha: 0.45),
+              blurRadius: size * 0.28,
+              offset: Offset(0, size * 0.08),
+            ),
+          ],
+        ),
+        child: ClipOval(
+          child: Transform.scale(
+            scale: 1.26,
+            child: Image.asset(
+              museLogoAsset,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.medium,
+              semanticLabel: 'Muse Companion',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+BoxDecoration museBackdrop() {
+  return const BoxDecoration(
+    color: museInk,
+    image: DecorationImage(
+      image: AssetImage(museBackdropAsset),
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
     ),
   );
 }

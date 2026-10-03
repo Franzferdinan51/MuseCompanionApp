@@ -147,9 +147,9 @@ class _Surface extends StatelessWidget {
     final presentation = scope.presentation;
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: museInk,
       body: DecoratedBox(
-        decoration: museBackdrop(theme.brightness),
+        decoration: museBackdrop(),
         child: SafeArea(
           child: Column(
             children: [
@@ -164,9 +164,7 @@ class _Surface extends StatelessWidget {
                     Text(
                       'Hold the character to talk',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.62,
-                        ),
+                        color: museMist.withValues(alpha: 0.82),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -203,6 +201,10 @@ class _Header extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         child: Row(
           children: [
+            const Padding(
+              padding: EdgeInsets.only(left: 6),
+              child: MuseLogo(size: 36),
+            ),
             IconButton(
               tooltip: 'Dashboard',
               onPressed: () => Navigator.of(context).push(
@@ -395,7 +397,7 @@ class _CharacterState extends State<_Character> {
                     : 'Waiting for character',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.outline,
+                  color: museMist.withValues(alpha: 0.88),
                 ),
               ),
             ),

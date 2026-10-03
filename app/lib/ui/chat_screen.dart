@@ -289,11 +289,7 @@ class _EmptyHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.chat_bubble_outline,
-              size: 64,
-              color: theme.colorScheme.outline,
-            ),
+            const MuseLogo(size: 96),
             const SizedBox(height: 12),
             Text(
               ready
@@ -301,7 +297,7 @@ class _EmptyHint extends StatelessWidget {
                   : 'Messages you send appear here with their delivery state.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.outline,
+                color: museMist.withValues(alpha: 0.9),
               ),
             ),
           ],

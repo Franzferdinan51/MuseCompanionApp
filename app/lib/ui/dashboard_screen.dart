@@ -80,6 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             name,
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall?.copyWith(
+              color: museMist,
               fontWeight: FontWeight.w700,
             ),
           ),
