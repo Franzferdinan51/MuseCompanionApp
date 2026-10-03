@@ -66,8 +66,7 @@ void main() {
     for (var i = 0; i < 5; i++) {
       history.addSending('m$i');
     }
-    expect(
-        history.messages.map((m) => m.text), ['m2', 'm3', 'm4']);
+    expect(history.messages.map((m) => m.text), ['m2', 'm3', 'm4']);
   });
 
   test('every mutation notifies the stream', () async {
@@ -90,10 +89,14 @@ void main() {
     final spoken = <String>[];
     history.onAssistantDone = spoken.add;
     history.applyServerEvent('delta.message_start', {'message_id': 'm1'});
-    history.applyServerEvent(
-        'delta.text_append', {'message_id': 'm1', 'text': 'Hel'});
-    history.applyServerEvent(
-        'delta.text_append', {'message_id': 'm1', 'text': 'lo'});
+    history.applyServerEvent('delta.text_append', {
+      'message_id': 'm1',
+      'text': 'Hel',
+    });
+    history.applyServerEvent('delta.text_append', {
+      'message_id': 'm1',
+      'text': 'lo',
+    });
     history.applyServerEvent('delta.message_done', {
       'message_id': 'm1',
       'display_text': 'Hello',
@@ -107,15 +110,50 @@ void main() {
     expect(history.messages.single.text, 'Hello');
     expect(history.messages.single.status, ChatStatus.sent);
     expect(spoken, ['Hello']);
+    expect(history.assistantStreaming, isFalse);
+  });
+
+  test('a text delta is streaming and the done copy is not', () {
+    final history = ChatHistory();
+    addTearDown(history.close);
+    history.applyServerEvent('delta.message_start', {'message_id': 'm1'});
+    expect(history.assistantStreaming, isTrue);
+    history.applyServerEvent('delta.text_append', {
+      'message_id': 'm1',
+      'text': 'Hi',
+    });
+    expect(history.assistantStreaming, isTrue);
+    history.applyServerEvent('delta.message_done', {
+      'message_id': 'm1',
+      'display_text': 'Hi',
+    });
+    expect(history.assistantStreaming, isFalse);
+    history.applyServerEvent('message.assistant', {
+      'message_id': 'm1',
+      'content': 'Hi',
+    });
+    expect(history.assistantStreaming, isFalse);
+  });
+
+  test('an empty finish still ends the turn once', () {
+    final history = ChatHistory();
+    addTearDown(history.close);
+    final spoken = <String>[];
+    history.onAssistantDone = spoken.add;
+    history.applyServerEvent('delta.message_done', {'message_id': 'm9'});
+    history.applyServerEvent('message.assistant', {'message_id': 'm9'});
+    expect(spoken, ['']);
+    expect(history.assistantStreaming, isFalse);
   });
 
   test('user echoes and activity codes do not add bubbles', () {
     final history = ChatHistory();
     addTearDown(history.close);
-    history.applyServerEvent(
-        'message.assistant', {'role': 'user', 'text': 'mine'});
-    history.applyServerEvent(
-        'agent.status', {'activity_code': 'thinking'});
+    history.applyServerEvent('message.assistant', {
+      'role': 'user',
+      'text': 'mine',
+    });
+    history.applyServerEvent('agent.status', {'activity_code': 'thinking'});
     expect(history.messages, isEmpty);
     expect(history.activity, 'thinking');
   });

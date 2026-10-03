@@ -129,14 +129,21 @@ Future<void> main() async {
   chat.onCaption = (text) {
     final caption = captionFromReply(text);
     if (caption.isNotEmpty) presentation.applyStatus(caption);
-    if (presentation.pose != AvatarPose.speaking) {
+    // Thinking only while tokens are still arriving. The done event, and
+    // the message.assistant copy after it, must not pin the face.
+    if (captionSetsThinking(
+      streaming: chat.assistantStreaming,
+      pose: presentation.pose,
+    )) {
       presentation.applyPose(AvatarPose.thinking);
     }
   };
   chat.onActivity = (code) {
     final line = activityCaption(code);
     if (line != null) presentation.applyStatus(line);
-    presentation.applyPose(poseForActivity(code));
+    if (activitySetsPose(code, streaming: chat.assistantStreaming)) {
+      presentation.applyPose(poseForActivity(code));
+    }
   };
   chat.onHeard = (text) {
     final caption = captionFromReply(text);

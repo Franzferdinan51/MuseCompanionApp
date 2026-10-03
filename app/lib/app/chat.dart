@@ -22,17 +22,10 @@
 import 'dart:async';
 
 /// Delivery state of one message.
-enum ChatStatus {
-  sending,
-  sent,
-  failed,
-}
+enum ChatStatus { sending, sent, failed }
 
 /// Who wrote the bubble.
-enum ChatRole {
-  user,
-  assistant,
-}
+enum ChatRole { user, assistant }
 
 class ChatMessage {
   ChatMessage({
@@ -64,8 +57,7 @@ class ChatHistory {
 
   final int maxMessages;
   final List<ChatMessage> _messages = <ChatMessage>[];
-  final StreamController<void> _changes =
-      StreamController<void>.broadcast();
+  final StreamController<void> _changes = StreamController<void>.broadcast();
   int _nextId = 1;
   String _activity = '';
 
@@ -87,6 +79,11 @@ class ChatHistory {
 
   /// Short Muse activity label from `agent.status`, or empty.
   String get activity => _activity;
+
+  /// True while an assistant bubble is still receiving text.
+  bool get assistantStreaming => _messages.any(
+    (message) => message.role == ChatRole.assistant && message.streaming,
+  );
 
   /// Fires on every add or status change.
   Stream<void> get stream => _changes.stream;
@@ -141,7 +138,8 @@ class ChatHistory {
         role == 'human' ||
         name == 'transcript' ||
         name == 'message.user') {
-      final heard = _text(payload['transcript']) ??
+      final heard =
+          _text(payload['transcript']) ??
           _text(payload['display_text']) ??
           _text(payload['content']) ??
           _text(payload['text']);
@@ -155,16 +153,16 @@ class ChatHistory {
       if (code != null) onActivity?.call(code);
       return;
     }
-    final serverId = _text(payload['message_id']) ??
-        _text(payload['id']) ??
-        'assistant';
+    final serverId =
+        _text(payload['message_id']) ?? _text(payload['id']) ?? 'assistant';
     if (name == 'delta.message_start') {
       _beginAssistant(serverId);
     } else if (name == 'delta.text_append') {
       final text = _text(payload['text']);
       if (text != null && text.isNotEmpty) _appendAssistant(serverId, text);
     } else if (name == 'delta.message_done' || name == 'message.assistant') {
-      final full = _text(payload['display_text']) ??
+      final full =
+          _text(payload['display_text']) ??
           _text(payload['content']) ??
           _text(payload['text']);
       _finishAssistant(serverId, full);
@@ -173,15 +171,17 @@ class ChatHistory {
 
   void _beginAssistant(String serverId) {
     if (_byServer(serverId) != null) return;
-    _messages.add(ChatMessage(
-      id: _nextId++,
-      text: '',
-      sentAt: DateTime.now(),
-      status: ChatStatus.sending,
-      role: ChatRole.assistant,
-      streaming: true,
-      serverId: serverId,
-    ));
+    _messages.add(
+      ChatMessage(
+        id: _nextId++,
+        text: '',
+        sentAt: DateTime.now(),
+        status: ChatStatus.sending,
+        role: ChatRole.assistant,
+        streaming: true,
+        serverId: serverId,
+      ),
+    );
     _trim();
     _emit();
   }
@@ -206,11 +206,12 @@ class ChatHistory {
     _emit();
     if (message.text.trim().isNotEmpty) {
       _lastReply = message.text;
+      // Streaming is already false, so this caption does not move the face.
       onCaption?.call(message.text);
     }
-    if (finishedNow && message.text.trim().isNotEmpty) {
-      onAssistantDone?.call(message.text);
-    }
+    // Including an empty finish, so a turn that produced no text still
+    // leaves the face. A repeat of the same message does not.
+    if (finishedNow) onAssistantDone?.call(message.text);
   }
 
   /// Replace the latest "Voice note" bubble with what Muse heard.

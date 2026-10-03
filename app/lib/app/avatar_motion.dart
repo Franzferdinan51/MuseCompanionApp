@@ -147,6 +147,25 @@ AvatarPose poseForActivity(String code) {
   }
 }
 
+/// A streaming caption moves the face to thinking. A finished one must
+/// not: `message.assistant` follows `delta.message_done`, and that second
+/// copy would leave the word stuck on THINKING.
+bool captionSetsThinking({required bool streaming, required AvatarPose pose}) {
+  if (!streaming) return false;
+  return pose != AvatarPose.speaking && pose != AvatarPose.listening;
+}
+
+/// An activity code moves the face when it names a real mode.
+///
+/// `thinking`, `working`, and tool codes are captions. They only move the
+/// face while a reply is streaming. A status that stays on "thinking"
+/// after the reply must not pin the word there. The board returns to
+/// READY when the turn ends.
+bool activitySetsPose(String code, {required bool streaming}) {
+  if (poseForActivity(code) != AvatarPose.thinking) return true;
+  return streaming;
+}
+
 /// Pose for a display status the phone itself sets, or null to leave the
 /// current pose alone. Captions must not all become poses.
 AvatarPose? poseForStatus(String text) {

@@ -30,6 +30,24 @@ void main() {
     expect(poseForStatus('Listening…'), AvatarPose.listening);
     expect(poseForStatus('Looking through the camera'), AvatarPose.thinking);
     expect(poseForStatus('Hello'), isNull);
+    expect(captionSetsThinking(streaming: true, pose: AvatarPose.idle), isTrue);
+    expect(
+      captionSetsThinking(streaming: false, pose: AvatarPose.idle),
+      isFalse,
+    );
+    expect(
+      captionSetsThinking(streaming: true, pose: AvatarPose.speaking),
+      isFalse,
+    );
+    expect(
+      captionSetsThinking(streaming: true, pose: AvatarPose.listening),
+      isFalse,
+    );
+    expect(activitySetsPose('idle', streaming: false), isTrue);
+    expect(activitySetsPose('listening', streaming: false), isTrue);
+    expect(activitySetsPose('thinking', streaming: false), isFalse);
+    expect(activitySetsPose('using_tool', streaming: false), isFalse);
+    expect(activitySetsPose('thinking', streaming: true), isTrue);
   });
 
   test('boot and off hold still while error keeps its shake', () {
