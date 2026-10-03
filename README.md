@@ -1,7 +1,7 @@
 # Muse Companion App
 
 A full-color **Muse gadget** that runs on your phone. Where
-[muse-pocket](https://github.com/Franzferdinan51/muse-pocket) puts your Muse's
+[muse-pocket](https://github.com/viticci/muse-pocket) puts your Muse's
 character on a small e-ink panel, this app puts that same character on the
 phone: your Muse's own art, live captions, hold-to-talk, and the phone
 commands a gadget is allowed to use.
@@ -154,7 +154,7 @@ when behavior changes.
 
 ## Acknowledgments
 
-- [muse-pocket](https://github.com/Franzferdinan51/muse-pocket) — the e-ink
+- [muse-pocket](https://github.com/viticci/muse-pocket) — the e-ink
   Muse gadget this app is modeled on.
 - [muse-gadget-sdk](https://github.com/facebookincubator/muse-gadget-sdk)
   by Meta Platforms, Inc. — the reference gadget SDK and the docs at
