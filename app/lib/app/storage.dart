@@ -38,7 +38,7 @@ const String _introKey = 'muse_intro_sent';
 /// PairingStore backed by encrypted device storage.
 class SecurePairingStore implements PairingStore {
   SecurePairingStore([FlutterSecureStorage? storage])
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
@@ -52,10 +52,7 @@ class SecurePairingStore implements PairingStore {
 
   @override
   Future<void> save(Map<String, Object?> pairing) async {
-    await _storage.write(
-      key: _pairingKey,
-      value: json.encode(pairing),
-    );
+    await _storage.write(key: _pairingKey, value: json.encode(pairing));
   }
 
   @override
@@ -70,7 +67,7 @@ class SecurePairingStore implements PairingStore {
 /// reports it on token refresh so API-side gadget features light up.
 class SecureSdkTokenStore {
   SecureSdkTokenStore([FlutterSecureStorage? storage])
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
@@ -91,7 +88,8 @@ class PersistentIdentity {
   Identity get identity => _identity;
 
   static Future<PersistentIdentity> loadOrCreate(
-      FlutterSecureStorage storage) async {
+    FlutterSecureStorage storage,
+  ) async {
     final saved = await storage.read(key: _identityKey);
     final mac = (saved != null && saved.isNotEmpty && isValidIdentityMac(saved))
         ? saved
@@ -126,22 +124,33 @@ class SettingsStore {
       'allow_send_sms':
           _prefs.getBool('${_settingsPrefix}allow_send_sms') ?? false,
       'speech_volume': _prefs.getInt('${_settingsPrefix}speech_volume'),
+      'camera_facing': _prefs.getString('${_settingsPrefix}camera_facing'),
     });
   }
 
   Future<void> saveSettings(CompanionSettings settings) async {
-    await _prefs.setString(
-        '${_settingsPrefix}theme', settings.theme);
+    await _prefs.setString('${_settingsPrefix}theme', settings.theme);
     await _prefs.setBool(
-        '${_settingsPrefix}keep_screen_on', settings.keepScreenOn);
+      '${_settingsPrefix}keep_screen_on',
+      settings.keepScreenOn,
+    );
     await _prefs.setBool(
-        '${_settingsPrefix}speak_replies', settings.speakReplies);
+      '${_settingsPrefix}speak_replies',
+      settings.speakReplies,
+    );
+    await _prefs.setBool('${_settingsPrefix}allow_calls', settings.allowCalls);
     await _prefs.setBool(
-        '${_settingsPrefix}allow_calls', settings.allowCalls);
-    await _prefs.setBool(
-        '${_settingsPrefix}allow_send_sms', settings.allowSendSms);
+      '${_settingsPrefix}allow_send_sms',
+      settings.allowSendSms,
+    );
     await _prefs.setInt(
-        '${_settingsPrefix}speech_volume', settings.speechVolume);
+      '${_settingsPrefix}speech_volume',
+      settings.speechVolume,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}camera_facing',
+      settings.cameraFacing,
+    );
   }
 
   String loadStatus() => _prefs.getString(_statusKey) ?? '';

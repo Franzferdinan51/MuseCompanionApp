@@ -155,7 +155,9 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _capturing = true);
     final scope = AppScope.of(context);
     try {
-      final jpeg = await scope.phone.captureJpeg();
+      final jpeg = await scope.phone.captureJpeg(
+        facing: scope.presentation.settings.cameraFacing,
+      );
       final note = _controller.text.trim();
       await _post(note.isEmpty ? 'What do you see?' : note, [
         ChatAttachment(

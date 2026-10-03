@@ -81,6 +81,7 @@ class CompanionSettings {
     this.allowCalls = false,
     this.allowSendSms = false,
     this.speechVolume = 80,
+    this.cameraFacing = 'back',
   });
 
   /// One of `light`, `dark` or `system`.
@@ -102,6 +103,10 @@ class CompanionSettings {
   /// dial for the phone speaker. Muse cannot change it.
   final int speechVolume;
 
+  /// `back` or `front`. Used by the camera button and by vision.capture
+  /// when Muse does not name a camera. Muse cannot change the saved choice.
+  final String cameraFacing;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -109,6 +114,7 @@ class CompanionSettings {
     bool? allowCalls,
     bool? allowSendSms,
     int? speechVolume,
+    String? cameraFacing,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -117,31 +123,29 @@ class CompanionSettings {
       allowCalls: allowCalls ?? this.allowCalls,
       allowSendSms: allowSendSms ?? this.allowSendSms,
       speechVolume: speechVolume ?? this.speechVolume,
+      cameraFacing: cameraFacing ?? this.cameraFacing,
     );
   }
 
   /// The themes the gadget accepts.
-  static const List<String> themeOptions = <String>[
-    'light',
-    'dark',
-    'system'
-  ];
+  static const List<String> themeOptions = <String>['light', 'dark', 'system'];
+
+  static const List<String> cameraFacings = <String>['back', 'front'];
 
   Map<String, Object?> toMap() => {
-        'theme': theme,
-        'keep_screen_on': keepScreenOn,
-        'speak_replies': speakReplies,
-        'allow_calls': allowCalls,
-        'allow_send_sms': allowSendSms,
-        'speech_volume': speechVolume.clamp(0, 100),
-      };
+    'theme': theme,
+    'keep_screen_on': keepScreenOn,
+    'speak_replies': speakReplies,
+    'allow_calls': allowCalls,
+    'allow_send_sms': allowSendSms,
+    'speech_volume': speechVolume.clamp(0, 100),
+    'camera_facing': cameraFacing,
+  };
 
   static CompanionSettings fromMap(Map<String, Object?> map) {
     final theme = map['theme'];
     return CompanionSettings(
-      theme: theme is String && themeOptions.contains(theme)
-          ? theme
-          : 'system',
+      theme: theme is String && themeOptions.contains(theme) ? theme : 'system',
       keepScreenOn: map['keep_screen_on'] == true,
       speakReplies: map['speak_replies'] is bool
           ? map['speak_replies']! as bool
@@ -149,8 +153,12 @@ class CompanionSettings {
       allowCalls: map['allow_calls'] == true,
       allowSendSms: map['allow_send_sms'] == true,
       speechVolume: _speechVolume(map['speech_volume']),
+      cameraFacing: _cameraFacing(map['camera_facing']),
     );
   }
+
+  static String _cameraFacing(Object? value) =>
+      value == 'front' ? 'front' : 'back';
 
   static int _speechVolume(Object? value) {
     final number = value is num ? value.round() : 80;
@@ -182,9 +190,11 @@ List<String> deriveStatusLines(
       result.add(rawLine);
       continue;
     }
-    for (var start = 0;
-        start < rawLine.length && result.length < maxLines;
-        start += maxLineLength) {
+    for (
+      var start = 0;
+      start < rawLine.length && result.length < maxLines;
+      start += maxLineLength
+    ) {
       final end = (start + maxLineLength).clamp(0, rawLine.length);
       result.add(rawLine.substring(start, end));
     }
@@ -195,8 +205,8 @@ List<String> deriveStatusLines(
 /// Observable snapshot of what the companion screen renders.
 class PresentationState {
   PresentationState({CompanionSettings? settings})
-      : _settings = settings ?? const CompanionSettings(),
-        _controller = StreamController<void>.broadcast();
+    : _settings = settings ?? const CompanionSettings(),
+      _controller = StreamController<void>.broadcast();
 
   ConnectionState? _connection;
   String _statusDetail = '';
@@ -279,8 +289,7 @@ class PresentationState {
   }
 
   /// Whether the current character bytes are a 3D model (GLB).
-  bool get characterIsModel =>
-      _character != null && isGlbModel(_character!);
+  bool get characterIsModel => _character != null && isGlbModel(_character!);
 
   /// Clear the character back to the neutral placeholder.
   void applyPlaceholder() {
@@ -292,8 +301,9 @@ class PresentationState {
 
   /// Apply a status caption: clip, then derive the visible lines.
   void applyStatus(String text) {
-    final clipped =
-        text.length > maxStatusChars ? text.substring(0, maxStatusChars) : text;
+    final clipped = text.length > maxStatusChars
+        ? text.substring(0, maxStatusChars)
+        : text;
     if (_statusText == clipped &&
         _lines.join('\n') == deriveStatusLines(clipped).join('\n')) {
       return;

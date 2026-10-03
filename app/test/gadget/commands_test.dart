@@ -25,7 +25,11 @@ class _FakeDisplay implements CompanionDisplay {
       return const ImageDrawResult.failed('boom');
     }
     return const ImageDrawResult.ok(
-        width: 800, height: 800, bytes: 1234, fromCache: false);
+      width: 800,
+      height: 800,
+      bytes: 1234,
+      fromCache: false,
+    );
   }
 
   @override
@@ -45,25 +49,33 @@ class _FakeDisplay implements CompanionDisplay {
   }
 
   @override
-  Future<Map<String, Object?>> displayInfo() async =>
-      {'theme': theme, 'keep_screen_on': keepScreenOn};
+  Future<Map<String, Object?>> displayInfo() async => {
+    'theme': theme,
+    'keep_screen_on': keepScreenOn,
+  };
 }
 
 class _FakeHealth implements CompanionHealth {
   @override
-  Future<Map<String, Object?>> health() async =>
-      {'battery_level': 80, 'charging': true};
+  Future<Map<String, Object?>> health() async => {
+    'battery_level': 80,
+    'charging': true,
+  };
 }
 
 class _FakePhone implements PhoneActions {
   final List<(String, Map<String, Object?>)> calls = [];
 
-  @override
-  Future<Uint8List> captureJpeg() async => Uint8List.fromList([1, 2, 3]);
+  String? lastFacing;
 
   @override
-  Future<Uint8List> recordWav(int seconds) async =>
-      Uint8List.fromList([4, 5]);
+  Future<Uint8List> captureJpeg({String facing = 'back'}) async {
+    lastFacing = facing;
+    return Uint8List.fromList([1, 2, 3]);
+  }
+
+  @override
+  Future<Uint8List> recordWav(int seconds) async => Uint8List.fromList([4, 5]);
 
   @override
   Future<void> speak(String text) async {}
@@ -73,7 +85,9 @@ class _FakePhone implements PhoneActions {
 
   @override
   Future<Map<String, Object?>> run(
-      String command, Map<String, Object?> params) async {
+    String command,
+    Map<String, Object?> params,
+  ) async {
     calls.add((command, params));
     return {...params, 'command': command};
   }
@@ -82,8 +96,10 @@ class _FakePhone implements PhoneActions {
 void main() {
   group('command specs', () {
     test('registers the companion command set', () {
-      final specs =
-          companionCommandSpecs(screenWidth: 1080, screenHeight: 2400);
+      final specs = companionCommandSpecs(
+        screenWidth: 1080,
+        screenHeight: 2400,
+      );
       for (final name in [
         'display.draw_url',
         'display.show_animation',
@@ -111,65 +127,78 @@ void main() {
     });
 
     test('set_status stores unicode captions', () async {
-      final result = await executor.run(
-          'companion.set_status', {'text': 'héllo 👋'}, null);
+      final result = await executor.run('companion.set_status', {
+        'text': 'héllo 👋',
+      }, null);
       expect(result['ok'], isTrue);
       expect(display.status, 'héllo 👋');
     });
 
     test('pocket.set_status is a working alias', () async {
-      final result =
-          await executor.run('pocket.set_status', {'text': 'hi'}, null);
+      final result = await executor.run('pocket.set_status', {
+        'text': 'hi',
+      }, null);
       expect(result['ok'], isTrue);
       expect(display.status, 'hi');
     });
 
     test('set_status requires text and clips overlong input', () async {
-      expect((await executor.run('companion.set_status', {}, null))['ok'],
-          isFalse);
+      expect(
+        (await executor.run('companion.set_status', {}, null))['ok'],
+        isFalse,
+      );
       final long = 'x' * (maxStatusChars + 10);
-      final result =
-          await executor.run('companion.set_status', {'text': long}, null);
+      final result = await executor.run('companion.set_status', {
+        'text': long,
+      }, null);
       expect(result['ok'], isTrue);
       expect(display.status, hasLength(maxStatusChars));
       expect((result['payload'] as Map)['truncated'], isTrue);
     });
 
     test('draw_url validates and reports the draw', () async {
-      expect((await executor.run('display.draw_url', {}, null))['ok'],
-          isFalse);
+      expect((await executor.run('display.draw_url', {}, null))['ok'], isFalse);
       expect(
-          (await executor
-                  .run('display.draw_url', {'url': 'ftp://x/y'}, null))['ok'],
-          isFalse);
-      final result = await executor.run(
-          'display.draw_url', {'url': 'https://example.com/c.png'}, null);
+        (await executor.run('display.draw_url', {
+          'url': 'ftp://x/y',
+        }, null))['ok'],
+        isFalse,
+      );
+      final result = await executor.run('display.draw_url', {
+        'url': 'https://example.com/c.png',
+      }, null);
       expect(result['ok'], isTrue);
       expect(display.lastUrl, 'https://example.com/c.png');
       expect((result['payload'] as Map)['width'], 800);
-      final failed = await executor.run('display.draw_url',
-          {'url': 'https://example.com/fail.png'}, null);
+      final failed = await executor.run('display.draw_url', {
+        'url': 'https://example.com/fail.png',
+      }, null);
       expect(failed['ok'], isFalse);
     });
 
     test('show_animation clears to the placeholder', () async {
-      final result =
-          await executor.run('display.show_animation', {}, null);
+      final result = await executor.run('display.show_animation', {}, null);
       expect(result['ok'], isTrue);
       expect(display.placeholders, 1);
     });
 
     test('set_display validates and applies preferences', () async {
       expect(
-          (await executor.run(
-              'companion.set_display', {'theme': 'neon'}, null))['ok'],
-          isFalse);
+        (await executor.run('companion.set_display', {
+          'theme': 'neon',
+        }, null))['ok'],
+        isFalse,
+      );
       expect(
-          (await executor.run('companion.set_display',
-              {'keep_screen_on': 'yes'}, null))['ok'],
-          isFalse);
-      final result = await executor.run('companion.set_display',
-          {'theme': 'dark', 'keep_screen_on': true}, null);
+        (await executor.run('companion.set_display', {
+          'keep_screen_on': 'yes',
+        }, null))['ok'],
+        isFalse,
+      );
+      final result = await executor.run('companion.set_display', {
+        'theme': 'dark',
+        'keep_screen_on': true,
+      }, null);
       expect(result['ok'], isTrue);
       expect(display.theme, 'dark');
       expect(display.keepScreenOn, isTrue);
@@ -197,24 +226,28 @@ void main() {
         allowCalls: () => allowCalls,
         allowSendSms: () => allowSms,
       );
-      final blocked =
-          await gated.run('phone.call', {'number': '555'}, null);
+      final blocked = await gated.run('phone.call', {'number': '555'}, null);
       expect(blocked['ok'], isFalse);
       expect(phone.calls, isEmpty);
 
       allowCalls = true;
-      final placed =
-          await gated.run('phone.call', {'number': '555'}, null);
+      final placed = await gated.run('phone.call', {'number': '555'}, null);
       expect(placed['ok'], isTrue);
       expect(phone.calls.single.$1, 'phone.call');
 
-      final composer = await gated.run(
-          'phone.sms', {'to': '555', 'body': 'hi', 'send': true}, null);
+      final composer = await gated.run('phone.sms', {
+        'to': '555',
+        'body': 'hi',
+        'send': true,
+      }, null);
       expect((composer['payload'] as Map)['send'], isFalse);
 
       allowSms = true;
-      final sent = await gated.run(
-          'phone.sms', {'to': '555', 'body': 'hi', 'send': true}, null);
+      final sent = await gated.run('phone.sms', {
+        'to': '555',
+        'body': 'hi',
+        'send': true,
+      }, null);
       expect((sent['payload'] as Map)['send'], isTrue);
     });
 
@@ -240,6 +273,45 @@ void main() {
       expect(items!.single.mimeType, 'image/jpeg');
       expect(items!.single.filename, 'camera.jpg');
       expect(items!.single.bytes, [1, 2, 3]);
+      expect(phone.lastFacing, 'back');
+    });
+
+    test('vision uses the saved camera unless facing is set', () async {
+      final phone = _FakePhone();
+      final seeing = CompanionExecutor(
+        display: display,
+        health: _FakeHealth(),
+        phone: phone,
+        cameraFacing: () => 'front',
+        postToMuse: (message, attachments) async => {'ok': true},
+      );
+      await seeing.run('vision.capture', {}, null);
+      expect(phone.lastFacing, 'front');
+      await seeing.run('vision.capture', {'facing': 'back'}, null);
+      expect(phone.lastFacing, 'back');
+      final bad = await seeing.run('vision.capture', {'facing': 'side'}, null);
+      expect(bad['ok'], isFalse);
+    });
+
+    test('device commands are registered for the phone', () {
+      final specs = companionCommandSpecs(
+        screenWidth: 1080,
+        screenHeight: 2400,
+      );
+      for (final name in [
+        'vision.capture',
+        'phone.ringer',
+        'phone.vibrate',
+        'phone.dnd',
+        'phone.rotation',
+        'phone.radio',
+        'phone.settings',
+        'phone.timer',
+        'phone.device',
+        'phone.screen',
+      ]) {
+        expect(specs.containsKey(name), isTrue, reason: name);
+      }
     });
   });
 

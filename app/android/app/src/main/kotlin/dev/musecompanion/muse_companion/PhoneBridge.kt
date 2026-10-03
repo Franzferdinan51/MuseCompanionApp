@@ -4,15 +4,22 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.bluetooth.BluetoothManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CaptureRequest
 import android.location.Location
 import android.location.LocationManager
@@ -20,12 +27,24 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.ExifInterface
 import android.media.ImageReader
 import android.media.MediaRecorder
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
+import android.nfc.NfcAdapter
+import android.os.BatteryManager
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.PowerManager
+import android.os.StatFs
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.AlarmClock
 import android.provider.CalendarContract
 import android.provider.ContactsContract
@@ -33,16 +52,22 @@ import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.telephony.SmsManager
+import android.util.Size
 import android.view.KeyEvent
+import android.view.Surface
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * The phone side of the companion commands: camera, microphone, speech,
@@ -58,6 +83,7 @@ class PhoneBridge(private val activity: MainActivity) {
     private var pcm: ByteArrayOutputStream? = null
     private var reader: Thread? = null
     @Volatile private var recording = false
+    private val capturing = AtomicBoolean(false)
     private val speakLock = Any()
     private var speakGeneration = 0
     private var pendingSpeak: MethodChannel.Result? = null
@@ -67,7 +93,7 @@ class PhoneBridge(private val activity: MainActivity) {
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
-                    "captureJpeg" -> captureJpeg(result)
+                    "captureJpeg" -> captureJpeg(result, call.argument<String>("facing") ?: "back")
                     "startRecording" -> {
                         startRecording()
                         result.success(null)
@@ -109,97 +135,316 @@ class PhoneBridge(private val activity: MainActivity) {
         }
     }
 
-    private fun captureJpeg(result: MethodChannel.Result) {
-        val manager = context.getSystemService(CameraManager::class.java)
-            ?: throw IllegalStateException("no camera")
-        val id = backCamera(manager)
-        val reader = ImageReader.newInstance(1280, 720, android.graphics.ImageFormat.JPEG, 1)
-        val delivered = AtomicReference(false)
-        val opened = AtomicReference<CameraDevice?>(null)
-        reader.setOnImageAvailableListener({ imageReader ->
-            val image = imageReader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            try {
-                val buffer = image.planes[0].buffer
-                val bytes = ByteArray(buffer.remaining())
-                buffer.get(bytes)
-                if (delivered.compareAndSet(false, true)) {
-                    main.post { result.success(bytes) }
-                }
-            } finally {
-                image.close()
-                opened.get()?.close()
-                imageReader.close()
-            }
-        }, io)
-        manager.openCamera(id, object : CameraDevice.StateCallback() {
-            override fun onOpened(camera: CameraDevice) {
-                opened.set(camera)
-                try {
-                    camera.createCaptureSession(
-                        listOf(reader.surface),
-                        object : CameraCaptureSession.StateCallback() {
-                            override fun onConfigured(session: CameraCaptureSession) {
-                                try {
-                                    val request = camera.createCaptureRequest(
-                                        CameraDevice.TEMPLATE_STILL_CAPTURE
-                                    )
-                                    request.addTarget(reader.surface)
-                                    request.set(
-                                        CaptureRequest.JPEG_ORIENTATION,
-                                        jpegOrientation(manager, id)
-                                    )
-                                    session.capture(request.build(), null, io)
-                                } catch (e: Exception) {
-                                    camera.close()
-                                    fail(result, e.message ?: "camera failed")
-                                }
-                            }
-
-                            override fun onConfigureFailed(session: CameraCaptureSession) {
-                                camera.close()
-                                fail(result, "camera session failed")
-                            }
-                        },
-                        io
-                    )
-                } catch (e: Exception) {
-                    camera.close()
-                    fail(result, e.message ?: "camera failed")
-                }
-            }
-
-            override fun onDisconnected(camera: CameraDevice) {
-                camera.close()
-            }
-
-            override fun onError(camera: CameraDevice, error: Int) {
-                camera.close()
-                fail(result, "camera error $error")
-            }
-        }, io)
-    }
-
-    private fun backCamera(manager: CameraManager): String {
-        for (id in manager.cameraIdList) {
-            val facing = manager.getCameraCharacteristics(id)
-                .get(CameraCharacteristics.LENS_FACING)
-            if (facing == CameraCharacteristics.LENS_FACING_BACK) return id
+    private fun captureJpeg(result: MethodChannel.Result, facing: String) {
+        if (Looper.myLooper() != io.looper) {
+            io.post { captureJpeg(result, facing) }
+            return
         }
-        return manager.cameraIdList.firstOrNull()
-            ?: throw IllegalStateException("this phone has no camera")
+        if (!capturing.compareAndSet(false, true)) {
+            fail(result, "camera is busy")
+            return
+        }
+        val delivered = AtomicBoolean(false)
+        val cameraRef = AtomicReference<CameraDevice?>(null)
+        val sessionRef = AtomicReference<CameraCaptureSession?>(null)
+        var stillReader: ImageReader? = null
+        var previewReader: ImageReader? = null
+        val timeout = Runnable { finishCapture(result, delivered, cameraRef, sessionRef, stillReader, previewReader, "camera timed out", null) }
+        fun finish(error: String?, bytes: ByteArray?) {
+            io.removeCallbacks(timeout)
+            finishCapture(result, delivered, cameraRef, sessionRef, stillReader, previewReader, error, bytes)
+        }
+        try {
+            if (!awaitVisible()) {
+                throw IllegalStateException(
+                    "open Muse Companion so the camera can take a photo"
+                )
+            }
+            val manager = context.getSystemService(CameraManager::class.java)
+                ?: throw IllegalStateException("no camera")
+            val id = cameraId(manager, facing)
+            val characteristics = manager.getCameraCharacteristics(id)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                ?: throw IllegalStateException("camera has no capture sizes")
+            val jpegSize = chooseJpegSize(map.getOutputSizes(ImageFormat.JPEG))
+                ?: throw IllegalStateException("camera has no JPEG size")
+            val reader = ImageReader.newInstance(jpegSize.width, jpegSize.height, ImageFormat.JPEG, 2)
+            stillReader = reader
+            val previewSize = map.getOutputSizes(ImageFormat.YUV_420_888)
+                ?.minByOrNull { it.width.toLong() * it.height }
+            if (previewSize != null) {
+                previewReader = ImageReader.newInstance(
+                    previewSize.width, previewSize.height, ImageFormat.YUV_420_888, 2
+                )
+                previewReader?.setOnImageAvailableListener({ source ->
+                    source.acquireLatestImage()?.close()
+                }, io)
+            }
+            reader.setOnImageAvailableListener({ imageReader ->
+                val image = imageReader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                val bytes = try {
+                    val buffer = image.planes[0].buffer
+                    ByteArray(buffer.remaining()).also { buffer.get(it) }
+                } finally {
+                    image.close()
+                }
+                if (bytes.isEmpty()) {
+                    io.post { finish("the camera returned nothing", null) }
+                } else {
+                    io.post { finish(null, shrinkJpeg(bytes)) }
+                }
+            }, io)
+            io.postDelayed(timeout, 8_000)
+            manager.openCamera(id, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraRef.set(camera)
+                    val targets = listOfNotNull(previewReader?.surface, reader.surface)
+                    openStillSession(camera, characteristics, targets, sessionRef, ::finish)
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    finish("camera disconnected", null)
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    finish("camera error $error", null)
+                }
+            }, io)
+        } catch (e: SecurityException) {
+            finish("camera permission is not granted", null)
+        } catch (e: Exception) {
+            finish(e.message ?: "camera failed", null)
+        }
     }
 
-    private fun jpegOrientation(manager: CameraManager, id: String): Int {
-        val sensor = manager.getCameraCharacteristics(id)
-            .get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
-        val rotation = activity.display?.rotation ?: 0
-        val device = when (rotation) {
-            1 -> 90
-            2 -> 180
-            3 -> 270
+    private fun openStillSession(
+        camera: CameraDevice,
+        characteristics: CameraCharacteristics,
+        targets: List<Surface>,
+        sessionRef: AtomicReference<CameraCaptureSession?>,
+        finish: (String?, ByteArray?) -> Unit,
+    ) {
+        try {
+            camera.createCaptureSession(targets, object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    sessionRef.set(session)
+                    try {
+                        val preview = targets.firstOrNull { it != targets.last() }
+                        if (preview != null) {
+                            val previewRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                            previewRequest.addTarget(preview)
+                            applyAuto(previewRequest, characteristics)
+                            session.setRepeatingRequest(previewRequest.build(), null, io)
+                        }
+                        val settleMs = if (preview != null) 600L else 0L
+                        io.postDelayed({
+                            try {
+                                val still = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                                for (target in targets) still.addTarget(target)
+                                still.set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation(characteristics))
+                                still.set(CaptureRequest.JPEG_QUALITY, 85.toByte())
+                                applyAuto(still, characteristics)
+                                session.capture(still.build(), object : CameraCaptureSession.CaptureCallback() {
+                                    override fun onCaptureFailed(
+                                        session: CameraCaptureSession,
+                                        request: CaptureRequest,
+                                        failure: CaptureFailure,
+                                    ) {
+                                        finish("camera capture failed", null)
+                                    }
+                                }, io)
+                            } catch (e: Exception) {
+                                finish(e.message ?: "camera failed", null)
+                            }
+                        }, settleMs)
+                    } catch (e: Exception) {
+                        finish(e.message ?: "camera failed", null)
+                    }
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    if (targets.size > 1) {
+                        openStillSession(camera, characteristics, listOf(targets.last()), sessionRef, finish)
+                    } else {
+                        finish("camera session failed", null)
+                    }
+                }
+            }, io)
+        } catch (e: Exception) {
+            finish(e.message ?: "camera failed", null)
+        }
+    }
+
+    private fun finishCapture(
+        result: MethodChannel.Result,
+        delivered: AtomicBoolean,
+        cameraRef: AtomicReference<CameraDevice?>,
+        sessionRef: AtomicReference<CameraCaptureSession?>,
+        stillReader: ImageReader?,
+        previewReader: ImageReader?,
+        error: String?,
+        bytes: ByteArray?,
+    ) {
+        if (!delivered.compareAndSet(false, true)) return
+        capturing.set(false)
+        try {
+            sessionRef.get()?.stopRepeating()
+        } catch (_: Exception) {
+        }
+        try {
+            sessionRef.get()?.close()
+        } catch (_: Exception) {
+        }
+        try {
+            cameraRef.get()?.close()
+        } catch (_: Exception) {
+        }
+        try {
+            stillReader?.close()
+        } catch (_: Exception) {
+        }
+        try {
+            previewReader?.close()
+        } catch (_: Exception) {
+        }
+        if (error != null) {
+            fail(result, error)
+        } else {
+            val payload = bytes ?: ByteArray(0)
+            val reply = {
+                try {
+                    result.success(payload)
+                } catch (_: IllegalStateException) {
+                }
+            }
+            if (main.looper.isCurrentThread) reply() else main.post(reply)
+        }
+    }
+
+    private fun awaitVisible(): Boolean {
+        if (activity.hasWindowFocus()) return true
+        val launched = CountDownLatch(1)
+        main.post {
+            try {
+                context.startActivity(
+                    Intent(context, MainActivity::class.java).addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    )
+                )
+                if (Build.VERSION.SDK_INT >= 27) activity.setTurnScreenOn(true)
+            } catch (_: Exception) {
+            } finally {
+                launched.countDown()
+            }
+        }
+        launched.await(1, TimeUnit.SECONDS)
+        val deadline = System.currentTimeMillis() + 1200
+        while (System.currentTimeMillis() < deadline) {
+            if (activity.hasWindowFocus()) return true
+            try {
+                Thread.sleep(40)
+            } catch (_: InterruptedException) {
+                return activity.hasWindowFocus()
+            }
+        }
+        return activity.hasWindowFocus()
+    }
+
+    private fun cameraId(manager: CameraManager, facing: String): String {
+        val want = when (facing) {
+            "front" -> CameraCharacteristics.LENS_FACING_FRONT
+            "back" -> CameraCharacteristics.LENS_FACING_BACK
+            else -> throw IllegalArgumentException("facing must be back or front")
+        }
+        for (id in manager.cameraIdList) {
+            val lens = manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
+            if (lens == want) return id
+        }
+        if (facing == "back") {
+            return manager.cameraIdList.firstOrNull()
+                ?: throw IllegalStateException("this phone has no camera")
+        }
+        throw IllegalStateException("this phone has no front camera")
+    }
+
+    private fun chooseJpegSize(sizes: Array<Size>?): Size? {
+        if (sizes.isNullOrEmpty()) return null
+        val cap = 1280 * 720
+        val under = sizes.filter { it.width >= 320 && it.height >= 240 && it.width * it.height <= cap }
+        if (under.isNotEmpty()) return under.maxBy { it.width.toLong() * it.height }
+        return sizes.minBy { it.width.toLong() * it.height }
+    }
+
+    private fun applyAuto(request: CaptureRequest.Builder, characteristics: CameraCharacteristics) {
+        request.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+        request.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+        request.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+        val modes = characteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: IntArray(0)
+        val focus = when {
+            modes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) ->
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            modes.contains(CaptureRequest.CONTROL_AF_MODE_AUTO) ->
+                CaptureRequest.CONTROL_AF_MODE_AUTO
+            else -> CaptureRequest.CONTROL_AF_MODE_OFF
+        }
+        request.set(CaptureRequest.CONTROL_AF_MODE, focus)
+    }
+
+    private fun jpegOrientation(characteristics: CameraCharacteristics): Int {
+        val sensor = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+        val device = when (activity.display?.rotation ?: Surface.ROTATION_0) {
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
             else -> 0
         }
-        return (sensor - device + 360) % 360
+        val front = characteristics.get(CameraCharacteristics.LENS_FACING) ==
+            CameraCharacteristics.LENS_FACING_FRONT
+        return if (front) (sensor + device) % 360 else (sensor - device + 360) % 360
+    }
+
+    private fun shrinkJpeg(bytes: ByteArray): ByteArray {
+        if (bytes.size <= 1_500_000) return bytes
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return bytes
+        val oriented = rotateByExif(bytes, decoded)
+        val longEdge = max(oriented.width, oriented.height).coerceAtLeast(1)
+        val scale = min(1f, 1280f / longEdge)
+        val scaled = if (scale < 1f) {
+            Bitmap.createScaledBitmap(
+                oriented,
+                (oriented.width * scale).toInt().coerceAtLeast(1),
+                (oriented.height * scale).toInt().coerceAtLeast(1),
+                true,
+            )
+        } else {
+            oriented
+        }
+        val out = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
+        if (scaled !== oriented) scaled.recycle()
+        if (oriented !== decoded) oriented.recycle()
+        decoded.recycle()
+        val smaller = out.toByteArray()
+        return if (smaller.isEmpty()) bytes else smaller
+    }
+
+    private fun rotateByExif(bytes: ByteArray, bitmap: Bitmap): Bitmap {
+        val rotation = try {
+            val exif = ExifInterface(ByteArrayInputStream(bytes))
+            when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+        } catch (_: Exception) {
+            0f
+        }
+        if (rotation == 0f) return bitmap
+        val matrix = Matrix().apply { postRotate(rotation) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
     private fun startRecording() {
@@ -367,8 +612,8 @@ class PhoneBridge(private val activity: MainActivity) {
             "phone.list_apps" -> mapOf("apps" to listApps())
             "phone.clipboard" -> clipboard(params.string("action"), params.string("text"))
             "phone.flashlight" -> flashlight(params["on"] == true)
-            "phone.volume" -> volume(params.int("level"))
-            "phone.brightness" -> brightness(params.int("level"))
+            "phone.volume" -> volume(params.int("level"), params.string("stream"))
+            "phone.brightness" -> brightness(params.int("level"), params.string("mode"))
             "phone.notify" -> notify(params.string("title"), params.string("text"))
             "phone.alarm" -> alarm(params.int("hour"), params.int("minute"), params.string("message"))
             "phone.dial" -> dial(params.string("number"), place = false)
@@ -388,6 +633,15 @@ class PhoneBridge(private val activity: MainActivity) {
             }
             "phone.media" -> media(params.string("action"))
             "phone.capabilities" -> capabilities()
+            "phone.ringer" -> ringer(params.string("action"), params.string("mode"))
+            "phone.vibrate" -> vibrate(params.int("ms"))
+            "phone.dnd" -> dnd(params.string("action"), params.string("mode"))
+            "phone.rotation" -> rotation(params.string("action"), params.string("mode"))
+            "phone.radio" -> radio(params.string("kind"), params.string("action"))
+            "phone.settings" -> settingsPage(params.string("page"), params.string("package"))
+            "phone.timer" -> timer(params.int("seconds"), params.string("message"))
+            "phone.device" -> deviceSnapshot()
+            "phone.screen" -> screen(params.string("action"))
             else -> throw IllegalArgumentException("unsupported command: $command")
         }
     }
@@ -451,35 +705,63 @@ class PhoneBridge(private val activity: MainActivity) {
     private fun flashlight(on: Boolean): Map<String, Any?> {
         val manager = context.getSystemService(CameraManager::class.java)
             ?: throw IllegalStateException("no camera")
-        val id = manager.cameraIdList.firstOrNull()
-            ?: throw IllegalStateException("no flashlight")
+        val id = manager.cameraIdList.firstOrNull { cameraId ->
+            manager.getCameraCharacteristics(cameraId)
+                .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        } ?: throw IllegalStateException("no flashlight")
         manager.setTorchMode(id, on)
         return mapOf("on" to on)
     }
 
-    private fun volume(level: Int): Map<String, Any?> {
+    private fun volume(level: Int, streamName: String): Map<String, Any?> {
         val audio = context.getSystemService(AudioManager::class.java)
             ?: throw IllegalStateException("no audio")
-        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val scaled = (level.coerceIn(0, 100) / 100.0 * max).toInt()
-        audio.setStreamVolume(AudioManager.STREAM_MUSIC, scaled, 0)
-        return mapOf("level" to level.coerceIn(0, 100))
+        val name = streamName.ifBlank { "music" }
+        val stream = when (name) {
+            "music" -> AudioManager.STREAM_MUSIC
+            "ring" -> AudioManager.STREAM_RING
+            "alarm" -> AudioManager.STREAM_ALARM
+            "notification" -> AudioManager.STREAM_NOTIFICATION
+            "voice" -> AudioManager.STREAM_VOICE_CALL
+            else -> throw IllegalArgumentException(
+                "stream must be music, ring, alarm, notification, or voice"
+            )
+        }
+        val percent = level.coerceIn(0, 100)
+        val max = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
+        val scaled = (percent / 100.0 * max).toInt()
+        audio.setStreamVolume(stream, scaled, 0)
+        return mapOf("level" to percent, "stream" to name)
     }
 
-    private fun brightness(level: Int): Map<String, Any?> {
+    private fun brightness(level: Int, mode: String): Map<String, Any?> {
         if (!Settings.System.canWrite(context)) {
-            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                data = android.net.Uri.parse("package:${context.packageName}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
+            startSettings(writeSettingsIntent())
             throw IllegalStateException(
                 "allow Muse Companion to modify system settings, then set brightness again"
             )
         }
-        val value = (level.coerceIn(0, 100) / 100.0 * 255).toInt()
-        Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, value)
-        return mapOf("level" to level.coerceIn(0, 100))
+        val resolver = context.contentResolver
+        if (mode == "auto") {
+            Settings.System.putInt(
+                resolver,
+                Settings.System.SCREEN_BRIGHTNESS_MODE,
+                Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC,
+            )
+            return mapOf("mode" to "auto")
+        }
+        if (mode.isNotEmpty() && mode != "manual") {
+            throw IllegalArgumentException("mode must be auto or manual")
+        }
+        val percent = level.coerceIn(0, 100)
+        Settings.System.putInt(
+            resolver,
+            Settings.System.SCREEN_BRIGHTNESS_MODE,
+            Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
+        )
+        val value = (percent / 100.0 * 255).toInt()
+        Settings.System.putInt(resolver, Settings.System.SCREEN_BRIGHTNESS, value)
+        return mapOf("level" to percent, "mode" to "manual")
     }
 
     private fun notify(title: String, text: String): Map<String, Any?> {
@@ -652,6 +934,346 @@ class PhoneBridge(private val activity: MainActivity) {
         return mapOf("action" to action)
     }
 
+    private fun ringer(action: String, mode: String): Map<String, Any?> {
+        val audio = context.getSystemService(AudioManager::class.java)
+            ?: throw IllegalStateException("no audio")
+        if (action == "set") {
+            val value = when (mode) {
+                "normal" -> AudioManager.RINGER_MODE_NORMAL
+                "vibrate" -> AudioManager.RINGER_MODE_VIBRATE
+                "silent" -> AudioManager.RINGER_MODE_SILENT
+                else -> throw IllegalArgumentException("mode must be normal, vibrate, or silent")
+            }
+            try {
+                audio.ringerMode = value
+            } catch (_: SecurityException) {
+                startSettings(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                throw IllegalStateException(
+                    "allow Muse Companion to change Do Not Disturb, then set the ringer again"
+                )
+            }
+        }
+        val current = when (audio.ringerMode) {
+            AudioManager.RINGER_MODE_SILENT -> "silent"
+            AudioManager.RINGER_MODE_VIBRATE -> "vibrate"
+            else -> "normal"
+        }
+        return mapOf("mode" to current)
+    }
+
+    private fun vibrate(ms: Int): Map<String, Any?> {
+        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Vibrator::class.java)
+        } ?: throw IllegalStateException("no vibrator")
+        val duration = (if (ms <= 0) 200 else ms).coerceIn(1, 5000).toLong()
+        if (Build.VERSION.SDK_INT >= 26) {
+            vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(duration)
+        }
+        return mapOf("ms" to duration)
+    }
+
+    private fun dnd(action: String, mode: String): Map<String, Any?> {
+        val manager = context.getSystemService(NotificationManager::class.java)
+            ?: throw IllegalStateException("no notifications")
+        if (Build.VERSION.SDK_INT >= 23 && !manager.isNotificationPolicyAccessGranted) {
+            startSettings(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+            throw IllegalStateException(
+                "allow Muse Companion to change Do Not Disturb, then try again"
+            )
+        }
+        if (action == "set") {
+            val filter = when (mode) {
+                "none", "silent" -> NotificationManager.INTERRUPTION_FILTER_NONE
+                "priority" -> NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                "alarms" -> NotificationManager.INTERRUPTION_FILTER_ALARMS
+                "all", "off" -> NotificationManager.INTERRUPTION_FILTER_ALL
+                else -> throw IllegalArgumentException("mode must be all, priority, alarms, or none")
+            }
+            manager.setInterruptionFilter(filter)
+        }
+        val current = when (manager.currentInterruptionFilter) {
+            NotificationManager.INTERRUPTION_FILTER_NONE -> "none"
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> "priority"
+            NotificationManager.INTERRUPTION_FILTER_ALARMS -> "alarms"
+            else -> "all"
+        }
+        return mapOf("mode" to current, "granted" to true)
+    }
+
+    private fun rotation(action: String, mode: String): Map<String, Any?> {
+        if (!Settings.System.canWrite(context)) {
+            startSettings(writeSettingsIntent())
+            throw IllegalStateException(
+                "allow Muse Companion to modify system settings, then set rotation again"
+            )
+        }
+        val resolver = context.contentResolver
+        if (action == "set") {
+            when (mode) {
+                "auto" -> Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1)
+                "portrait" -> {
+                    Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
+                    Settings.System.putInt(resolver, Settings.System.USER_ROTATION, Surface.ROTATION_0)
+                }
+                "landscape" -> {
+                    Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
+                    Settings.System.putInt(resolver, Settings.System.USER_ROTATION, Surface.ROTATION_90)
+                }
+                "locked" -> Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
+                else -> throw IllegalArgumentException(
+                    "mode must be auto, portrait, landscape, or locked"
+                )
+            }
+        }
+        val auto = Settings.System.getInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
+        val user = Settings.System.getInt(resolver, Settings.System.USER_ROTATION, 0)
+        val current = when {
+            auto -> "auto"
+            user == Surface.ROTATION_90 || user == Surface.ROTATION_270 -> "landscape"
+            else -> "portrait"
+        }
+        return mapOf("mode" to current, "auto" to auto)
+    }
+
+    private fun radio(kind: String, action: String): Map<String, Any?> {
+        val status = when (kind) {
+            "wifi" -> wifiStatus()
+            "bluetooth" -> bluetoothStatus()
+            "nfc" -> nfcStatus()
+            "airplane" -> mapOf(
+                "kind" to "airplane",
+                "available" to true,
+                "enabled" to airplaneOn(),
+            )
+            "mobile" -> mobileStatus()
+            else -> throw IllegalArgumentException(
+                "kind must be wifi, bluetooth, nfc, airplane, or mobile"
+            )
+        }
+        if (action == "open") {
+            openRadio(kind)
+            return status + mapOf("opened" to true)
+        }
+        return status + mapOf("opened" to false)
+    }
+
+    private fun settingsPage(page: String, packageName: String): Map<String, Any?> {
+        val intent = when (page) {
+            "wifi" -> Intent(Settings.ACTION_WIFI_SETTINGS)
+            "bluetooth" -> Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+            "nfc" -> Intent(Settings.ACTION_NFC_SETTINGS)
+            "display" -> Intent(Settings.ACTION_DISPLAY_SETTINGS)
+            "sound" -> Intent(Settings.ACTION_SOUND_SETTINGS)
+            "apps" -> Intent(Settings.ACTION_APPLICATION_SETTINGS)
+            "battery" -> Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+            "location" -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+            "notifications" -> appNotificationSettings()
+            "wireless" -> Intent(Settings.ACTION_WIRELESS_SETTINGS)
+            "date" -> Intent(Settings.ACTION_DATE_SETTINGS)
+            "accessibility" -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            "storage" -> Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
+            "about" -> Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)
+            "dnd" -> Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+            "airplane" -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+            "data" -> Intent(Settings.ACTION_DATA_USAGE_SETTINGS)
+            "security" -> Intent(Settings.ACTION_SECURITY_SETTINGS)
+            "write" -> writeSettingsIntent()
+            "app" -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                val pkg = packageName.ifBlank { context.packageName }
+                data = android.net.Uri.parse("package:$pkg")
+            }
+            else -> throw IllegalArgumentException(
+                "page must be wifi, bluetooth, nfc, display, sound, apps, battery, " +
+                    "location, notifications, wireless, date, accessibility, storage, " +
+                    "about, dnd, airplane, data, security, write, or app"
+            )
+        }
+        startSettings(intent)
+        return mapOf("status" to "opened", "page" to page)
+    }
+
+    private fun timer(seconds: Int, message: String): Map<String, Any?> {
+        require(seconds in 1..86_400) { "seconds must be 1 to 86400" }
+        val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+            putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+            putExtra(AlarmClock.EXTRA_MESSAGE, message.ifBlank { "Muse" })
+            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        return mapOf("status" to "set", "seconds" to seconds)
+    }
+
+    private fun deviceSnapshot(): Map<String, Any?> {
+        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+            status == BatteryManager.BATTERY_STATUS_FULL
+        val percent = if (level >= 0 && scale > 0) (level * 100) / scale else -1
+        val stat = StatFs(Environment.getDataDirectory().path)
+        val power = context.getSystemService(PowerManager::class.java)
+        val rotation = when (activity.display?.rotation ?: Surface.ROTATION_0) {
+            Surface.ROTATION_90, Surface.ROTATION_270 -> "landscape"
+            else -> "portrait"
+        }
+        return mapOf(
+            "manufacturer" to Build.MANUFACTURER,
+            "model" to Build.MODEL,
+            "device" to Build.DEVICE,
+            "release" to Build.VERSION.RELEASE,
+            "sdk" to Build.VERSION.SDK_INT,
+            "battery_percent" to percent,
+            "charging" to charging,
+            "storage_free_bytes" to stat.availableBytes,
+            "storage_total_bytes" to stat.totalBytes,
+            "screen_on" to (power?.isInteractive == true),
+            "orientation" to rotation,
+            "ringer" to ringer("get", ""),
+            "wifi" to wifiStatus(),
+            "bluetooth" to bluetoothStatus(),
+            "nfc" to nfcStatus(),
+            "airplane" to airplaneOn(),
+            "write_settings" to Settings.System.canWrite(context),
+            "dnd" to dndGranted(),
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun screen(action: String): Map<String, Any?> {
+        val power = context.getSystemService(PowerManager::class.java)
+        if (action == "wake") {
+            val lock = power?.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "muse:screen",
+            )
+            lock?.acquire(3_000)
+            context.startActivity(
+                Intent(context, MainActivity::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+            )
+            if (Build.VERSION.SDK_INT >= 27) activity.setTurnScreenOn(true)
+        } else if (action.isNotEmpty() && action != "status") {
+            throw IllegalArgumentException("action must be status or wake")
+        }
+        return mapOf("screen_on" to (power?.isInteractive == true))
+    }
+
+    private fun wifiStatus(): Map<String, Any?> {
+        val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
+        val connected = activeTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        return mapOf(
+            "kind" to "wifi",
+            "available" to (wifi != null),
+            "enabled" to (wifi?.isWifiEnabled == true),
+            "connected" to connected,
+        )
+    }
+
+    private fun bluetoothStatus(): Map<String, Any?> {
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+        val enabled = try {
+            adapter?.isEnabled == true
+        } catch (_: SecurityException) {
+            false
+        }
+        return mapOf(
+            "kind" to "bluetooth",
+            "available" to (adapter != null),
+            "enabled" to enabled,
+        )
+    }
+
+    private fun nfcStatus(): Map<String, Any?> {
+        val adapter = NfcAdapter.getDefaultAdapter(context)
+        return mapOf(
+            "kind" to "nfc",
+            "available" to (adapter != null),
+            "enabled" to (adapter?.isEnabled == true),
+        )
+    }
+
+    private fun mobileStatus(): Map<String, Any?> = mapOf(
+        "kind" to "mobile",
+        "available" to context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY),
+        "connected" to activeTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+    )
+
+    private fun activeTransport(transport: Int): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        val network = manager.activeNetwork ?: return false
+        val caps = manager.getNetworkCapabilities(network) ?: return false
+        return caps.hasTransport(transport)
+    }
+
+    private fun airplaneOn(): Boolean =
+        Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+
+    private fun openRadio(kind: String) {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val panel = when (kind) {
+                "wifi" -> Settings.Panel.ACTION_WIFI
+                "nfc" -> Settings.Panel.ACTION_NFC
+                "mobile" -> Settings.Panel.ACTION_INTERNET_CONNECTIVITY
+                else -> null
+            }
+            if (panel != null) {
+                startSettings(Intent(panel))
+                return
+            }
+        }
+        val page = when (kind) {
+            "wifi" -> "wifi"
+            "bluetooth" -> "bluetooth"
+            "nfc" -> "nfc"
+            "airplane" -> "airplane"
+            "mobile" -> "data"
+            else -> throw IllegalArgumentException(
+                "kind must be wifi, bluetooth, nfc, airplane, or mobile"
+            )
+        }
+        settingsPage(page, "")
+    }
+
+    private fun writeSettingsIntent(): Intent =
+        Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+            data = android.net.Uri.parse("package:${context.packageName}")
+        }
+
+    private fun appNotificationSettings(): Intent =
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            if (Build.VERSION.SDK_INT >= 26) {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            } else {
+                putExtra("app_package", context.packageName)
+            }
+        }
+
+    private fun startSettings(intent: Intent) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
+    private fun dndGranted(): Boolean {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+        return manager.isNotificationPolicyAccessGranted
+    }
+
+    private fun hasCamera(facing: Int): Boolean {
+        val manager = context.getSystemService(CameraManager::class.java) ?: return false
+        return manager.cameraIdList.any { id ->
+            manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == facing
+        }
+    }
+
     private fun locate(result: MethodChannel.Result) {
         val manager = context.getSystemService(LocationManager::class.java)
             ?: throw IllegalStateException("no location")
@@ -715,15 +1337,22 @@ class PhoneBridge(private val activity: MainActivity) {
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
         return mapOf(
             "camera" to granted(Manifest.permission.CAMERA),
+            "camera_back" to hasCamera(CameraCharacteristics.LENS_FACING_BACK),
+            "camera_front" to hasCamera(CameraCharacteristics.LENS_FACING_FRONT),
             "microphone" to granted(Manifest.permission.RECORD_AUDIO),
             "location" to granted(Manifest.permission.ACCESS_FINE_LOCATION),
             "sms" to granted(Manifest.permission.READ_SMS),
             "phone" to granted(Manifest.permission.CALL_PHONE),
             "contacts" to granted(Manifest.permission.READ_CONTACTS),
             "calendar" to granted(Manifest.permission.READ_CALENDAR),
-            "notifications" to MuseNotificationListener.enabled(),
+            "notifications" to granted(Manifest.permission.POST_NOTIFICATIONS),
+            "notification_listener" to MuseNotificationListener.enabled(),
             "flashlight" to context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH),
+            "write_settings" to Settings.System.canWrite(context),
+            "dnd" to dndGranted(),
             "model" to Build.MODEL,
+            "manufacturer" to Build.MANUFACTURER,
+            "release" to Build.VERSION.RELEASE,
         )
     }
 

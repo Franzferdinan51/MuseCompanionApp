@@ -94,6 +94,7 @@ Future<void> main() async {
     postToMuse: poster.send,
     allowCalls: () => presentation.settings.allowCalls,
     allowSendSms: () => presentation.settings.allowSendSms,
+    cameraFacing: () => presentation.settings.cameraFacing,
   );
 
   final screen = _screenSize();

@@ -25,14 +25,15 @@ import '../src/gadget/phone_actions.dart';
 const MethodChannel _phoneChannel = MethodChannel('dev.musecompanion/phone');
 
 class PhoneBridge implements PhoneActions {
-  const PhoneBridge({MethodChannel? channel}) : _channel = channel ?? _phoneChannel;
+  const PhoneBridge({MethodChannel? channel})
+    : _channel = channel ?? _phoneChannel;
 
   final MethodChannel _channel;
 
   @override
-  Future<Uint8List> captureJpeg() async {
+  Future<Uint8List> captureJpeg({String facing = 'back'}) async {
     await _ensure(Permission.camera, 'Camera');
-    final bytes = await _call<Uint8List>('captureJpeg');
+    final bytes = await _call<Uint8List>('captureJpeg', {'facing': facing});
     if (bytes == null || bytes.isEmpty) {
       throw const PhoneActionException('the camera returned nothing');
     }
@@ -75,12 +76,11 @@ class PhoneBridge implements PhoneActions {
 
   @override
   Future<Map<String, Object?>> run(
-      String command, Map<String, Object?> params) async {
+    String command,
+    Map<String, Object?> params,
+  ) async {
     await _ensureFor(command);
-    final raw = await _call<Map>('run', {
-      'command': command,
-      'params': params,
-    });
+    final raw = await _call<Map>('run', {'command': command, 'params': params});
     if (raw == null) return const {};
     return raw.map((key, value) => MapEntry(key.toString(), value));
   }
@@ -130,7 +130,8 @@ class PhoneBridge implements PhoneActions {
       throw const PhoneActionException('phone controls need the Android app');
     } on PlatformException catch (e) {
       throw PhoneActionException(
-          e.message?.isNotEmpty == true ? e.message! : e.code);
+        e.message?.isNotEmpty == true ? e.message! : e.code,
+      );
     }
   }
 }

@@ -57,7 +57,10 @@ void main() {
     test('derives visible lines from a multi-line caption', () {
       final state = PresentationState();
       state.applyStatus('Reading your notes.\nNext: drafting a reply.');
-      expect(state.lines, <String>['Reading your notes.', 'Next: drafting a reply.']);
+      expect(state.lines, <String>[
+        'Reading your notes.',
+        'Next: drafting a reply.',
+      ]);
     });
 
     test('clips to maxStatusChars and stores the clipped text', () {
@@ -127,8 +130,14 @@ void main() {
       const settings = CompanionSettings();
       expect(settings.theme, 'system');
       expect(settings.keepScreenOn, isFalse);
-      expect(CompanionSettings.themeOptions,
-          <String>['light', 'dark', 'system']);
+      expect(settings.cameraFacing, 'back');
+      expect(settings.allowCalls, isFalse);
+      expect(settings.allowSendSms, isFalse);
+      expect(CompanionSettings.themeOptions, <String>[
+        'light',
+        'dark',
+        'system',
+      ]);
     });
 
     test('fromMap/toMap round-trips', () {
@@ -147,6 +156,14 @@ void main() {
     test('an unknown theme falls back to the default', () {
       final restored = CompanionSettings.fromMap({'theme': 'neon'});
       expect(restored.theme, 'system');
+      expect(
+        CompanionSettings.fromMap({'camera_facing': 'nope'}).cameraFacing,
+        'back',
+      );
+      expect(
+        CompanionSettings.fromMap({'camera_facing': 'front'}).cameraFacing,
+        'front',
+      );
     });
 
     test('copyWith changes only the supplied field', () {
@@ -159,15 +176,31 @@ void main() {
 
   group('3D avatar (GLB) detection', () {
     test('glTF magic bytes detect a model', () {
-      final glb = Uint8List.fromList(
-          [0x67, 0x6C, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00]);
+      final glb = Uint8List.fromList([
+        0x67,
+        0x6C,
+        0x54,
+        0x46,
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+      ]);
       expect(isGlbModel(glb), isTrue);
     });
 
     test('image bytes are not a model', () {
       // PNG signature.
-      final png = Uint8List.fromList(
-          [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final png = Uint8List.fromList([
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+      ]);
       expect(isGlbModel(png), isFalse);
     });
 
@@ -179,11 +212,13 @@ void main() {
     test('characterIsModel follows the stored bytes', () {
       final state = PresentationState();
       expect(state.characterIsModel, isFalse);
-      state.applyCharacter(Uint8List.fromList(
-          [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+      state.applyCharacter(
+        Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+      );
       expect(state.characterIsModel, isFalse);
-      state.applyCharacter(Uint8List.fromList(
-          [0x67, 0x6C, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00]));
+      state.applyCharacter(
+        Uint8List.fromList([0x67, 0x6C, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00]),
+      );
       expect(state.characterIsModel, isTrue);
       state.applyPlaceholder();
       expect(state.characterIsModel, isFalse);
@@ -193,15 +228,21 @@ void main() {
 
   group('animated image detection', () {
     test('GIF headers count as animated', () {
-      expect(
-          isAnimatedImage(Uint8List.fromList('GIF89a'.codeUnits)), isTrue);
-      expect(
-          isAnimatedImage(Uint8List.fromList('GIF87a'.codeUnits)), isTrue);
+      expect(isAnimatedImage(Uint8List.fromList('GIF89a'.codeUnits)), isTrue);
+      expect(isAnimatedImage(Uint8List.fromList('GIF87a'.codeUnits)), isTrue);
     });
 
     test('a PNG is not animated', () {
-      final png = Uint8List.fromList(
-          [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final png = Uint8List.fromList([
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+      ]);
       expect(isAnimatedImage(png), isFalse);
     });
 

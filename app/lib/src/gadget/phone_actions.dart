@@ -29,8 +29,8 @@ class PhoneActionException implements Exception {
 }
 
 abstract class PhoneActions {
-  /// One JPEG from the back camera.
-  Future<Uint8List> captureJpeg();
+  /// One JPEG from the [facing] camera (`back` or `front`).
+  Future<Uint8List> captureJpeg({String facing = 'back'});
 
   /// A mono 16-bit PCM WAV recorded for [seconds] (already capped).
   Future<Uint8List> recordWav(int seconds);
@@ -42,6 +42,5 @@ abstract class PhoneActions {
   Future<void> openNotificationAccess();
 
   /// Every other `phone.*` command. Throws [PhoneActionException] on failure.
-  Future<Map<String, Object?>> run(
-      String command, Map<String, Object?> params);
+  Future<Map<String, Object?>> run(String command, Map<String, Object?> params);
 }

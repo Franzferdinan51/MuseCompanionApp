@@ -38,12 +38,15 @@ Map<String, Object?> companionCommandSpecs({
   required int screenHeight,
 }) {
   Map<String, Object?> stringParam(String description) => {
-        'type': 'string',
-        'description': description,
-      };
+    'type': 'string',
+    'description': description,
+  };
 
-  Map<String, Object?> intParam(String description,
-      {int? minimum, int? maximum}) {
+  Map<String, Object?> intParam(
+    String description, {
+    int? minimum,
+    int? maximum,
+  }) {
     final param = <String, Object?>{
       'type': 'integer',
       'description': description,
@@ -85,13 +88,12 @@ Map<String, Object?> companionCommandSpecs({
   return {
     'display.draw_url': {
       'description': drawUrlDescription,
-      'required': {
-        'url': stringParam('http:// or https:// URL of the image.'),
-      },
+      'required': {'url': stringParam('http:// or https:// URL of the image.')},
       'optional': {
         'row': intParam(
-            'Ignored on the companion; accepted for compatibility with '
-            'fixed-layout gadgets.'),
+          'Ignored on the companion; accepted for compatibility with '
+          'fixed-layout gadgets.',
+        ),
       },
       'timeout_ms': drawImageTimeoutMs,
     },
@@ -106,18 +108,21 @@ Map<String, Object?> companionCommandSpecs({
       'description': statusDescription,
       'required': {
         'text': stringParam(
-            'Current activity or status, up to $maxStatusChars characters.'),
+          'Current activity or status, up to $maxStatusChars characters.',
+        ),
       },
       'optional': <String, Object?>{},
     },
     // Same handler as companion.set_status: Muses that learned the Pocket
     // command names keep working with the companion app.
     'pocket.set_status': {
-      'description': '$statusDescription (Compatibility alias of '
+      'description':
+          '$statusDescription (Compatibility alias of '
           'companion.set_status.)',
       'required': {
         'text': stringParam(
-            'Current activity or status, up to $maxStatusChars characters.'),
+          'Current activity or status, up to $maxStatusChars characters.',
+        ),
       },
       'optional': <String, Object?>{},
     },
@@ -125,8 +130,7 @@ Map<String, Object?> companionCommandSpecs({
       'description': displayDescription,
       'required': <String, Object?>{},
       'optional': {
-        'theme': stringParam(
-            'Color theme: "light", "dark" or "system".'),
+        'theme': stringParam('Color theme: "light", "dark" or "system".'),
         'keep_screen_on': {
           'type': 'boolean',
           'description':
@@ -134,8 +138,7 @@ Map<String, Object?> companionCommandSpecs({
         },
         'speak_replies': {
           'type': 'boolean',
-          'description':
-              'Speak assistant replies aloud on the phone speaker.',
+          'description': 'Speak assistant replies aloud on the phone speaker.',
         },
       },
     },
@@ -153,7 +156,11 @@ Map<String, Object?> companionCommandSpecs({
       'required': <String, Object?>{},
       'optional': {
         'prompt': stringParam(
-            'Question to ask about the photo. Defaults to asking what you see.'),
+          'Question to ask about the photo. Defaults to asking what you see.',
+        ),
+        'facing': stringParam(
+          'Camera to use: "back" or "front". Defaults to the camera chosen in Companion Settings.',
+        ),
       },
       'timeout_ms': drawImageTimeoutMs,
     },
@@ -164,8 +171,11 @@ Map<String, Object?> companionCommandSpecs({
           'with the note.',
       'required': <String, Object?>{},
       'optional': {
-        'seconds': intParam('How long to listen, 1 to 20.',
-            minimum: 1, maximum: 20),
+        'seconds': intParam(
+          'How long to listen, 1 to 20.',
+          minimum: 1,
+          maximum: 20,
+        ),
         'prompt': stringParam('Text sent with the voice note.'),
       },
       'timeout_ms': drawImageTimeoutMs,
@@ -179,52 +189,52 @@ Map<String, Object?> companionCommandSpecs({
       'description':
           'Open an installed app by package name or by a name fragment '
           '(for example "maps" or "com.google.android.apps.maps").',
-      'required': {
-        'name': stringParam('Package name or app name fragment.'),
-      },
+      'required': {'name': stringParam('Package name or app name fragment.')},
       'optional': <String, Object?>{},
     },
     'phone.list_apps': {
-      'description':
-          'List launchable apps as name and package, capped at 80.',
+      'description': 'List launchable apps as name and package, capped at 80.',
       'required': <String, Object?>{},
       'optional': <String, Object?>{},
     },
     'phone.clipboard': {
       'description': 'Read or replace the phone clipboard.',
-      'required': {
-        'action': stringParam('"get" or "set".'),
-      },
-      'optional': {
-        'text': stringParam('Text to copy when action is set.'),
-      },
+      'required': {'action': stringParam('"get" or "set".')},
+      'optional': {'text': stringParam('Text to copy when action is set.')},
     },
     'phone.flashlight': {
       'description': 'Turn the phone flashlight on or off.',
       'required': {
-        'on': {
-          'type': 'boolean',
-          'description': 'True to turn the torch on.',
-        },
+        'on': {'type': 'boolean', 'description': 'True to turn the torch on.'},
       },
       'optional': <String, Object?>{},
     },
     'phone.volume': {
-      'description': 'Set the media volume as a percent from 0 to 100.',
+      'description':
+          'Set a volume stream as a percent from 0 to 100. stream is '
+          'music (the default), ring, alarm, notification, or voice.',
       'required': {
-        'level': intParam('Media volume percent.', minimum: 0, maximum: 100),
+        'level': intParam('Volume percent.', minimum: 0, maximum: 100),
       },
-      'optional': <String, Object?>{},
+      'optional': {
+        'stream': stringParam(
+          'music, ring, alarm, notification, or voice. Defaults to music.',
+        ),
+      },
     },
     'phone.brightness': {
       'description':
-          'Set the screen brightness as a percent from 0 to 100. Needs '
-          'the system "modify settings" grant; if it is missing the result '
-          'says so.',
+          'Set the screen brightness as a percent from 0 to 100, or switch '
+          'auto brightness on. Needs the system "modify settings" grant; if '
+          'it is missing the settings page opens and the result says so.',
       'required': {
         'level': intParam('Brightness percent.', minimum: 0, maximum: 100),
       },
-      'optional': <String, Object?>{},
+      'optional': {
+        'mode': stringParam(
+          '"manual" (default) applies level. "auto" turns automatic brightness on.',
+        ),
+      },
     },
     'phone.location': {
       'description':
@@ -247,9 +257,7 @@ Map<String, Object?> companionCommandSpecs({
         'hour': intParam('Hour 0-23.', minimum: 0, maximum: 23),
         'minute': intParam('Minute 0-59.', minimum: 0, maximum: 59),
       },
-      'optional': {
-        'message': stringParam('Alarm label.'),
-      },
+      'optional': {'message': stringParam('Alarm label.')},
     },
     'phone.dial': {
       'description':
@@ -321,7 +329,8 @@ Map<String, Object?> companionCommandSpecs({
           'Send a media key: play, pause, play_pause, next, previous, stop.',
       'required': {
         'action': stringParam(
-            'play, pause, play_pause, next, previous, or stop.'),
+          'play, pause, play_pause, next, previous, or stop.',
+        ),
       },
       'optional': <String, Object?>{},
     },
@@ -332,23 +341,112 @@ Map<String, Object?> companionCommandSpecs({
       'required': <String, Object?>{},
       'optional': <String, Object?>{},
     },
+    'phone.ringer': {
+      'description':
+          'Read or set the ringer: normal, vibrate, or silent. action is '
+          '"get" or "set". Silent mode may ask the user for Do Not Disturb access.',
+      'required': <String, Object?>{},
+      'optional': {
+        'action': stringParam('"get" (default) or "set".'),
+        'mode': stringParam('When setting: normal, vibrate, or silent.'),
+      },
+    },
+    'phone.vibrate': {
+      'description': 'Vibrate the phone for a short time.',
+      'required': <String, Object?>{},
+      'optional': {
+        'ms': intParam(
+          'Duration in milliseconds, 1 to 5000. Default 200.',
+          minimum: 1,
+          maximum: 5000,
+        ),
+      },
+    },
+    'phone.dnd': {
+      'description':
+          'Read or set Do Not Disturb. mode is all, priority, alarms, or '
+          'none. If the user has not allowed notification policy access, '
+          'the system page opens instead of changing the mode.',
+      'required': <String, Object?>{},
+      'optional': {
+        'action': stringParam('"get" (default) or "set".'),
+        'mode': stringParam('all, priority, alarms, or none.'),
+      },
+    },
+    'phone.rotation': {
+      'description':
+          'Read or set screen rotation: auto, portrait, landscape, or '
+          'locked. Needs the system "modify settings" grant.',
+      'required': <String, Object?>{},
+      'optional': {
+        'action': stringParam('"get" (default) or "set".'),
+        'mode': stringParam('auto, portrait, landscape, or locked.'),
+      },
+    },
+    'phone.radio': {
+      'description':
+          'Report Wi-Fi, Bluetooth, NFC, mobile data, or airplane mode, or '
+          'open the system panel for that radio. Android does not let an '
+          'app flip these radios by itself. kind is wifi, bluetooth, nfc, '
+          'airplane, or mobile. action is "status" (default) or "open".',
+      'required': {
+        'kind': stringParam('wifi, bluetooth, nfc, airplane, or mobile.'),
+      },
+      'optional': {'action': stringParam('"status" or "open".')},
+    },
+    'phone.settings': {
+      'description':
+          'Open a system settings page: wifi, bluetooth, nfc, display, '
+          'sound, apps, battery, location, notifications, wireless, date, '
+          'accessibility, storage, about, dnd, airplane, data, security, '
+          'write, or app. page "app" opens an app\'s details; pass package '
+          'or it opens this companion.',
+      'required': {'page': stringParam('Which settings page to open.')},
+      'optional': {'package': stringParam('Package name when page is app.')},
+    },
+    'phone.timer': {
+      'description': 'Start a countdown timer on the phone clock.',
+      'required': {
+        'seconds': intParam(
+          'Length in seconds, 1 to 86400.',
+          minimum: 1,
+          maximum: 86400,
+        ),
+      },
+      'optional': {'message': stringParam('Timer label.')},
+    },
+    'phone.device': {
+      'description':
+          'Report this phone: model, Android version, battery, storage, '
+          'screen, ringer, and whether Wi-Fi, Bluetooth, NFC, and airplane '
+          'mode are on. Does not include accounts or hardware identifiers.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'phone.screen': {
+      'description':
+          'Report whether the screen is on. action "wake" turns the screen '
+          'on and brings Muse Companion forward.',
+      'required': <String, Object?>{},
+      'optional': {'action': stringParam('"status" (default) or "wake".')},
+    },
   };
 }
 
 /// Result of drawing a downloaded character image.
 class ImageDrawResult {
-  const ImageDrawResult.ok(
-      {required this.width,
-      required this.height,
-      required this.bytes,
-      required this.fromCache})
-      : error = null;
+  const ImageDrawResult.ok({
+    required this.width,
+    required this.height,
+    required this.bytes,
+    required this.fromCache,
+  }) : error = null;
 
   const ImageDrawResult.failed(this.error)
-      : width = 0,
-        height = 0,
-        bytes = 0,
-        fromCache = false;
+    : width = 0,
+      height = 0,
+      bytes = 0,
+      fromCache = false;
 
   bool get isOk => error == null;
   final String? error;
@@ -385,15 +483,22 @@ abstract class CompanionHealth {
   Future<Map<String, Object?>> health();
 }
 
-Map<String, Object?> okResult(Map<String, Object?> payload) =>
-    {'ok': true, 'payload': payload};
+Map<String, Object?> okResult(Map<String, Object?> payload) => {
+  'ok': true,
+  'payload': payload,
+};
 
-Map<String, Object?> errorResult(String message) =>
-    {'ok': false, 'error': message};
+Map<String, Object?> errorResult(String message) => {
+  'ok': false,
+  'error': message,
+};
 
 /// Posts a chat turn, including camera frames and voice notes.
-typedef PostToMuse = Future<Map<String, Object?>> Function(
-    String message, List<ChatAttachment> attachments);
+typedef PostToMuse =
+    Future<Map<String, Object?>> Function(
+      String message,
+      List<ChatAttachment> attachments,
+    );
 
 /// Dispatches the Muse's `link.invoke` calls to the app.
 class CompanionExecutor {
@@ -404,6 +509,7 @@ class CompanionExecutor {
     this.postToMuse,
     this.allowCalls,
     this.allowSendSms,
+    this.cameraFacing,
   });
 
   final CompanionDisplay display;
@@ -415,8 +521,14 @@ class CompanionExecutor {
   final bool Function()? allowCalls;
   final bool Function()? allowSendSms;
 
-  Future<Map<String, Object?>> run(String command,
-      Map<String, Object?> params, int? timeoutMs) async {
+  /// Camera chosen in Companion Settings when vision.capture omits facing.
+  final String Function()? cameraFacing;
+
+  Future<Map<String, Object?>> run(
+    String command,
+    Map<String, Object?> params,
+    int? timeoutMs,
+  ) async {
     try {
       switch (command) {
         case 'display.draw_url':
@@ -454,14 +566,14 @@ class CompanionExecutor {
     return errorResult('unsupported command: $command');
   }
 
-  Future<Map<String, Object?>> _setStatus(
-      Map<String, Object?> params) async {
+  Future<Map<String, Object?>> _setStatus(Map<String, Object?> params) async {
     final text = params['text'];
     if (text is! String || text.isEmpty) {
       return errorResult('text is required');
     }
-    final clipped =
-        text.length > maxStatusChars ? text.substring(0, maxStatusChars) : text;
+    final clipped = text.length > maxStatusChars
+        ? text.substring(0, maxStatusChars)
+        : text;
     final stored = await display.setStatus(clipped);
     return okResult({
       'status': 'ok',
@@ -475,7 +587,8 @@ class CompanionExecutor {
     if (url is! String || url.isEmpty) {
       return errorResult('url is required');
     }
-    final dataImage = url.startsWith('data:image/') ||
+    final dataImage =
+        url.startsWith('data:image/') ||
         url.startsWith('data:model/') ||
         url.startsWith('data:application/octet-stream');
     final uri = Uri.tryParse(url);
@@ -497,8 +610,7 @@ class CompanionExecutor {
     });
   }
 
-  Future<Map<String, Object?>> _setDisplay(
-      Map<String, Object?> params) async {
+  Future<Map<String, Object?>> _setDisplay(Map<String, Object?> params) async {
     final theme = params['theme'];
     if (theme != null &&
         theme != 'light' &&
@@ -529,8 +641,9 @@ class CompanionExecutor {
     final question = prompt is String && prompt.trim().isNotEmpty
         ? prompt.trim()
         : 'Look at this photo from the phone camera and describe what you see.';
+    final facing = _cameraFacing(params);
     await display.setStatus('Looking through the camera');
-    final jpeg = await (phone as PhoneActions).captureJpeg();
+    final jpeg = await (phone as PhoneActions).captureJpeg(facing: facing);
     return _postSeen(
       question,
       ChatAttachment(
@@ -577,8 +690,7 @@ class CompanionExecutor {
 
   Future<Map<String, Object?>> _call(Map<String, Object?> params) async {
     if (allowCalls?.call() != true) {
-      return errorResult(
-          'placing calls is off in Companion Settings');
+      return errorResult('placing calls is off in Companion Settings');
     }
     return _phone('phone.call', params);
   }
@@ -589,11 +701,26 @@ class CompanionExecutor {
   }
 
   Future<Map<String, Object?>> _phone(
-      String command, Map<String, Object?> params) async {
+    String command,
+    Map<String, Object?> params,
+  ) async {
     final phone = _requirePhone();
     if (phone is Map<String, Object?>) return phone;
     final result = await (phone as PhoneActions).run(command, params);
     return okResult(result);
+  }
+
+  String _cameraFacing(Map<String, Object?> params) {
+    final requested = params['facing'];
+    if (requested != null) {
+      if (requested is! String) {
+        throw const PhoneActionException('facing must be back or front');
+      }
+      final value = requested.trim().toLowerCase();
+      if (value == 'back' || value == 'front') return value;
+      throw const PhoneActionException('facing must be back or front');
+    }
+    return cameraFacing?.call() == 'front' ? 'front' : 'back';
   }
 
   /// A [PhoneActions], or an error result map when the phone is unavailable.
@@ -606,7 +733,10 @@ class CompanionExecutor {
   }
 
   Future<Map<String, Object?>> _postSeen(
-      String message, ChatAttachment attachment, String kind) async {
+    String message,
+    ChatAttachment attachment,
+    String kind,
+  ) async {
     final post = postToMuse;
     if (post == null) {
       return errorResult('chat is not connected');
@@ -649,8 +779,10 @@ String companionIntroMessage() {
       'note. You can see through the phone camera with vision.capture, listen '
       'with voice.listen, and use the phone.* commands registered on this '
       'device (open links, launch apps, notifications, messages, contacts, '
-      'calendar, location, alarms, clipboard, flashlight, volume, and spoken '
-      'replies). Each reply you write is shown as the caption under the '
+      'calendar, location, alarms, timers, clipboard, flashlight, volume, '
+      'ringer, brightness, rotation, vibration, and spoken replies). '
+      'Wi-Fi, Bluetooth, NFC, and airplane mode open the system panel. '
+      'Each reply you write is shown as the caption under the '
       'character, the way a Muse screen does, and spoken when the phone is '
       'set to. If already set up, refresh the character and current status. '
       'Tell me if a command fails.';

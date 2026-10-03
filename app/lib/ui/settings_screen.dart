@@ -12,16 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// The settings surface: color theme, keep-screen-on, spoken replies, and
-// the opt-in gates for real calls and texts. Values load from SettingsStore
-// on entry and are persisted (and pushed to the presentation state) as the
-// user changes them. Theme, keep-screen-on and spoken replies are also
-// writable by the Muse through `companion.set_display`. Calls and texts are
-// not: only this screen can turn those on.
+// The settings surface: color theme, keep-screen-on, spoken replies, camera
+// facing, permission grants, and the opt-in gates for real calls and texts.
+// Values load from SettingsStore on entry and are persisted (and pushed to
+// the presentation state) as the user changes them. Theme, keep-screen-on
+// and spoken replies are also writable by the Muse through
+// `companion.set_display`. Calls, texts, and the saved camera are not:
+// only this screen can change those.
 
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../app/foreground.dart';
 import '../app/model.dart';
@@ -40,7 +43,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   late CompanionSettings _settings;
   StreamSubscription<ConnectionState>? _connectionSub;
   ConnectionState _connection = ConnectionState.unpaired;
@@ -48,6 +52,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool? _serviceRunning;
   bool _serviceBusy = false;
   bool? _sdkSet;
+  bool _grantsArmed = false;
+  Map<String, Object?> _grants = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshGrants();
+  }
 
   @override
   void didChangeDependencies() {
@@ -70,6 +87,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .catchError((_) {
           if (mounted) setState(() => _sdkSet = false);
         });
+    if (!_grantsArmed) {
+      _grantsArmed = true;
+      _refreshGrants();
+    }
+  }
+
+  Future<void> _refreshGrants() async {
+    try {
+      final raw = await AppScope.of(
+        context,
+      ).phone.run('phone.capabilities', {});
+      if (!mounted) return;
+      setState(() => _grants = raw);
+    } on PhoneActionException {
+      // A desktop test or a missing plugin leaves the grant row empty.
+    }
   }
 
   Future<void> _refreshServiceState() async {
@@ -166,6 +199,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _connectionSub?.cancel();
     super.dispose();
   }
@@ -446,14 +480,104 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
           _SettingCard(
-            title: 'Phone actions',
+            title: 'Camera',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Your Muse can open the dialer, the message composer, '
-                  'apps, and the camera without these. Placing a call or '
-                  'sending a text directly stays off until you turn it on.',
+                  'The camera button and vision.capture use this camera unless Muse names the other one.',
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'back',
+                      label: Text('Back'),
+                      icon: Icon(Icons.camera_rear_outlined),
+                    ),
+                    ButtonSegment(
+                      value: 'front',
+                      label: Text('Front'),
+                      icon: Icon(Icons.camera_front_outlined),
+                    ),
+                  ],
+                  selected: {_settings.cameraFacing},
+                  onSelectionChanged: (next) =>
+                      _commit(_settings.copyWith(cameraFacing: next.first)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Phone control',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Muse can use this phone: camera, microphone, volume, ringer, brightness, rotation, flashlight, vibration, alarms, timers, media keys, launchable apps, the clipboard, the share sheet, contacts, calendar, location, and notifications you allow. Wi-Fi, Bluetooth, NFC, and airplane mode open the system panel. Android does not let an app flip those radios itself. Placing a call or sending a text stays off until you turn it on.',
+                ),
+                const SizedBox(height: 8),
+                if (_grants.isNotEmpty)
+                  Wrap(
+                    children: [
+                      _grantChip('camera', 'Camera'),
+                      _grantChip('microphone', 'Microphone'),
+                      _grantChip('location', 'Location'),
+                      _grantChip('contacts', 'Contacts'),
+                      _grantChip('calendar', 'Calendar'),
+                      _grantChip('sms', 'SMS'),
+                      _grantChip('phone', 'Phone'),
+                      _grantChip('notifications', 'Notifications'),
+                      _grantChip(
+                        'notification_listener',
+                        'Notification access',
+                      ),
+                      _grantChip('write_settings', 'System settings'),
+                      _grantChip('dnd', 'Do Not Disturb'),
+                    ],
+                  ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _permitButton(
+                      'Camera',
+                      () => _ask(Permission.camera, 'Camera'),
+                    ),
+                    _permitButton(
+                      'Microphone',
+                      () => _ask(Permission.microphone, 'Microphone'),
+                    ),
+                    _permitButton(
+                      'Location',
+                      () => _ask(Permission.locationWhenInUse, 'Location'),
+                    ),
+                    _permitButton(
+                      'Contacts',
+                      () => _ask(Permission.contacts, 'Contacts'),
+                    ),
+                    _permitButton(
+                      'Calendar',
+                      () => _ask(Permission.calendarFullAccess, 'Calendar'),
+                    ),
+                    _permitButton('SMS', () => _ask(Permission.sms, 'SMS')),
+                    _permitButton(
+                      'Phone',
+                      () => _ask(Permission.phone, 'Phone'),
+                    ),
+                    _permitButton(
+                      'Notifications',
+                      () => _ask(Permission.notification, 'Notifications'),
+                    ),
+                    _permitButton(
+                      'Notification access',
+                      _openNotificationAccess,
+                    ),
+                    _permitButton('System settings', () => _openPage('write')),
+                    _permitButton('Do Not Disturb', () => _openPage('dnd')),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 SwitchListTile(
@@ -469,18 +593,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onChanged: (v) =>
                       _commit(_settings.copyWith(allowSendSms: v)),
                 ),
-                const SizedBox(height: 8),
-                FilledButton.tonalIcon(
-                  onPressed: _openNotificationAccess,
-                  icon: const Icon(Icons.notifications_outlined),
-                  label: const Text('Notification access'),
-                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _grantChip(String key, String label) {
+    final value = _grants[key];
+    if (value is! bool) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 8, bottom: 8),
+      child: Chip(
+        visualDensity: VisualDensity.compact,
+        avatar: Icon(
+          value ? Icons.check_circle : Icons.radio_button_unchecked,
+          size: 18,
+        ),
+        label: Text(label),
+      ),
+    );
+  }
+
+  Widget _permitButton(String label, VoidCallback onPressed) {
+    return FilledButton.tonal(onPressed: onPressed, child: Text(label));
+  }
+
+  Future<void> _ask(Permission permission, String name) async {
+    try {
+      var status = await permission.status;
+      if (status.isGranted) {
+        await _refreshGrants();
+        return;
+      }
+      if (status.isPermanentlyDenied) {
+        await openAppSettings();
+        return;
+      }
+      status = await permission.request();
+      if (!status.isGranted && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$name stays off until it is allowed')),
+        );
+      }
+    } on MissingPluginException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Phone permissions need the Android app')),
+      );
+    } finally {
+      await _refreshGrants();
+    }
+  }
+
+  Future<void> _openPage(String page) async {
+    try {
+      await AppScope.of(context).phone.run('phone.settings', {'page': page});
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _openNotificationAccess() async {
