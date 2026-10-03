@@ -1,76 +1,77 @@
 # Muse Companion App
 
-A full-color **Muse gadget companion** for your phone — the app version of
-[muse-pocket](https://github.com/Franzferdinan51/muse-pocket). Where Pocket
-shows your Muse's character on a small e-ink display, this app shows it on
-your phone in full color and detail: character art, live status captions,
-chat, and settings.
+A full-color **Muse gadget** that runs on your phone. Where
+[muse-pocket](https://github.com/Franzferdinan51/muse-pocket) puts your Muse's
+character on a small e-ink panel, this app puts that same character on the
+phone: your Muse's own art, live captions, hold-to-talk, and the phone
+commands a gadget is allowed to use.
 
-Android first; iOS, macOS and Windows follow from the same Flutter codebase.
+Android is the build that ships. The gadget protocol is pure Dart, so the
+same session code is what a later iOS or desktop port would use.
 
 ## What it does
 
-- **Pairs like a real gadget** — the app advertises over Bluetooth LE and is
-  added from the Muse app exactly like any Muse gadget (Settings → Devices).
-  Encrypted pairing (protocol v5), then a persistent Noise-encrypted session
-  with your Muse.
-- **Shows your Muse's character** — full-color JPEG/PNG/WebP art at your
-  screen's resolution, cached on-device and kept across restarts.
-- **3D avatar** — when your Muse sends a GLB model instead of an image,
-  the character view renders it as an auto-rotating 3D avatar; 2D art and
-  the neutral placeholder behave exactly as before.
-- **Live status captions** — short Unicode updates under the character
-  whenever your Muse's activity changes.
-- **Chat from the device** — send messages to your Muse as coming from the
-  companion (main chat or a side chat). Replies stream back on
-  `/chat/subscribe` and show up in the thread. Hold the mic for a voice
-  note, or show the camera so your Muse can see the photo.
-- **Captions and a speaker, like the Muse screens** — a reply also appears
-  under the character while it streams, the same job the Waveshare, AiPi,
-  Stick, and Pocket displays do. Spoken replies follow the speech-volume
-  dial in Settings, and Say it again repeats the last one. A voice-note
-  transcript replaces the "Voice note" placeholder when Muse sends one.
-- **Muse-driven display** — your Muse can update the caption, swap the
-  character, clear back to the placeholder, and adjust theme preferences
-  through gadget commands; a health command reports battery and device info.
-- **Phone actions** — your Muse can open links and apps, set an alarm, read
-  notifications (after you grant access), and use the camera and mic. The
-  dialer and message composer open without extra toggles. Placing a call or
-  sending a text directly stays off until you turn it on in Settings.
+- **Pairs like a gadget.** The app advertises over Bluetooth LE. Add it from
+  the Muse app the same way as any other gadget (Settings → Devices → Add
+  gadget). Pairing is encrypted (protocol v5). After that the app keeps a
+  Noise session with your Muse and can hold it in a foreground service.
+- **Shows your Muse's character.** `display.draw_url` accepts a full-color
+  JPEG, PNG, or WebP, an animated GIF or animated WebP, or a GLB. The last
+  image is cached on the phone. The portrait moves through idle, listening,
+  thinking, and speaking with the same timing as the Waveshare gadget
+  screen. The art is yours; the app does not substitute a stock character.
+- **Hold the character to talk.** Press and hold the portrait to record a
+  voice note, then release to post it. The chat screen's mic does the same
+  thing. This is a voice note in the Muse chat, not a phone call.
+- **Captions and a speaker.** A reply is drawn under the character while it
+  streams, then spoken. Settings has a speech-volume dial. Say it again
+  repeats the last reply. A voice-note transcript replaces the "Voice note"
+  bubble when one arrives.
+- **Dashboard.** The heart icon in the header, and Dashboard in Settings,
+  show the character, the caption, link state, and the command channel:
+  invokes seen, results sent, the last command, and the recent link log.
+- **Phone commands.** Your Muse can open links and apps, set an alarm, read
+  notifications after you grant access, and use the camera and microphone.
+  The dialer and the message composer open without extra toggles. Placing a
+  call or sending a text directly stays off until you turn it on in Settings.
+  Muse cannot grant itself those toggles, and it cannot change the speech
+  volume.
 
 ## Status
 
-Version 0.2.0. The gadget protocol core (Noise XX session, BLE pairing v5,
-link client, connection loop with token rotation) is implemented in pure
-Dart, including a byte-for-byte replay of the official pairing vectors and
-a Noise handshake transcript verified against the reference Python SDK.
-The Android app pairs, keeps the link in a foreground service, shows the
-character (including a cached last image and GLB avatars), streams chat
-replies, and exposes voice, vision, and phone commands.
+Version 0.2.2. The app pairs, keeps the link up, answers `link.invoke` and
+Hatch `device.invoke` (including a command that arrives on another stream or
+as bare JSON) with `link.result`, streams chat replies, draws and moves the
+character, and exposes voice, vision, and phone commands.
 
 ## Getting started
 
 Prerequisites: [Flutter](https://docs.flutter.dev/get-started/install)
-(stable), an Android SDK for device builds, and the
-[Muse app](https://muse.ai) with a paired Muse.
+(stable), an Android SDK, and the [Muse app](https://muse.ai).
 
 ```bash
 cd app
 flutter pub get
 flutter analyze
 flutter test
-flutter run -d <your-android-device>
+flutter build apk --debug
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-Pairing (once the pairing wizard lands):
+Pairing:
 
 1. Create an SDK token at
    [gadgets.muse.ai/settings/sdk-tokens](https://gadgets.muse.ai/settings/sdk-tokens).
-2. Enter it in the app's pairing screen — the app starts advertising.
+2. In this app, open Pair and enter the token. The phone starts advertising.
 3. In the Muse app: Settings → Devices → Add gadget → pick
    `MuseGadgetXXXXXX`.
-4. Approve pairing; the app verifies the provisioned credentials and
-   connects. Your Muse introduces itself with character art and a status.
+4. Approve pairing. The app checks the credentials and connects. Your Muse
+   is asked for a character image and a status caption.
+
+If commands from Muse time out, open Dashboard. Invokes staying at 0 means
+the phone did not receive the command. Invokes climbing while results stay
+behind means the reply did not leave the phone. Logcat lines are prefixed
+with `[muse]`.
 
 ## Project layout
 
@@ -88,14 +89,14 @@ app/
       pairing.dart       # BLE pairing v5 device side
       ble_framing.dart   # BLE chunked notifications
       ble_setup.dart     # GATT setup controller (SetupController)
-      link_client.dart   # link.register/invoke/result + send_chat
+      link_client.dart   # link.register / invoke / result + send_chat
+      invoke.dart        # link.invoke and device.invoke shapes
       muse_api.dart      # device API: fetch_vms + token refresh
       identity.dart      # stable device identity
       service.dart       # connection loop, backoff, token rotation
       commands.dart      # companion command set + executor
-    app/                 # storage, presentation state, platform display/health
-    ui/                  # companion screen, settings, pairing, chat
-    ble/                 # platform BLE peripheral (Android GATT server first)
+    app/                 # storage, presentation, captions, avatar motion
+    ui/                  # companion, dashboard, settings, pairing, chat
   test/
     gadget/              # protocol unit tests + pairing vectors
     testdata/            # official link_pairing_v5 vectors
@@ -103,17 +104,25 @@ app/
 
 ## Protocol notes
 
-The Dart stack is a faithful port of the
+The Dart stack follows the
 [muse-gadget-sdk](https://github.com/facebookincubator/muse-gadget-sdk)
-Linux gadget (`musegadget` package): same Noise handshake, same service
-envelopes, same pairing transcript and key schedule, same BLE service and
-characteristic UUIDs — so the existing Muse apps pair with it unchanged.
+Linux gadget (`musegadget`) and the ESP32 session: the same Noise handshake,
+the same service envelopes, the same pairing transcript, and the same BLE
+service and characteristic UUIDs. The Muse app pairs with it as a gadget.
+
+Control messages are length-prefixed JSON on the `POST /link-control`
+stream. The phone also accepts a Hatch invoke that shows up as bare JSON,
+as NDJSON, or as a body chunk on another stream, and it answers on the
+control stream with `link.result`. `device_family` stays `companion`.
+
+Chat posts go to `POST /chat/stream` and only acknowledge the post. Replies
+arrive as NDJSON on `POST /chat/subscribe`.
 
 Commands registered with `link.register`:
 
 | Command | Purpose |
 |---|---|
-| `display.draw_url` | Full-color character image from a URL |
+| `display.draw_url` | Character image or model from a URL |
 | `display.show_animation` | Back to the neutral placeholder |
 | `companion.set_status` | Unicode status caption |
 | `pocket.set_status` | Alias for Muses that learned Pocket |
@@ -130,6 +139,8 @@ Commands registered with `link.register`:
 | `phone.notifications`, `phone.contacts`, `phone.events` | Recent notifications, contact search, upcoming calendar events |
 | `phone.share`, `phone.speak`, `phone.media`, `phone.capabilities` | Share sheet, speak text, media keys, report what this phone can do |
 
+There is no shell command. The phone is controlled through this list.
+
 ## Roadmap
 
 - Signed release APK/AAB on GitHub Releases
@@ -138,18 +149,18 @@ Commands registered with `link.register`:
 ## Contributing
 
 Issues and pull requests are welcome. Protocol changes should keep the
-Dart port byte-compatible with the reference SDK — add a vector or golden
-test when behavior changes.
+Dart port compatible with the reference SDK — add a vector or golden test
+when behavior changes.
 
 ## Acknowledgments
 
-- [muse-pocket](https://github.com/Franzferdinan51/muse-pocket) — the
-  e-ink Muse gadget this app is modeled on; display layout, pairing flow
-  and firmware behavior reference.
+- [muse-pocket](https://github.com/Franzferdinan51/muse-pocket) — the e-ink
+  Muse gadget this app is modeled on.
 - [muse-gadget-sdk](https://github.com/facebookincubator/muse-gadget-sdk)
-  by Meta Platforms, Inc. — the reference gadget SDK and docs at
-  [gadgets.muse.ai](https://gadgets.muse.ai/); protocol, pairing and
-  voice designs followed from it.
+  by Meta Platforms, Inc. — the reference gadget SDK and the docs at
+  [gadgets.muse.ai](https://gadgets.muse.ai/). The Waveshare board's avatar
+  timing and the reTerminal status screen are the references for motion and
+  the dashboard. The phone does not copy the SDK's default pixel character.
 - The Meta Muse team for the Muse platform itself.
 
 ## License

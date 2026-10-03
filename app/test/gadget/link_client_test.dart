@@ -224,6 +224,15 @@ _SessionPair _makeSession(
   return _SessionPair(session, _FakeVm(vmSocket));
 }
 
+/// Skips the heartbeat the session sends as soon as register is acked.
+Future<Map<String, Object?>> _nextCommand(_FakeVm vm) async {
+  var message = await vm.nextMessage();
+  while (message['method'] == 'link.heartbeat') {
+    message = await vm.nextMessage();
+  }
+  return message;
+}
+
 void main() {
   group('link session', () {
     test('register, invoke, result and unpair', () async {
@@ -279,7 +288,7 @@ void main() {
         'params': {'text': 'hello'},
         'timeout_ms': 5000,
       });
-      final result = await pair.vm.nextMessage();
+      final result = await _nextCommand(pair.vm);
       expect(result, {
         'method': 'link.result',
         'id': 'inv-1',
@@ -377,6 +386,109 @@ void main() {
       await pair.vm.close();
       await expectLater(outcomeFuture, completion(Outcome.closed));
     });
+
+    test('device.invoke on another stream is answered with link.result',
+        () async {
+      final calls = <String>[];
+      Future<Map<String, Object?>> runCommand(String command,
+          Map<String, Object?> params, int? timeoutMs) async {
+        calls.add(command);
+        return {
+          'ok': true,
+          'payload': {'status': 'ok', 'battery': 80},
+        };
+      }
+
+      final pair = _makeSession(runCommand, []);
+      final outcomeFuture = pair.session.run(null);
+      await pair.vm.handshake();
+      await pair.vm.acceptControlStream();
+      final register = await pair.vm.nextMessage();
+      await pair.vm.sendMessage(
+          {'type': 'res', 'id': register['id'], 'ok': true});
+      await pair.vm.sendFrame(ServiceFrame.bodyChunk(
+        99,
+        BodyChunk(
+          data: encodeMessage({
+            'method': 'device.invoke',
+            'id': 7,
+            'params': {
+              'command': 'device.health',
+              'params': <String, Object?>{},
+            },
+          }),
+        ),
+      ));
+      final result = await _nextCommand(pair.vm);
+      expect(result['method'], 'link.result');
+      expect(result['id'], 7);
+      expect(result['ok'], isTrue);
+      expect(calls, ['device.health']);
+      await pair.vm.close();
+      await expectLater(outcomeFuture, completion(Outcome.closed));
+    });
+
+    test('a bare JSON invoke on the control stream is answered', () async {
+      Future<Map<String, Object?>> runCommand(String command,
+              Map<String, Object?> params, int? timeoutMs) async =>
+          {'ok': true, 'payload': {'status': 'ok'}};
+      final pair = _makeSession(runCommand, []);
+      final outcomeFuture = pair.session.run(null);
+      await pair.vm.handshake();
+      await pair.vm.acceptControlStream();
+      final register = await pair.vm.nextMessage();
+      await pair.vm.sendMessage(
+          {'type': 'res', 'id': register['id'], 'ok': true});
+      await pair.vm.sendFrame(ServiceFrame.bodyChunk(
+        pair.vm.streamId,
+        BodyChunk(
+          data: Uint8List.fromList(utf8.encode(json.encode({
+            'type': 'req',
+            'method': 'device.health',
+            'id': 'bare-1',
+            'params': <String, Object?>{},
+          }))),
+        ),
+      ));
+      final result = await _nextCommand(pair.vm);
+      expect(result, {
+        'type': 'res',
+        'method': 'link.result',
+        'id': 'bare-1',
+        'ok': true,
+        'payload': {'status': 'ok'},
+      });
+      await pair.vm.close();
+      await expectLater(outcomeFuture, completion(Outcome.closed));
+    });
+
+    test('a thrown command still sends link.result', () async {
+      Future<Map<String, Object?>> runCommand(String command,
+          Map<String, Object?> params, int? timeoutMs) async {
+        throw StateError('boom');
+      }
+
+      final pair = _makeSession(runCommand, []);
+      final outcomeFuture = pair.session.run(null);
+      await pair.vm.handshake();
+      await pair.vm.acceptControlStream();
+      final register = await pair.vm.nextMessage();
+      await pair.vm.sendMessage(
+          {'type': 'res', 'id': register['id'], 'ok': true});
+      await pair.vm.sendMessage({
+        'method': 'link.invoke',
+        'id': 'bad-1',
+        'command': 'device.health',
+        'params': <String, Object?>{},
+      });
+      final result = await _nextCommand(pair.vm);
+      expect(result['method'], 'link.result');
+      expect(result['id'], 'bad-1');
+      expect(result['ok'], isFalse);
+      expect(result['error'], contains('boom'));
+      await pair.vm.close();
+      await expectLater(outcomeFuture, completion(Outcome.closed));
+    });
   });
 
   group('message decoder', () {
@@ -398,6 +510,22 @@ void main() {
       final header = Uint8List(4)
         ..buffer.asByteData().setUint32(0, 1 << 30, Endian.little);
       expect(() => MessageDecoder().feed(header), throwsArgumentError);
+    });
+
+    test('reads one bare JSON object', () {
+      final raw = utf8.encode('{"method":"device.health","id":"b"}');
+      expect(MessageDecoder().feed(Uint8List.fromList(raw)), [
+        {'method': 'device.health', 'id': 'b'},
+      ]);
+    });
+
+    test('reads NDJSON without a length prefix', () {
+      final raw = utf8.encode(
+          '{"method":"device.health","id":1}\n{"method":"link.invoke","id":"c","command":"device.health"}\n');
+      expect(MessageDecoder().feed(Uint8List.fromList(raw)), [
+        {'method': 'device.health', 'id': 1},
+        {'method': 'link.invoke', 'id': 'c', 'command': 'device.health'},
+      ]);
     });
 
     test('drops malformed json', () {

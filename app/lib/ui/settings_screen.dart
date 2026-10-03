@@ -27,6 +27,7 @@ import '../app/foreground.dart';
 import '../app/model.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
+import 'dashboard_screen.dart';
 import 'diagnostics_screen.dart';
 import 'pairing_screen.dart';
 import 'scope.dart';
@@ -285,6 +286,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: const Text('Battery settings'),
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Dashboard',
+            child: Row(
+              children: [
+                Icon(Icons.dashboard_outlined,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Character, caption, and whether commands are getting through',
+                  ),
+                ),
+                FilledButton.tonal(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const DashboardScreen(),
+                    ),
+                  ),
+                  child: const Text('Open'),
                 ),
               ],
             ),

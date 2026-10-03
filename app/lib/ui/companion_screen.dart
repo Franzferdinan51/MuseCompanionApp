@@ -20,18 +20,23 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../app/avatar_motion.dart';
 import '../app/captions.dart';
 import '../app/model.dart';
+import '../src/gadget/chat_events.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import 'chat_screen.dart';
+import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
 import 'scope.dart';
 import 'settings_screen.dart';
@@ -149,7 +154,19 @@ class _Surface extends StatelessWidget {
               battery: presentation.battery,
             ),
             const Divider(height: 24, thickness: 1),
-            Expanded(child: _Character(presentation: presentation)),
+            Expanded(
+              child: Column(
+                children: [
+                  Expanded(child: _Character(presentation: presentation)),
+                  Text(
+                    'Hold the character to talk',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.outline),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
             _StatusLines(lines: presentation.lines),
             const SizedBox(height: 24),
             _BottomBar(
@@ -177,8 +194,16 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
         children: [
-          Icon(Icons.monitor_heart_outlined,
-              color: theme.colorScheme.primary, size: 22),
+          IconButton(
+            tooltip: 'Dashboard',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const DashboardScreen(),
+              ),
+            ),
+            icon: Icon(Icons.monitor_heart_outlined,
+                color: theme.colorScheme.primary, size: 22),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -235,37 +260,162 @@ class _BatteryIndicator extends StatelessWidget {
   }
 }
 
-class _Character extends StatelessWidget {
+class _Character extends StatefulWidget {
   const _Character({required this.presentation})
       : super(key: const ValueKey('companion_character'));
 
   final PresentationState presentation;
 
   @override
+  State<_Character> createState() => _CharacterState();
+}
+
+class _CharacterState extends State<_Character>
+    with SingleTickerProviderStateMixin {
+  late final Ticker _ticker;
+  Duration _elapsed = Duration.zero;
+  bool _holding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker((elapsed) {
+      if (mounted) setState(() => _elapsed = elapsed);
+    })..start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  Future<void> _holdStart() async {
+    if (_holding) return;
+    final scope = AppScope.of(context);
+    if (!scope.service.isRegistered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Connect to your Muse before talking.')),
+      );
+      return;
+    }
+    _holding = true;
+    scope.presentation.applyPose(AvatarPose.listening);
+    scope.presentation.applyStatus('Listening…');
+    try {
+      await scope.phone.startRecording();
+    } on PhoneActionException catch (e) {
+      _holding = false;
+      if (!mounted) return;
+      scope.presentation.applyPose(AvatarPose.idle);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _holdEnd() async {
+    if (!_holding) return;
+    _holding = false;
+    final scope = AppScope.of(context);
+    scope.presentation.applyPose(AvatarPose.thinking);
+    scope.presentation.applyStatus('Thinking…');
+    try {
+      final wav = await scope.phone.stopRecording();
+      if (!mounted) return;
+      final id = scope.chat.addSending('Voice note');
+      final result = await scope.service.sendChat('', null, [
+        ChatAttachment(
+          mimeType: 'audio/wav',
+          filename: 'voice_note.wav',
+          bytes: wav,
+        ),
+      ]);
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        scope.chat.markSent(id);
+      } else {
+        final error = result['error'];
+        scope.chat.markFailed(
+            id,
+            error is String && error.isNotEmpty ? error : 'send failed');
+        scope.presentation.applyPose(AvatarPose.idle);
+      }
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      scope.presentation.applyPose(AvatarPose.idle);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      scope.presentation.applyPose(AvatarPose.idle);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final presentation = widget.presentation;
     final bytes = presentation.character;
+    final motion = avatarMotion(
+      presentation.pose,
+      _elapsed.inMicroseconds / 1000000,
+    );
     // A square canvas sized to the available space: phones vary, so the
     // character fills whatever the layout offers rather than a fixed
-    // 480x480 box.
+    // 480x480 box. The portrait itself moves; the rings sit behind it.
     return Center(
       child: LayoutBuilder(
         builder: (context, constraints) {
           var side = constraints.maxWidth;
           if (constraints.maxHeight < side) side = constraints.maxHeight;
           if (side <= 0 || side == double.infinity) side = 320;
-          return SizedBox(
-            width: side,
-            height: side,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Container(
-                color: theme.colorScheme.surfaceContainerHighest,
-                child: bytes == null
-                    ? _Placeholder(
-                        connected: presentation.connection ==
-                            ConnectionState.connected)
-                    : _CharacterImage(bytes: bytes),
+          final portrait = ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: bytes == null
+                  ? _Placeholder(
+                      connected: presentation.connection ==
+                          ConnectionState.connected)
+                  : _CharacterImage(bytes: bytes),
+            ),
+          );
+          return Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => _holdStart(),
+            onPointerUp: (_) => _holdEnd(),
+            onPointerCancel: (_) => _holdEnd(),
+            child: SizedBox(
+              width: side,
+              height: side,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (motion.rings ||
+                      presentation.pose == AvatarPose.thinking)
+                    CustomPaint(
+                      size: Size.square(side),
+                      painter: _RingPainter(
+                        phase: presentation.pose == AvatarPose.thinking
+                            ? (_elapsed.inMicroseconds / 1000000 * 0.7) % 1
+                            : motion.ringPhase,
+                        color: theme.colorScheme.primary,
+                        arc: presentation.pose == AvatarPose.thinking,
+                      ),
+                    ),
+                  Transform.translate(
+                    offset: Offset(motion.lean * 8, motion.bob * 8),
+                    child: Transform.scale(
+                      scale: motion.scale,
+                      child: SizedBox(
+                        width: side,
+                        height: side,
+                        child: portrait,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -273,6 +423,65 @@ class _Character extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RingPainter extends CustomPainter {
+  const _RingPainter({
+    required this.phase,
+    required this.color,
+    required this.arc,
+  });
+
+  final double phase;
+  final Color color;
+  final bool arc;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide * 0.46;
+    if (arc) {
+      // Thinking on the Waveshare screen is a ring that travels as a segment.
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round
+        ..color = color.withValues(alpha: 0.8);
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius * 0.92),
+        phase * 6.283185307179586,
+        1.15,
+        false,
+        paint,
+      );
+      return;
+    }
+    // Listening and speaking: dotted rings that expand and fade.
+    for (var i = 0; i < 2; i++) {
+      final t = (phase + i * 0.5) % 1;
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = color.withValues(alpha: (1 - t) * 0.55);
+      final ring = radius * (0.72 + t * 0.28);
+      const dots = 18;
+      for (var d = 0; d < dots; d++) {
+        final angle = (d / dots) * 6.283185307179586;
+        canvas.drawCircle(
+          Offset(center.dx + ring * math.cos(angle),
+              center.dy + ring * math.sin(angle)),
+          2.2,
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RingPainter oldDelegate) =>
+      oldDelegate.phase != phase ||
+      oldDelegate.color != color ||
+      oldDelegate.arc != arc;
 }
 
 class _Placeholder extends StatelessWidget {

@@ -24,6 +24,7 @@ import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:muse_companion/src/gadget/chat_events.dart';
 import 'package:muse_companion/src/gadget/phone_actions.dart';
 
+import '../app/avatar_motion.dart';
 import '../app/chat.dart';
 import '../src/gadget/service.dart';
 import 'scope.dart';
@@ -100,6 +101,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_listening || !_ready) return;
     final scope = AppScope.of(context);
     _captionBeforeListen = scope.presentation.statusText;
+    scope.presentation.applyPose(AvatarPose.listening);
     scope.presentation.applyStatus('Listening…');
     setState(() => _listening = true);
     try {
@@ -107,6 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } on PhoneActionException catch (e) {
       if (!mounted) return;
       setState(() => _listening = false);
+      scope.presentation.applyPose(AvatarPose.idle);
       _restoreCaption();
       _showError(e.message);
     }
@@ -123,6 +126,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!_listening) return;
     setState(() => _listening = false);
     final scope = AppScope.of(context);
+    scope.presentation.applyPose(AvatarPose.thinking);
     if (scope.presentation.statusText == 'Listening…') _restoreCaption();
     try {
       final wav = await scope.phone.stopRecording();
@@ -135,7 +139,9 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ]);
     } on PhoneActionException catch (e) {
-      if (mounted) _showError(e.message);
+      if (!mounted) return;
+      scope.presentation.applyPose(AvatarPose.idle);
+      _showError(e.message);
     }
   }
 

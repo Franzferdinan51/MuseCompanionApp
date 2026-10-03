@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
 import 'package:muse_companion/app/chat.dart';
@@ -38,7 +39,7 @@ import 'package:muse_companion/src/gadget/service.dart';
 import 'ui/companion_screen.dart';
 import 'ui/scope.dart';
 
-const String _appVersion = '0.2.1';
+const String _appVersion = '0.2.2';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -89,6 +90,7 @@ Future<void> main() async {
     version: _appVersion,
     sdkToken: savedSdkToken?.isEmpty == true ? null : savedSdkToken,
     displayName: 'Muse Companion',
+    logger: (message) => debugPrint('[muse] $message'),
     onCharacterUrl: (url) async {
       await executor.run('display.draw_url', {'url': url}, null);
     },
@@ -103,10 +105,14 @@ Future<void> main() async {
   chat.onCaption = (text) {
     final caption = captionFromReply(text);
     if (caption.isNotEmpty) presentation.applyStatus(caption);
+    if (presentation.pose != AvatarPose.speaking) {
+      presentation.applyPose(AvatarPose.thinking);
+    }
   };
   chat.onActivity = (code) {
     final line = activityCaption(code);
     if (line != null) presentation.applyStatus(line);
+    presentation.applyPose(poseForActivity(code));
   };
   chat.onHeard = (text) {
     final caption = captionFromReply(text);
@@ -118,9 +124,15 @@ Future<void> main() async {
       presentation.applyStatus(caption);
       unawaited(settings.saveStatus(caption));
     }
-    if (!presentation.settings.speakReplies) return;
+    if (!presentation.settings.speakReplies) {
+      presentation.applyPose(AvatarPose.idle);
+      return;
+    }
     final spoken = speakableReply(text);
-    if (spoken.isEmpty) return;
+    if (spoken.isEmpty) {
+      presentation.applyPose(AvatarPose.idle);
+      return;
+    }
     unawaited(_speakReply(phone, presentation, spoken));
   };
   final ble = BlePeripheralManager(
@@ -144,9 +156,11 @@ Future<void> main() async {
   ));
 }
 
-/// Set the speaker, then read [spoken]. Failures leave the caption up.
+/// Set the speaker, then read [spoken]. The speaking pose lasts until the
+/// utterance finishes. A new hold that moved the pose is left alone.
 Future<void> _speakReply(
     PhoneBridge phone, PresentationState presentation, String spoken) async {
+  presentation.applyPose(AvatarPose.speaking);
   try {
     await phone.run('phone.volume', {
       'level': presentation.settings.speechVolume,
@@ -154,6 +168,10 @@ Future<void> _speakReply(
     await phone.speak(spoken);
   } on PhoneActionException {
     // The caption under the character is the fallback.
+  } finally {
+    if (presentation.pose == AvatarPose.speaking) {
+      presentation.applyPose(AvatarPose.idle);
+    }
   }
 }
 
@@ -201,7 +219,11 @@ class _DisplayListener implements CompanionDisplayListener {
       _presentation.applyCharacter(bytes, width: width, height: height);
 
   @override
-  void onStatus(String text) => _presentation.applyStatus(text);
+  void onStatus(String text) {
+    _presentation.applyStatus(text);
+    final pose = poseForStatus(text);
+    if (pose != null) _presentation.applyPose(pose);
+  }
 
   @override
   void onPlaceholder() => _presentation.applyPlaceholder();

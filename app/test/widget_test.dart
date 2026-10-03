@@ -56,7 +56,12 @@ void main() {
         home: CompanionScreen(),
       ),
     ));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    for (var i = 0;
+        i < 20 && find.text('Not paired').evaluate().isEmpty;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
 
     expect(find.text('Muse'), findsOneWidget);
     expect(find.text('Waiting for character'), findsOneWidget);
@@ -64,15 +69,19 @@ void main() {
     expect(find.byTooltip('Settings'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Settings'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Companion Settings'), findsOneWidget);
 
     // Stop the service inside the body: the binding verifies no timers
     // are pending before addTearDown callbacks run. The tearDown above
     // stays as the failure-path net (all stops are idempotent).
+    // Unmount before returning so the character ticker is disposed.
     await service.stop();
     await ble.dispose();
     chat.close();
     presentation.close();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 }

@@ -36,6 +36,7 @@ import 'dart:typed_data';
 
 import 'chat_events.dart';
 import 'envelope.dart';
+import 'invoke.dart';
 import 'noise_xx.dart';
 import 'transport.dart';
 
@@ -118,7 +119,20 @@ Uint8List encodeMessage(Map<String, Object?> obj) {
 class MessageDecoder {
   final List<int> _bytes = [];
 
+  bool get isEmpty => _bytes.isEmpty;
+
   List<Map<String, Object?>> feed(Uint8List data) {
+    // A whole chunk that is JSON with no length prefix: one object, a
+    // list, or NDJSON. A length-prefixed frame whose low byte happens to
+    // be '{' fails this decode and falls through to the prefix parser.
+    // Treating that failure as a length is what used to stall or close
+    // the session, so every later command timed out.
+    if (_bytes.isEmpty &&
+        data.isNotEmpty &&
+        (data[0] == 0x7B || data[0] == 0x5B)) {
+      final bare = _bareJsonMessages(data);
+      if (bare != null) return bare;
+    }
     _bytes.addAll(data);
     final messages = <Map<String, Object?>>[];
     while (_bytes.length >= 4) {
@@ -139,10 +153,8 @@ class MessageDecoder {
       }
       try {
         final message = json.decode(utf8.decode(raw));
-        if (message is Map<String, Object?>) {
-          messages.add(message);
-        } else if (message is Map) {
-          messages.add(message.cast<String, Object?>());
+        if (message is Map) {
+          messages.add(_asControlMap(message));
         }
       } on FormatException {
         // Drop malformed control messages, as the reference does.
@@ -151,6 +163,84 @@ class MessageDecoder {
     }
     return messages;
   }
+}
+
+Map<String, Object?> _asControlMap(Map<dynamic, dynamic> message) {
+  return message.map((key, value) => MapEntry(key.toString(), value));
+}
+
+/// JSON text that is not length-prefixed, or null when [data] is not that.
+List<Map<String, Object?>>? _bareJsonMessages(Uint8List data) {
+  final text = utf8.decode(data, allowMalformed: true);
+  try {
+    final decoded = json.decode(text);
+    if (decoded is Map) return [_asControlMap(decoded)];
+    if (decoded is List) {
+      return [
+        for (final item in decoded)
+          if (item is Map) _asControlMap(item),
+      ];
+    }
+    return null;
+  } on FormatException {
+    final parsed = <Map<String, Object?>>[];
+    var lines = 0;
+    for (final line in text.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+      try {
+        final decoded = json.decode(trimmed);
+        lines += 1;
+        if (decoded is Map) parsed.add(_asControlMap(decoded));
+      } on FormatException {
+        return null;
+      }
+    }
+    if (lines == 0) return null;
+    return parsed;
+  }
+}
+
+/// Pulls invoke objects out of a byte chunk that may be NDJSON, one JSON
+/// object, or length-prefixed control messages. Used for streams that are
+/// not the control stream, where a Hatch invoke can still arrive.
+List<Map<String, Object?>> invokeMapsIn(Uint8List data) {
+  final found = <Map<String, Object?>>[];
+  void consider(Object? decoded) {
+    if (decoded is! Map) return;
+    final map = _asControlMap(decoded);
+    if (parseInvoke(map) != null) found.add(map);
+  }
+
+  if (data.length >= 4) {
+    var offset = 0;
+    while (offset + 4 <= data.length) {
+      final length = data[offset] |
+          (data[offset + 1] << 8) |
+          (data[offset + 2] << 16) |
+          (data[offset + 3] << 24);
+      if (length <= 0 || length > maxInboundMessage) break;
+      if (offset + 4 + length > data.length) break;
+      try {
+        consider(json.decode(utf8.decode(data.sublist(offset + 4, offset + 4 + length))));
+      } on FormatException {
+        break;
+      }
+      offset += 4 + length;
+    }
+  }
+  final text = utf8.decode(data, allowMalformed: true);
+  for (final line in text.split('\n')) {
+    final trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      consider(json.decode(trimmed));
+    } on FormatException {
+      continue;
+    }
+  }
+  return found;
 }
 
 String noiseUrl(String noiseHost, String vmId) {
@@ -270,6 +360,7 @@ class LinkSession {
   int _inflightInvokes = 0;
   final List<Completer<void>> _invokeWaiters = [];
   final Set<Future<void>> _tasks = {};
+  final Map<int, MessageDecoder> _sideDecoders = {};
   int _streamId = 0;
   String _registerId = '';
   final Map<int, _Request> _requests = {};
@@ -313,7 +404,8 @@ class LinkSession {
       _transport =
           await _handshake(socket, incoming).timeout(handshakeTimeout);
       await _openControlStream();
-      _requestIdentity();
+      // Identity waits for the register ack. Opening it first races
+      // registration; the ESP32 session does the same wait.
       if (waitForStop == null) {
         return await _readLoop(incoming);
       }
@@ -537,25 +629,51 @@ class LinkSession {
         continue;
       }
       if (frame.streamId != _streamId) {
-        _requests[frame.streamId]?.onFrame(frame);
+        final pending = _requests[frame.streamId];
+        if (pending != null) {
+          pending.onFrame(frame);
+          if (frame.kind == DecryptedFrameKind.bodyChunk ||
+              frame.kind == DecryptedFrameKind.response) {
+            final bytes = frame.kind == DecryptedFrameKind.bodyChunk
+                ? frame.bodyChunk?.data
+                : frame.response?.body;
+            if (bytes != null && bytes.isNotEmpty) {
+              _dispatchInvokeMaps(invokeMapsIn(bytes),
+                  sourceStream: frame.streamId);
+            }
+          }
+          continue;
+        }
+        // The ESP32 session treats a body chunk on any stream that is not
+        // an outstanding request as a control message. Hatch's device.invoke
+        // has arrived that way; dropping it makes every command time out.
+        if (frame.kind == DecryptedFrameKind.bodyChunk) {
+          final data = frame.bodyChunk?.data ?? Uint8List(0);
+          final side = _sideDecoders.putIfAbsent(
+              frame.streamId, MessageDecoder.new);
+          try {
+            _dispatchAll(side.feed(data), sourceStream: frame.streamId);
+          } on ArgumentError {
+            _sideDecoders.remove(frame.streamId);
+          }
+        }
         continue;
       }
       if (frame.kind == DecryptedFrameKind.reset) {
         return Outcome.closed;
       }
       Uint8List data;
-      bool ended;
       if (frame.kind == DecryptedFrameKind.response) {
         final response = frame.response!;
         if (response.status >= 400) {
           return response.status == 403 ? Outcome.forbidden : Outcome.closed;
         }
         data = response.body ?? Uint8List(0);
-        ended = response.endBody;
+        // A finished opening response does not end the control stream.
+        // The firmware keeps reading body chunks after HTTP 200.
       } else {
         final chunk = frame.bodyChunk!;
         data = chunk.data ?? Uint8List(0);
-        ended = chunk.endBody;
       }
       List<Map<String, Object?>> messages;
       try {
@@ -563,29 +681,53 @@ class LinkSession {
       } on ArgumentError {
         return Outcome.closed;
       }
-      for (final message in messages) {
-        final outcome = _handle(message);
-        if (outcome != null) {
-          return outcome;
-        }
-      }
+      final outcome = _dispatchAll(messages);
+      if (outcome != null) return outcome;
       // Yield so invokes and timers run while frames stream in.
       await Future<void>.delayed(Duration.zero);
-      if (ended) {
-        return Outcome.closed;
-      }
     }
     return Outcome.closed;
   }
 
-  Outcome? _handle(Map<String, Object?> message) {
+  Outcome? _dispatchAll(List<Map<String, Object?>> messages,
+      {int? sourceStream}) {
+    for (final message in messages) {
+      final outcome = _handle(message, sourceStream: sourceStream);
+      if (outcome != null) return outcome;
+    }
+    return null;
+  }
+
+  void _dispatchInvokeMaps(List<Map<String, Object?>> messages,
+      {int? sourceStream}) {
+    for (final message in messages) {
+      _handle(message, sourceStream: sourceStream);
+    }
+  }
+
+  Outcome? _handle(Map<String, Object?> message, {int? sourceStream}) {
+    final method = message['method']?.toString();
+    final eventName = message['event']?.toString();
+    if (method != null) {
+      onStatus?.call(sourceStream == null
+          ? 'in:$method'
+          : 'in:$method stream:$sourceStream');
+    } else if (eventName != null) {
+      onStatus?.call('in:$eventName');
+    }
     if (message['id'] == _registerId && message['method'] == null) {
       if (message['error'] == null) {
         registeredAt = DateTime.now();
         onRegistered?.call();
+        // The firmware sends one heartbeat as soon as register is acked,
+        // then daily. The VM uses it as a sign the command path is up.
+        final beat = send({'method': 'link.heartbeat'});
+        _tasks.add(beat);
+        beat.whenComplete(() => _tasks.remove(beat));
         final task = _openChatSubscription();
         _tasks.add(task);
         task.whenComplete(() => _tasks.remove(task));
+        _requestIdentity();
       }
       return null;
     }
@@ -593,35 +735,66 @@ class LinkSession {
     if (event == 'link.unpaired' || event == 'node.unpaired') {
       return Outcome.unpaired;
     }
-    if (message['method'] == 'link.invoke') {
-      final task = _invoke(message);
+    final parsed = parseInvoke(message);
+    if (parsed != null) {
+      final task = _invoke(parsed, sourceStream: sourceStream);
       _tasks.add(task);
       task.whenComplete(() => _tasks.remove(task));
     }
     return null;
   }
 
-  Future<void> _invoke(Map<String, Object?> message) async {
-    final invokeId = message['id'];
-    if (invokeId is! String || invokeId.isEmpty) return;
-    final command = message['command'];
-    final params = message['params'];
-    final timeoutMs = message['timeout_ms'];
+  Future<void> _invoke(ParsedInvoke invoke, {int? sourceStream}) async {
+    onStatus?.call('invoke:${invoke.command}');
+    if (sourceStream != null && sourceStream != _streamId) {
+      onStatus?.call('invoke stream:$sourceStream');
+    }
     await _acquireInvokeSlot();
     Map<String, Object?> result;
     try {
-      result = await _runCommand(
-        command is String ? command : '',
-        params is Map ? params.cast<String, Object?>() : <String, Object?>{},
-        timeoutMs is int ? timeoutMs : null,
-      );
+      if (invoke.command.isEmpty) {
+        result = {'ok': false, 'error': 'invoke had no command'};
+      } else {
+        final budget = invoke.timeoutMs ?? 30000;
+        final limit = Duration(milliseconds: budget.clamp(1000, 120000));
+        result = await _runCommand(
+          invoke.command,
+          invoke.params,
+          invoke.timeoutMs,
+        ).timeout(limit, onTimeout: () {
+          return {
+            'ok': false,
+            'error': 'command timed out on the phone',
+          };
+        });
+      }
+    } catch (e) {
+      result = {'ok': false, 'error': '$e'};
     } finally {
       _releaseInvokeSlot();
     }
+    final reply = <String, Object?>{
+      'method': 'link.result',
+      'id': invoke.id,
+      if (invoke.replyType != null) 'type': invoke.replyType,
+      ...result,
+    };
     try {
-      await send({'method': 'link.result', 'id': invokeId, ...result});
-    } catch (_) {
-      // The session is gone; nothing left to report to.
+      await send(reply);
+      // Firmware always answers on the control stream. When the invoke
+      // arrived on a different stream, also write the same result there
+      // so a waiter bound to that stream is not left until timeout.
+      if (sourceStream != null &&
+          sourceStream != _streamId &&
+          _transport != null) {
+        final frames = await _transport!
+            .encryptBodyChunk(sourceStream, encodeMessage(reply));
+        await _sendFrames(frames);
+      }
+      final ok = result['ok'] == true ? 'ok' : 'error';
+      onStatus?.call('result:${invoke.command}:$ok');
+    } catch (e) {
+      onStatus?.call('result failed: $e');
     }
   }
 
@@ -697,6 +870,8 @@ class LinkSession {
       _inflightInvokes += 1;
       return;
     }
+    onStatus?.call(
+        'invoke queue: $_inflightInvokes in flight, ${_invokeWaiters.length + 1} waiting');
     final waiter = Completer<void>();
     _invokeWaiters.add(waiter);
     await waiter.future;

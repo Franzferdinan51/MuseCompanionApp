@@ -164,6 +164,13 @@ class GadgetService {
   String? _agentName;
   Future<void>? _loop;
   bool _introSent = false;
+  int _invokesSeen = 0;
+  int _resultsSent = 0;
+  String _lastCommand = '';
+  String _lastCommandResult = '';
+  final List<String> _linkLog = [];
+  final StreamController<void> _linkEvents =
+      StreamController<void>.broadcast();
 
   /// Broadcast connection-state changes for the UI.
   Stream<ConnectionState> get onStateChanged => _state.stream;
@@ -180,6 +187,34 @@ class GadgetService {
   String? get agentName => _agentName;
 
   bool get isRegistered => _current?.registeredAt != null;
+
+  /// Commands the phone has seen on the link since this process started.
+  int get invokesSeen => _invokesSeen;
+
+  /// `link.result` messages the phone has sent.
+  int get resultsSent => _resultsSent;
+
+  /// Last command name, without its result.
+  String get lastCommand => _lastCommand;
+
+  /// `command:ok` or `command:error` for the last result that left the phone.
+  String get lastCommandResult => _lastCommandResult;
+
+  /// Recent link log lines, oldest first. Capped at 30.
+  List<String> get linkLog => List.unmodifiable(_linkLog);
+
+  /// Fires when [linkLog] or the command counters change.
+  Stream<void> get onLink => _linkEvents.stream;
+
+  void _log(String message) {
+    _logger(message);
+    final line = message.length > 180 ? message.substring(0, 180) : message;
+    _linkLog.add(line);
+    if (_linkLog.length > 30) {
+      _linkLog.removeAt(0);
+    }
+    if (!_linkEvents.isClosed) _linkEvents.add(null);
+  }
 
   Identity get identity => _identity;
 
@@ -266,7 +301,7 @@ class GadgetService {
     while (!_stopRequested) {
       final pairing = await _pairingStore.load();
       if (pairing == null) {
-        _logger('not paired; pair from the Muse app to set up');
+        _log('not paired; pair from the Muse app to set up');
         _setState(ConnectionState.unpaired);
         await _sleep(unpairedPollS);
         continue;
@@ -287,7 +322,7 @@ class GadgetService {
       );
       if (_stopRequested) break;
       if (fetched.status == 401) {
-        _logger('device token rejected by the API; refreshing');
+        _log('device token rejected by the API; refreshing');
         if (await _maybeRefresh(current, force: true) == null) {
           await _sleep(tokenRetryS);
         }
@@ -300,7 +335,7 @@ class GadgetService {
       vm ??= fetched.vms.isNotEmpty ? fetched.vms.first : null;
       if (vm == null) {
         final delay = backoff.nextDelay();
-        _logger('no VMs leased; retrying');
+        _log('no VMs leased; retrying');
         _setState(ConnectionState.waiting, _waitingDetail(delay, 'no Muse is available'));
         await _sleep(delay);
         continue;
@@ -311,7 +346,7 @@ class GadgetService {
       if (outcome == Outcome.unpaired) {
         await _pairingStore.delete();
         _agentName = null;
-        _logger('pairing removed; pair again to set up');
+        _log('pairing removed; pair again to set up');
         _setState(ConnectionState.unpaired);
         continue;
       }
@@ -322,7 +357,7 @@ class GadgetService {
         backoff.floor = authBackoffMinS;
       }
       final delay = backoff.nextDelay();
-      _logger('reconnecting in ${delay.toStringAsFixed(0)}s');
+      _log('reconnecting in ${delay.toStringAsFixed(0)}s');
       _setState(ConnectionState.waiting,
           _waitingDetail(delay, _outcomeDetail(outcome)));
       await _sleep(delay);
@@ -366,11 +401,18 @@ class GadgetService {
       connect: _connect,
     );
     session.onStatus = (status) {
+      _log(status);
       if (status.startsWith('identity:')) {
         _agentName = status.substring('identity:'.length);
         if (_connectionState == ConnectionState.connected) {
           _setState(ConnectionState.connected, _agentName ?? '');
         }
+      } else if (status.startsWith('invoke:')) {
+        _invokesSeen += 1;
+        _lastCommand = status.substring('invoke:'.length);
+      } else if (status.startsWith('result:')) {
+        _resultsSent += 1;
+        _lastCommandResult = status.substring('result:'.length);
       }
     };
     session.onIdentity = (result) {
@@ -389,7 +431,7 @@ class GadgetService {
     session.onSubscribed = () {
       unawaited(_introduce(session));
     };
-    _logger('connecting to ${vm.vmName.isNotEmpty ? vm.vmName : vm.vmId}');
+    _log('connecting to ${vm.vmName.isNotEmpty ? vm.vmName : vm.vmId}');
     _setState(ConnectionState.connecting, 'connecting to your Muse…');
     _current = session;
     _setState(ConnectionState.connecting, 'registering…');
@@ -398,7 +440,7 @@ class GadgetService {
       outcome = await session.run(
           stopCompleter == null ? null : () => stopCompleter.future);
     } catch (e) {
-      _logger('session failed: $e');
+      _log('session failed: $e');
       outcome = Outcome.closed;
     } finally {
       if (identical(_current, session)) {
@@ -409,7 +451,7 @@ class GadgetService {
     final lasted = registeredAt == null
         ? 0.0
         : DateTime.now().difference(registeredAt).inMilliseconds / 1000;
-    _logger('session ended: ${outcome.name}');
+    _log('session ended: ${outcome.name}');
     return (outcome, lasted);
   }
 
@@ -422,9 +464,9 @@ class GadgetService {
     final result = await session.sendChat(companionIntroMessage());
     if (result['ok'] == true && identical(_current, session)) {
       _introSent = true;
-      _logger('asked the Muse for its character');
+      _log('asked the Muse for its character');
     } else if (identical(_current, session)) {
-      _logger('character intro was not accepted: ${result['error'] ?? result['status']}');
+      _log('character intro was not accepted: ${result['error'] ?? result['status']}');
     }
   }
 
@@ -452,7 +494,7 @@ class GadgetService {
     _lastRefreshAttempt = now;
     if (reportDue) {
       _sdkTokenReportAttempted = true;
-      _logger('refreshing device token to report the SDK token');
+      _log('refreshing device token to report the SDK token');
     }
     final refreshed = await refreshDeviceToken(
       _string(pairing, 'refresh_token'),
@@ -469,7 +511,7 @@ class GadgetService {
         ..['access_token_saved_at'] =
             DateTime.now().millisecondsSinceEpoch ~/ 1000;
       await _pairingStore.save(next);
-      _logger('device token rotated');
+      _log('device token rotated');
       // A successful rotation also reports the SDK token.
       _sdkTokenReportAttempted = true;
       return next;
@@ -477,12 +519,12 @@ class GadgetService {
     if (!due) {
       // Only reporting the SDK token: nothing has rejected the current
       // token, so a refusal here must never unpair the device.
-      _logger('SDK token report refresh failed; keeping the pairing');
+      _log('SDK token report refresh failed; keeping the pairing');
       return pairing;
     }
     if (refreshed.status == 401) {
       await _pairingStore.delete();
-      _logger('pairing revoked; pair again to set up');
+      _log('pairing revoked; pair again to set up');
       _setState(ConnectionState.unpaired);
       return null;
     }

@@ -31,6 +31,7 @@ import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.telephony.SmsManager
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
@@ -57,6 +58,9 @@ class PhoneBridge(private val activity: MainActivity) {
     private var pcm: ByteArrayOutputStream? = null
     private var reader: Thread? = null
     @Volatile private var recording = false
+    private val speakLock = Any()
+    private var speakGeneration = 0
+    private var pendingSpeak: MethodChannel.Result? = null
 
     fun register(messenger: BinaryMessenger) {
         tts = TextToSpeech(context) { }
@@ -82,10 +86,7 @@ class PhoneBridge(private val activity: MainActivity) {
                             }
                         }
                     }
-                    "speak" -> {
-                        speak(call.argument<String>("text") ?: "")
-                        result.success(null)
-                    }
+                    "speak" -> speakAwait(call.argument<String>("text") ?: "", result)
                     "openNotificationAccess" -> {
                         openNotificationAccess()
                         result.success(null)
@@ -284,6 +285,56 @@ class PhoneBridge(private val activity: MainActivity) {
 
     private fun speak(text: String) {
         val engine = tts ?: return
+        prepareEngine(engine)
+        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "muse-reply")
+    }
+
+    /// Completes [result] when the utterance finishes, errors, or times out.
+    /// A newer speak completes the previous result so Flutter does not hang.
+    /// The callback is posted to the main thread; the main thread is never blocked.
+    private fun speakAwait(text: String, result: MethodChannel.Result) {
+        finishPendingSpeak()
+        val engine = tts
+        if (text.isBlank() || engine == null) {
+            result.success(null)
+            return
+        }
+        val generation = ++speakGeneration
+        synchronized(speakLock) { pendingSpeak = result }
+        val timeout = (text.length * 80L).coerceIn(4000L, 60000L)
+        main.postDelayed({
+            if (generation == speakGeneration) finishPendingSpeak()
+        }, timeout)
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+
+            override fun onDone(utteranceId: String?) {
+                if (utteranceId == "muse-reply") {
+                    main.post {
+                        if (generation == speakGeneration) finishPendingSpeak()
+                    }
+                }
+            }
+
+            @Deprecated("Required by UtteranceProgressListener")
+            override fun onError(utteranceId: String?) {
+                if (utteranceId == "muse-reply") {
+                    main.post {
+                        if (generation == speakGeneration) finishPendingSpeak()
+                    }
+                }
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                onError(utteranceId)
+            }
+        })
+        prepareEngine(engine)
+        val code = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "muse-reply")
+        if (code == TextToSpeech.ERROR) finishPendingSpeak()
+    }
+
+    private fun prepareEngine(engine: TextToSpeech) {
         engine.language = Locale.getDefault()
         engine.setAudioAttributes(
             AudioAttributes.Builder()
@@ -291,7 +342,22 @@ class PhoneBridge(private val activity: MainActivity) {
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
         )
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "muse-reply")
+    }
+
+    private fun finishPendingSpeak() {
+        val pending = synchronized(speakLock) {
+            val current = pendingSpeak
+            pendingSpeak = null
+            current
+        } ?: return
+        val complete = Runnable {
+            try {
+                pending.success(null)
+            } catch (_: IllegalStateException) {
+                // The result was already completed.
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) complete.run() else main.post(complete)
     }
 
     private fun dispatch(command: String, params: Map<String, Any?>): Map<String, Any?> {

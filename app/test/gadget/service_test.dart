@@ -163,14 +163,16 @@ class _VmSide {
 
   /// Read and answer the identity request when it is still in flight.
   ///
-  /// The device always sends exactly one GET /identity after opening the
-  /// control stream; it races link.register, so it may arrive after it.
+  /// GET /identity is sent after the register ack, along with a heartbeat
+  /// and the chat subscription. Heartbeat chunks are skipped.
   Future<void> settleIdentity() async {
     if (identitySeen) return;
     while (true) {
       final frame = await nextFrame();
+      // Register ack is followed by link.heartbeat on the control stream
+      // before GET /identity. Skip those chunks.
       if (frame.kind != ServiceFrameKind.request) {
-        throw StateError('expected the identity request, got $frame');
+        continue;
       }
       final request = frame.value! as ApplicationRequest;
       if (request.path == chatSubscribePath) {

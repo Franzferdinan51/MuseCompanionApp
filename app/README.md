@@ -1,28 +1,31 @@
 # Muse Companion
 
-A full-color companion app for the **Muse Pocket** gadget — an open-source,
-on-device replacement for the proprietary phone app that drives the device. It
-speaks the Muse gadget protocol end to end: BLE pairing and session setup, the
-device command set, live status/character rendering, chat, and diagnostics.
+The phone itself is the Muse gadget. This Flutter app pairs like the other
+gadgets on [gadgets.muse.ai](https://gadgets.muse.ai/), then shows your Muse's
+own character, captions, and chat on the phone. It is not a remote control for
+a Pocket display.
 
-This is a Flutter app targeting **Android**, **iOS**, and **macOS**.
+Android is the supported build. The same Dart protocol stack is what an iOS
+or desktop port would reuse.
 
 ---
 
 ## What it does
 
-Muse Pocket shows a small full-color e-ink display and runs "characters" (animated
-avatars). This app lets you:
-
-- **Pair and connect** to a Muse over Bluetooth Low Energy using the encrypted
-  gadget protocol (Noise framing, X25519 + P‑256 key exchange).
-- **Set the Muse's status text** — the short line of activity shown on the
-  device (up to 4000 characters).
-- **Draw art and animations** onto the display via `display.draw_url` and
-  `display.show_animation`.
-- **Chat** with the Muse, with history persisted locally.
-- **View diagnostics** — session lease info, token state, connection health.
-- **Tune settings** — light/dark/system theme and other non‑secret display prefs.
+- **Pair and connect** over Bluetooth LE (pairing v5), then keep a Noise
+  session to your Muse. The pairing screen is in the app.
+- **Show your Muse's character** from `display.draw_url` (JPEG, PNG, WebP,
+  animated GIF, animated WebP, or a GLB). The portrait bobs, leans, and
+  pulses through idle, listening, thinking, and speaking.
+- **Hold the character to talk.** That posts a voice note. It does not place
+  a phone call.
+- **Captions and speech.** Replies show under the character and are spoken.
+  Say it again repeats the last one.
+- **Dashboard.** The header heart and Settings → Dashboard show link health,
+  the last command, and whether `link.result` left the phone.
+- **Diagnostics, theme, and the call/text gates.** Placing a call or sending
+  a text stays off until you turn it on. Opening the dialer or the composer
+  does not need those toggles.
 
 ### Companion command set
 
@@ -163,11 +166,11 @@ the shared `AppScope`.
 ## Project layout (top level)
 
 ```
-muse-pocket/
+MuseCompanionApp/
 ├── app/                    # This Flutter application
 │   ├── lib/                # Source (see Architecture above)
 │   ├── test/               # Unit + widget tests
-│   ├── android/ ios/ macos/# Platform embeds
+│   ├── android/            # Android embed
 │   └── pubspec.yaml
 └── README.md
 ```

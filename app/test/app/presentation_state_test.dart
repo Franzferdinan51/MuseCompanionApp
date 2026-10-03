@@ -20,6 +20,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/model.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
@@ -186,6 +187,42 @@ void main() {
       expect(state.characterIsModel, isTrue);
       state.applyPlaceholder();
       expect(state.characterIsModel, isFalse);
+      state.close();
+    });
+  });
+
+  group('animated image detection', () {
+    test('GIF headers count as animated', () {
+      expect(
+          isAnimatedImage(Uint8List.fromList('GIF89a'.codeUnits)), isTrue);
+      expect(
+          isAnimatedImage(Uint8List.fromList('GIF87a'.codeUnits)), isTrue);
+    });
+
+    test('a PNG is not animated', () {
+      final png = Uint8List.fromList(
+          [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      expect(isAnimatedImage(png), isFalse);
+    });
+
+    test('WebP is animated only with an ANIM chunk', () {
+      final still = Uint8List.fromList('RIFF....WEBPVP8 '.codeUnits);
+      expect(isAnimatedImage(still), isFalse);
+      final anim = Uint8List.fromList('RIFF....WEBPANIM'.codeUnits);
+      expect(isAnimatedImage(anim), isTrue);
+    });
+  });
+
+  group('avatar pose', () {
+    test('applyPose notifies once and ignores the same pose', () {
+      final state = PresentationState();
+      var notices = 0;
+      state.onChange = () => notices += 1;
+      expect(state.pose, AvatarPose.idle);
+      state.applyPose(AvatarPose.listening);
+      expect(state.pose, AvatarPose.listening);
+      state.applyPose(AvatarPose.listening);
+      expect(notices, 1);
       state.close();
     });
   });

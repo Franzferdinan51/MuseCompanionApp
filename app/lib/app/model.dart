@@ -23,6 +23,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
@@ -46,6 +47,24 @@ bool isGlbModel(Uint8List bytes) {
     if (bytes[i] != _glbMagic[i]) return false;
   }
   return true;
+}
+
+/// GIF or animated WebP. Still images and GLB models return false.
+///
+/// GIF is the `GIF87a` / `GIF89a` header. Animated WebP is a RIFF/WEBP
+/// file whose first bytes include an `ANIM` chunk. A still WebP has no
+/// ANIM chunk and stays a normal image.
+bool isAnimatedImage(Uint8List bytes) {
+  if (bytes.length >= 6) {
+    final head = String.fromCharCodes(bytes.sublist(0, 6));
+    if (head == 'GIF87a' || head == 'GIF89a') return true;
+  }
+  if (bytes.length < 12) return false;
+  final riff = String.fromCharCodes(bytes.sublist(0, 4));
+  final webp = String.fromCharCodes(bytes.sublist(8, 12));
+  if (riff != 'RIFF' || webp != 'WEBP') return false;
+  final window = bytes.length < 256 ? bytes.length : 256;
+  return String.fromCharCodes(bytes.sublist(0, window)).contains('ANIM');
 }
 
 /// Companion display preferences, matching `companion.set_display`.
@@ -189,6 +208,7 @@ class PresentationState {
   List<String> _lines = const [];
   CompanionSettings _settings;
   int? _battery;
+  AvatarPose _pose = AvatarPose.idle;
 
   void Function()? onChange;
   final StreamController<void> _controller;
@@ -212,6 +232,20 @@ class PresentationState {
       _connection == ConnectionState.stopped;
 
   int? get battery => _battery;
+
+  /// What the portrait is doing. Idle until a listen, a reply, or an error.
+  AvatarPose get pose => _pose;
+
+  /// Whether the current character is a GIF or an animated WebP.
+  bool get characterIsAnimated =>
+      _character != null && isAnimatedImage(_character!);
+
+  /// Change the portrait pose. No-op when it is already [pose].
+  void applyPose(AvatarPose pose) {
+    if (_pose == pose) return;
+    _pose = pose;
+    notify();
+  }
 
   /// Apply a battery percentage (0–100) or null when unknown.
   void applyBattery(int? percent) {
