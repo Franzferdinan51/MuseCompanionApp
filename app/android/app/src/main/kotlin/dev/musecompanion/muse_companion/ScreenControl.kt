@@ -130,20 +130,24 @@ object ScreenControl {
     }
 
     fun startExternal(activity: Activity, context: Context, intent: Intent) {
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val service = MuseAccessibilityService.instance
+        val foreground = foreground(activity)
         try {
             when {
-                service != null -> service.startActivity(intent)
-                activity.hasWindowFocus() -> activity.startActivity(intent)
-                else -> context.startActivity(intent)
+                service != null -> {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    service.startActivity(intent)
+                }
+                foreground -> activity.startActivity(intent)
+                else -> {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                }
             }
         } catch (e: ActivityNotFoundException) {
             throw e
-        } catch (_: SecurityException) {
-            throw IllegalStateException(blocked(context, service, activity))
         } catch (e: RuntimeException) {
-            if (service == null && !activity.hasWindowFocus()) {
+            if (service == null && !foreground) {
                 throw IllegalStateException(blocked(context, service, activity))
             }
             throw e
@@ -392,20 +396,20 @@ object ScreenControl {
     }
 
     private fun openSettings(activity: Activity, context: Context) {
-        val component = ComponentName(context, MuseAccessibilityService::class.java)
-            .flattenToString()
-        val details = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
-            putExtra("android.intent.extra.COMPONENT_NAME", component)
-        }
-        try {
-            startExternal(activity, context, details)
-        } catch (_: ActivityNotFoundException) {
-            startExternal(activity, context, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
+        // The details page requires a privileged permission, so the public
+        // Accessibility list is the page the user can actually open.
+        startExternal(activity, context, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    private fun foreground(activity: Activity): Boolean {
+        if (activity.isFinishing || activity.isDestroyed) return false
+        if (activity.hasWindowFocus()) return true
+        val owner = activity as? androidx.lifecycle.LifecycleOwner ?: return false
+        return owner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
     }
 
     private fun blocked(context: Context, service: MuseAccessibilityService?, activity: Activity): String {
-        if (service == null && enabled(context) && !activity.hasWindowFocus()) {
+        if (service == null && enabled(context) && !foreground(activity)) {
             return "Screen control is turning on. Try again in a moment."
         }
         return BLOCKED
