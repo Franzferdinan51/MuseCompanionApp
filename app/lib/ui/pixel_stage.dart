@@ -1,10 +1,11 @@
 // The round pixel stage the companion screen and the dashboard share.
 //
-// A downloaded portrait is cover-cropped to 64x64 and drawn with
-// nearest-neighbour sampling, then the same pose motion, rings, thought
-// dots, and listening meter the Waveshare UI draws around its avatar.
-// Animated GIF and WebP frames are kept, capped, and stepped on their
-// own durations. A GLB still uses the 3D viewer inside the same circle.
+// A downloaded portrait is drawn from the picture itself, filtered, so a
+// photo stays sharp. A 64x64 cover-crop is only used to find the body and
+// the backdrop. Pose motion, rings, thought dots, and the listening meter
+// still follow the Waveshare UI. Animated GIF and WebP frames are kept,
+// capped, and stepped on their own durations. A GLB still uses the 3D
+// viewer inside the same circle.
 
 import 'dart:io';
 import 'dart:math' as math;
@@ -20,6 +21,10 @@ import '../app/avatar_life.dart';
 import '../app/avatar_motion.dart';
 import '../app/model.dart';
 import '../app/pixel_avatar.dart';
+
+/// Longest edge kept for a portrait. The stage is a few hundred pixels, so
+/// this stays sharp without holding a multi-megabyte animation in memory.
+const int portraitMaxEdge = 640;
 
 class PixelStage extends StatefulWidget {
   const PixelStage({
@@ -351,7 +356,10 @@ class _PixelStageState extends State<PixelStage>
 }
 
 Future<_PixelFrames> _decode(Uint8List bytes) async {
-  final codec = await ui.instantiateImageCodec(bytes, targetWidth: 128);
+  final target = await _portraitWidth(bytes);
+  final codec = target == null
+      ? await ui.instantiateImageCodec(bytes)
+      : await ui.instantiateImageCodec(bytes, targetWidth: target);
   try {
     final count = codec.frameCount.clamp(1, 24);
     final images = <ui.Image>[];
@@ -360,12 +368,13 @@ Future<_PixelFrames> _decode(Uint8List bytes) async {
     for (var i = 0; i < count; i++) {
       final frame = await codec.getNextFrame();
       try {
-        final sprite = await _gridImage(frame.image);
+        final sprite = await _portraitFrame(frame.image);
         images.add(sprite.image);
         bodies.add(sprite.body);
         durations.add(frame.duration.inMilliseconds);
-      } finally {
+      } catch (_) {
         frame.image.dispose();
+        rethrow;
       }
     }
     return _PixelFrames(images, durations, bodies);
@@ -374,38 +383,32 @@ Future<_PixelFrames> _decode(Uint8List bytes) async {
   }
 }
 
-Future<({ui.Image image, CharacterFrame body})> _gridImage(
+/// Width to decode at, or null to keep the file's own size.
+Future<int?> _portraitWidth(Uint8List bytes) async {
+  final probe = await ui.instantiateImageCodec(bytes);
+  try {
+    final first = await probe.getNextFrame();
+    final width = first.image.width;
+    first.image.dispose();
+    if (width > portraitMaxEdge) return portraitMaxEdge;
+    return null;
+  } finally {
+    probe.dispose();
+  }
+}
+
+/// Keep [source] for drawing. The 64-grid is only the body and backdrop.
+Future<({ui.Image image, CharacterFrame body})> _portraitFrame(
   ui.Image source,
 ) async {
   final data = await source.toByteData(format: ui.ImageByteFormat.rawRgba);
   if (data == null) {
-    throw StateError('image has no pixels');
+    return (image: source, body: const CharacterFrame.full());
   }
   final keyed = keyCharacter(
     coverCropGrid(data.buffer.asUint8List(), source.width, source.height),
   );
-  final buffer = await ui.ImmutableBuffer.fromUint8List(keyed.rgba);
-  try {
-    final descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: pixelGrid,
-      height: pixelGrid,
-      pixelFormat: ui.PixelFormat.rgba8888,
-    );
-    try {
-      final gridCodec = await descriptor.instantiateCodec();
-      try {
-        final frame = await gridCodec.getNextFrame();
-        return (image: frame.image, body: keyed.frame);
-      } finally {
-        gridCodec.dispose();
-      }
-    } finally {
-      descriptor.dispose();
-    }
-  } finally {
-    buffer.dispose();
-  }
+  return (image: source, body: keyed.frame);
 }
 
 Future<String> _stageModel(Uint8List bytes) async {
@@ -622,7 +625,8 @@ class _StagePainter extends CustomPainter {
   ///
   /// Each row above the feet takes more of [bob], [lean], and [scale].
   /// A keyed body is scaled so the head and the feet sit inside the ring.
-  /// The backdrop itself is already painted and does not move.
+  /// The backdrop itself is already painted and does not move. Source
+  /// samples come from the picture, not from a 64-pixel nearest copy.
   void _drawPlanted(
     Canvas canvas,
     ui.Image image,
@@ -638,11 +642,19 @@ class _StagePainter extends CustomPainter {
   }) {
     final srcW = frame.right - frame.left + 1;
     if (srcW <= 0 || frame.bottom < frame.top || cell <= 0) return;
+    if (image.width <= 0 || image.height <= 0) return;
     final place = placePortrait(frame);
     final paint = Paint()
-      ..filterQuality = FilterQuality.none
+      ..filterQuality = FilterQuality.high
+      ..isAntiAlias = true
       ..color = Color.fromRGBO(255, 255, 255, fade.clamp(0.0, 1.0));
     final destW = srcW * place.scale * cell;
+    final side = math.min(image.width, image.height).toDouble();
+    final x0 = (image.width - side) / 2;
+    final y0 = (image.height - side) / 2;
+    final texel = side / pixelGrid;
+    final srcLeft = x0 + frame.left * texel;
+    final srcWidth = srcW * texel;
     var y = place.ground * cell;
     for (var row = frame.bottom; row >= frame.top; row--) {
       final lift = frame.lift(row.toDouble());
@@ -659,12 +671,7 @@ class _StagePainter extends CustomPainter {
       );
       canvas.drawImageRect(
         image,
-        Rect.fromLTWH(
-          frame.left.toDouble(),
-          row.toDouble(),
-          srcW.toDouble(),
-          1,
-        ),
+        Rect.fromLTWH(srcLeft, y0 + row * texel, srcWidth, texel),
         Rect.fromLTWH(
           place.left * cell + shift.dx * cell,
           y + shift.dy * cell,

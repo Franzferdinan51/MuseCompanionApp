@@ -17,8 +17,8 @@ same session code is what a later iOS or desktop port would use.
   Noise session with your Muse and can hold it in a foreground service.
 - **Shows your Muse's character.** `display.draw_url` accepts a full-color
   JPEG, PNG, or WebP, an animated GIF or animated WebP, or a GLB. The phone
-  cover-crops the picture onto a 64×64 grid and draws that portrait inside
-  a fixed round stage. The disc stays put. A flat backdrop fills the circle,
+  cover-crops the picture into a fixed round stage and draws it sharply.
+  The disc stays put. A flat backdrop fills the circle,
   and the character sits fully inside it: the body bobs, the feet stay
   put, with the full-UI board timing from
   [gadgets.muse.ai](https://gadgets.muse.ai/): rings, thought dots, a
