@@ -94,6 +94,14 @@ class AppCompanionDisplay implements CompanionDisplay {
           // A writable cache is a convenience, not a requirement.
         }
       }
+      // GLB 3D models are not images: pass them through to the 3D
+      // viewer instead of decoding them. Same bytes-in pipeline, no
+      // format restriction — .glb URLs work like image URLs.
+      if (isGlbModel(bytes)) {
+        listener.onCharacter(bytes, 0, 0);
+        return ImageDrawResult.ok(
+            width: 0, height: 0, bytes: bytes.length, fromCache: fromCache);
+      }
       int width;
       int height;
       try {

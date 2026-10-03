@@ -265,7 +265,8 @@ class SetupController {
       await sendStatus('error_pairing_confirm_required');
     } else if (decrypted && action == 'wifi_scan') {
       await _handleWifiScan();
-    } else if (decrypted && action == 'provision_v2') {
+    } else if (decrypted &&
+        (action == 'provision_v2' || action == 'provision')) {
       await _handleProvision(command);
     } else {
       await sendStatus('error_unknown_action');
@@ -335,9 +336,10 @@ class SetupController {
       return value is String ? value : '';
     }
 
-    if (command['ssid'] is! String ||
-        command['password'] is! String ||
-        text('access_token').isEmpty ||
+    // Only the tokens matter: the Wi-Fi fields are dropped below (this
+    // device is already online), so absent ones must not fail setup.
+    // Some apps omit them or send the v1 `provision` action instead.
+    if (text('access_token').isEmpty ||
         text('refresh_token').isEmpty ||
         text('token_type') != 'device') {
       await sendStatus('error_missing_credentials');

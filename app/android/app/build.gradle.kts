@@ -24,7 +24,8 @@ android {
         applicationId = "dev.musecompanion.muse_companion"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // model_viewer_plus (3D avatar WebView) needs API 24+.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

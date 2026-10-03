@@ -17,9 +17,15 @@
 // state) as the user changes them. The same preferences are writable by the
 // Muse through `companion.set_display`.
 
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart' hide ConnectionState;
+
+import '../app/foreground.dart';
 import '../app/model.dart';
+import '../src/gadget/service.dart';
+import 'diagnostics_screen.dart';
+import 'pairing_screen.dart';
 import 'scope.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -31,11 +37,128 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late CompanionSettings _settings;
+  StreamSubscription<ConnectionState>? _connectionSub;
+  ConnectionState _connection = ConnectionState.unpaired;
+  bool _unpairing = false;
+  bool? _serviceRunning;
+  bool _serviceBusy = false;
+  bool? _sdkSet;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _settings = AppScope.of(context).settings.loadSettings();
+    final scope = AppScope.of(context);
+    _settings = scope.settings.loadSettings();
+    _connectionSub?.cancel();
+    _connection = scope.service.connectionState;
+    _connectionSub = scope.service.onStateChanged.listen((state) {
+      if (mounted) setState(() => _connection = state);
+    });
+    _refreshServiceState();
+    scope.sdkTokens.load().then((saved) {
+      if (mounted) {
+        setState(() => _sdkSet = saved != null && saved.isNotEmpty);
+      }
+    }).catchError((_) {
+      if (mounted) setState(() => _sdkSet = false);
+    });
+  }
+
+  Future<void> _refreshServiceState() async {
+    final running = await isLinkServiceRunning();
+    if (mounted) setState(() => _serviceRunning = running);
+  }
+
+  Future<void> _editSdkToken() async {
+    final scope = AppScope.of(context);
+    String initial = '';
+    try {
+      initial = await scope.sdkTokens.load() ?? '';
+    } catch (_) {
+      initial = '';
+    }
+    if (!mounted) return;
+    final controller = TextEditingController(text: initial);
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('SDK token'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Optional. From gadgets.muse.ai — reported on token refresh '
+              'for developer gadget features. Empty clears it.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              obscureText: true,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'SDK token',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    try {
+      if (result.isEmpty) {
+        await scope.sdkTokens.delete();
+      } else {
+        await scope.sdkTokens.save(result);
+      }
+      scope.service.setSdkToken(result.isEmpty ? null : result);
+      scope.service.wake();
+      setState(() => _sdkSet = result.isNotEmpty);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save the SDK token.')),
+      );
+    }
+  }
+
+  Future<void> _toggleService() async {
+    final scope = AppScope.of(context);
+    setState(() => _serviceBusy = true);
+    try {
+      if (_serviceRunning == true) {
+        await stopLinkService();
+      } else {
+        await startLinkService(linkNotificationText(
+          scope.service.connectionState.name,
+          scope.service.statusDetail,
+          scope.service.agentName,
+        ));
+      }
+      await _refreshServiceState();
+    } finally {
+      if (mounted) setState(() => _serviceBusy = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _connectionSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _commit(CompanionSettings next) async {
@@ -44,6 +167,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     scope.presentation.applySettings(next);
     if (!mounted) return;
     setState(() => _settings = next);
+  }
+
+  Future<void> _unpair() async {
+    final scope = AppScope.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unpair this companion?'),
+        content: const Text(
+          'The saved credentials are deleted and the connection drops. '
+          'The device identity is kept, so re-pairing advertises the same name.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Unpair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _unpairing = true);
+    try {
+      // Restart the loop so the open session drops and the unpaired
+      // state surfaces immediately.
+      await scope.service.stop();
+      await scope.service.unpair();
+      unawaited(scope.service.start());
+    } finally {
+      if (mounted) setState(() => _unpairing = false);
+    }
   }
 
   @override
@@ -57,6 +215,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          _PairingCard(
+            connection: _connection,
+            unpairing: _unpairing,
+            onUnpair: _unpair,
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'SDK token',
+            child: Row(
+              children: [
+                Icon(Icons.key_outlined,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _sdkSet == null
+                        ? 'Checking…'
+                        : _sdkSet == true
+                            ? 'Set — reported on token refresh.'
+                            : 'Not set — pairing works without it.',
+                  ),
+                ),
+                FilledButton.tonal(
+                  onPressed: _editSdkToken,
+                  child: Text(_sdkSet == true ? 'Edit' : 'Set'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Background connection',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.notifications_active_outlined,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _serviceRunning == null
+                            ? 'Checking…'
+                            : _serviceRunning == true
+                                ? 'Keep-alive is running — the link survives in the background.'
+                                : 'Keep-alive is off — Android may drop the link in the background.',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    FilledButton.tonal(
+                      onPressed:
+                          _serviceBusy ? null : _toggleService,
+                      child: Text(_serviceRunning == true
+                          ? 'Stop keep-alive'
+                          : 'Start keep-alive'),
+                    ),
+                    const SizedBox(width: 12),
+                    OutlinedButton(
+                      onPressed: openBatteryOptimizationSettings,
+                      child: const Text('Battery settings'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Diagnostics',
+            child: Row(
+              children: [
+                Icon(Icons.monitor_heart_outlined,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Link state, device identity and the setup log',
+                  ),
+                ),
+                FilledButton.tonal(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const DiagnosticsScreen(),
+                    ),
+                  ),
+                  child: const Text('Open'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
           _SettingCard(
             title: 'Theme',
             child: Row(
@@ -105,6 +359,106 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+}
+
+class _PairingCard extends StatelessWidget {
+  const _PairingCard({
+    required this.connection,
+    required this.unpairing,
+    required this.onUnpair,
+  });
+
+  final ConnectionState connection;
+  final bool unpairing;
+  final Future<void> Function() onUnpair;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ble = AppScope.of(context).ble;
+    final paired = connection != ConnectionState.unpaired &&
+        connection != ConnectionState.stopped;
+    return _SettingCard(
+      title: 'Pairing',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.bluetooth,
+                  color: theme.colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(ble.deviceName,
+                        style: theme.textTheme.titleSmall),
+                    Text(ble.nodeId,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.outline)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: paired
+                      ? theme.colorScheme.primaryContainer
+                      : theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  paired ? _labelFor(connection) : 'Not paired',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: paired
+                        ? theme.colorScheme.onPrimaryContainer
+                        : theme.colorScheme.outline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const PairingScreen(),
+                  ),
+                ),
+                icon: const Icon(Icons.bluetooth_searching, size: 18),
+                label: Text(paired ? 'Re-pair' : 'Pair a Muse'),
+              ),
+              const SizedBox(width: 12),
+              if (paired)
+                OutlinedButton(
+                  onPressed: unpairing ? null : onUnpair,
+                  child: Text(unpairing ? 'Unpairing…' : 'Unpair'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _labelFor(ConnectionState state) {
+    switch (state) {
+      case ConnectionState.connected:
+        return 'Connected';
+      case ConnectionState.connecting:
+        return 'Connecting…';
+      case ConnectionState.waiting:
+        return 'Waiting';
+      case ConnectionState.unpaired:
+        return 'Not paired';
+      case ConnectionState.stopped:
+        return 'Stopped';
+    }
   }
 }
 

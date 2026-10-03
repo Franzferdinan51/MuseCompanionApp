@@ -32,6 +32,22 @@ const int kMaxStatusLines = 4;
 /// Longest a single wrapped status line may be before it is re-wrapped.
 const int kMaxStatusLineLength = 80;
 
+/// GLB magic bytes: every binary glTF file starts with `glTF`.
+const List<int> _glbMagic = <int>[0x67, 0x6C, 0x54, 0x46];
+
+/// Whether [bytes] are a 3D model (GLB) rather than a 2D image.
+///
+/// Detection is by magic bytes only so the bytes-in pipeline stays
+/// format-agnostic: anything starting with `glTF` renders in the 3D viewer,
+/// everything else keeps the existing image path.
+bool isGlbModel(Uint8List bytes) {
+  if (bytes.length < _glbMagic.length) return false;
+  for (var i = 0; i < _glbMagic.length; i++) {
+    if (bytes[i] != _glbMagic[i]) return false;
+  }
+  return true;
+}
+
 /// Companion display preferences, matching `companion.set_display`.
 ///
 /// The full-color app has no use for the e-paper controls (frontlight
@@ -173,13 +189,17 @@ class PresentationState {
     notify();
   }
 
-  /// Apply a downloaded/decoded character image.
+  /// Apply downloaded character bytes (2D image or GLB 3D model).
   void applyCharacter(Uint8List bytes, {int? width, int? height}) {
     _character = bytes;
     _charWidth = width;
     _charHeight = height;
     notify();
   }
+
+  /// Whether the current character bytes are a 3D model (GLB).
+  bool get characterIsModel =>
+      _character != null && isGlbModel(_character!);
 
   /// Clear the character back to the neutral placeholder.
   void applyPlaceholder() {

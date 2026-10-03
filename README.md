@@ -16,6 +16,9 @@ Android first; iOS, macOS and Windows follow from the same Flutter codebase.
   with your Muse.
 - **Shows your Muse's character** — full-color JPEG/PNG/WebP art at your
   screen's resolution, cached on-device and kept across restarts.
+- **3D avatar** — when your Muse sends a GLB model instead of an image,
+  the character view renders it as an auto-rotating 3D avatar; 2D art and
+  the neutral placeholder behave exactly as before.
 - **Live status captions** — short Unicode updates under the character
   whenever your Muse's activity changes.
 - **Chat from the device** — send messages to your Muse as coming from the
@@ -118,6 +121,17 @@ Commands registered with `link.register`:
 Issues and pull requests are welcome. Protocol changes should keep the
 Dart port byte-compatible with the reference SDK — add a vector or golden
 test when behavior changes.
+
+## Acknowledgments
+
+- [muse-pocket](https://github.com/Franzferdinan51/muse-pocket) — the
+  e-ink Muse gadget this app is modeled on; display layout, pairing flow
+  and firmware behavior reference.
+- [muse-gadget-sdk](https://github.com/facebookincubator/muse-gadget-sdk)
+  by Meta Platforms, Inc. — the reference gadget SDK and docs at
+  [gadgets.muse.ai](https://gadgets.muse.ai/); protocol, pairing and
+  voice designs followed from it.
+- The Meta Muse team for the Muse platform itself.
 
 ## License
 

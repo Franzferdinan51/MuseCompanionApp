@@ -135,7 +135,7 @@ class GadgetService {
   final RunCommand _runCommand;
   final PairingStore _pairingStore;
   final String _version;
-  final String? _sdkToken;
+  String? _sdkToken;
   final String _displayName;
   final LinkConnector? _connect;
   final http.Client? _httpClient;
@@ -149,6 +149,7 @@ class GadgetService {
   bool _stopRequested = false;
   Completer<void>? _stopCompleter;
   Completer<void>? _sleepCompleter;
+  Timer? _sleepTimer;
   double _lastRefreshAttempt = double.negativeInfinity;
   bool _sdkTokenReportAttempted = false;
   LinkSession? _current;
@@ -192,10 +193,30 @@ class GadgetService {
   /// Stop the loop and close the session.
   Future<void> stop() async {
     _stopRequested = true;
-    _stopCompleter?.complete();
-    _sleepCompleter?.complete();
+    final stopper = _stopCompleter;
+    if (stopper != null && !stopper.isCompleted) {
+      stopper.complete();
+    }
+    _wakeSleeper();
     await _loop;
     _setState(ConnectionState.stopped);
+  }
+
+  /// Cut any current backoff or poll sleep short.
+  ///
+  /// The pairing wizard calls this after a new pairing is committed so
+  /// the loop picks it up immediately instead of sleeping out the
+  /// unpaired poll. Safe to call any time, even while stopped.
+  void wake() {
+    _wakeSleeper();
+  }
+
+  void _wakeSleeper() {
+    final sleeper = _sleepCompleter;
+    if (sleeper != null && !sleeper.isCompleted) {
+      sleeper.complete();
+    }
+    _sleepTimer?.cancel();
   }
 
   /// Send a message to the Muse from this device.
@@ -212,6 +233,15 @@ class GadgetService {
   Future<void> unpair() async {
     await _pairingStore.delete();
     _agentName = null;
+  }
+
+  /// Update the SDK token reported on token refresh (null clears it).
+  ///
+  /// The next loop pass reports a newly set token, even when no rotation
+  /// is due; clearing it stops reporting without touching the pairing.
+  void setSdkToken(String? token) {
+    _sdkToken = (token == null || token.isEmpty) ? null : token;
+    _sdkTokenReportAttempted = false;
   }
 
   Future<void> _run() async {
@@ -419,15 +449,23 @@ class GadgetService {
     if (_stopRequested) return;
     final completer = Completer<void>();
     _sleepCompleter = completer;
+    // A real Timer stored on the instance so an early wake via _wakeSleeper
+    // cancels it synchronously instead of leaving a dangling Future.delayed
+    // timer pending until it fires.
+    _sleepTimer?.cancel();
+    _sleepTimer = Timer(
+      Duration(milliseconds: (seconds * 1000).round()),
+      () {
+        if (identical(_sleepCompleter, completer)) {
+          _sleepCompleter = null;
+          completer.complete();
+        }
+      },
+    );
     try {
-      await Future.any([
-        Future<void>.delayed(Duration(milliseconds: (seconds * 1000).round())),
-        completer.future,
-      ]);
+      await completer.future;
     } finally {
-      if (identical(_sleepCompleter, completer)) {
-        _sleepCompleter = null;
-      }
+      _sleepTimer = null;
     }
   }
 

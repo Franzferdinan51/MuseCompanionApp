@@ -18,11 +18,14 @@
 // service's RunCommand, and the presentation state that drives the screen.
 
 import 'dart:async';
-import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
+import 'package:muse_companion/app/ble_peripheral.dart';
+import 'package:muse_companion/app/chat.dart';
 import 'package:muse_companion/app/companion_platform.dart';
+import 'package:muse_companion/app/foreground.dart';
 import 'package:muse_companion/app/model.dart';
 import 'package:muse_companion/app/storage.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
@@ -35,6 +38,8 @@ const String _appVersion = '0.1.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  initForegroundSupport();
+  initLinkService();
 
   final settings = await SettingsStore.init();
   final identity =
@@ -53,6 +58,9 @@ Future<void> main() async {
   final executor = CompanionExecutor(display: display, health: health);
 
   final screen = _screenSize();
+  final pairingStore = SecurePairingStore();
+  final sdkTokens = SecureSdkTokenStore();
+  final savedSdkToken = await sdkTokens.load();
   final service = GadgetService(
     identity: identity.identity,
     commands: companionCommandSpecs(
@@ -60,15 +68,28 @@ Future<void> main() async {
       screenHeight: screen.height,
     ),
     runCommand: executor.run,
-    pairingStore: SecurePairingStore(),
+    pairingStore: pairingStore,
     version: _appVersion,
+    sdkToken: savedSdkToken?.isEmpty == true ? null : savedSdkToken,
     displayName: 'Muse Companion',
+  );
+  final ble = BlePeripheralManager(
+    identity: identity.identity,
+    pairingStore: pairingStore,
+    version: _appVersion,
+    onProvisioned: service.wake,
+    // Mirror the setup log to the console so pairing failures are
+    // diagnosable from logcat (the ring buffer feeds Diagnostics too).
+    logger: (message) => debugPrint('[ble-setup] $message'),
   );
 
   runApp(MuseCompanionApp(
     service: service,
     presentation: presentation,
     settings: settings,
+    ble: ble,
+    chat: ChatHistory(),
+    sdkTokens: sdkTokens,
   ));
 }
 
@@ -116,11 +137,17 @@ class MuseCompanionApp extends StatefulWidget {
     required this.service,
     required this.presentation,
     required this.settings,
+    required this.ble,
+    required this.chat,
+    required this.sdkTokens,
   });
 
   final GadgetService service;
   final PresentationState presentation;
   final SettingsStore settings;
+  final BlePeripheralManager ble;
+  final ChatHistory chat;
+  final SecureSdkTokenStore sdkTokens;
 
   @override
   State<MuseCompanionApp> createState() => _MuseCompanionAppState();
@@ -128,6 +155,7 @@ class MuseCompanionApp extends StatefulWidget {
 
 class _MuseCompanionAppState extends State<MuseCompanionApp> {
   Timer? _healthTimer;
+  StreamSubscription<ConnectionState>? _linkSub;
 
   @override
   void initState() {
@@ -138,6 +166,22 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
     _pollHealth();
     _healthTimer =
         Timer.periodic(const Duration(minutes: 1), (_) => _pollHealth());
+    // Keep the link alive in the background (Android) and mirror its
+    // state into the persistent notification.
+    _linkSub = widget.service.onStateChanged.listen((_) {
+      updateLinkNotification(_notificationText());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      startLinkService(_notificationText());
+    });
+  }
+
+  String _notificationText() {
+    return linkNotificationText(
+      widget.service.connectionState.name,
+      widget.service.statusDetail,
+      widget.service.agentName,
+    );
   }
 
   Future<void> _pollHealth() async {
@@ -154,7 +198,10 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
   @override
   void dispose() {
     _healthTimer?.cancel();
+    _linkSub?.cancel();
     widget.service.stop();
+    widget.ble.dispose();
+    widget.chat.close();
     widget.presentation.close();
     super.dispose();
   }
@@ -188,17 +235,21 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
     // Rebuild the theme whenever settings change (user or Muse).
     return StreamBuilder<void>(
       stream: widget.presentation.stream,
-      builder: (context, _) => MaterialApp(
-        title: 'Muse Companion',
-        debugShowCheckedModeBanner: false,
-        theme: _themeFor(Brightness.light),
-        darkTheme: _themeFor(Brightness.dark),
-        themeMode: _modeFor(widget.presentation.settings.theme),
-        home: AppScope(
-          service: widget.service,
-          presentation: widget.presentation,
-          settings: widget.settings,
-          child: const CompanionScreen(),
+      builder: (context, _) => AppScope(
+        service: widget.service,
+        presentation: widget.presentation,
+        settings: widget.settings,
+        ble: widget.ble,
+        chat: widget.chat,
+        sdkTokens: widget.sdkTokens,
+        child: MaterialApp(
+          title: 'Muse Companion',
+          debugShowCheckedModeBanner: false,
+          navigatorObservers: [routeObserver],
+          theme: _themeFor(Brightness.light),
+          darkTheme: _themeFor(Brightness.dark),
+          themeMode: _modeFor(widget.presentation.settings.theme),
+          home: const CompanionScreen(),
         ),
       ),
     );

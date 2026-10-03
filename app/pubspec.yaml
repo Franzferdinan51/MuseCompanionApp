@@ -22,13 +22,19 @@ dependencies:
   # Image/character cache directory.
   path_provider: ^2.1.5
   # Runtime permission requests (Bluetooth, notifications).
-  permission_handler: ^11.3.1
+  permission_handler: 11.4.0
   # Battery level for the device.health command.
   battery_plus: ^6.2.1
 
   cupertino_icons: ^1.0.8
   crypto: ^3.0.7
   device_info_plus: ^12.4.0
+  connectivity_plus: ^7.3.1
+  wakelock_plus: ^1.5.2
+  package_info_plus: ^9.0.1
+  flutter_foreground_task: ^10.0.0
+  # 3D avatar rendering (GLB models from the Muse).
+  model_viewer_plus: ^1.10.0
 
 dev_dependencies:
   flutter_test:

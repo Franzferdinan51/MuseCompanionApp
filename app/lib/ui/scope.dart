@@ -18,6 +18,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../app/ble_peripheral.dart';
+import '../app/chat.dart';
 import '../app/model.dart';
 import '../app/storage.dart';
 import 'package:muse_companion/src/gadget/service.dart';
@@ -28,12 +30,18 @@ class AppScope extends InheritedWidget {
     required this.service,
     required this.presentation,
     required this.settings,
+    required this.ble,
+    required this.chat,
+    required this.sdkTokens,
     required super.child,
   });
 
   final GadgetService service;
   final PresentationState presentation;
   final SettingsStore settings;
+  final BlePeripheralManager ble;
+  final ChatHistory chat;
+  final SecureSdkTokenStore sdkTokens;
 
   static AppScope of(BuildContext context) {
     final scope =
@@ -46,5 +54,8 @@ class AppScope extends InheritedWidget {
   bool updateShouldNotify(AppScope oldWidget) =>
       service != oldWidget.service ||
       presentation != oldWidget.presentation ||
-      settings != oldWidget.settings;
+      settings != oldWidget.settings ||
+      ble != oldWidget.ble ||
+      chat != oldWidget.chat ||
+      sdkTokens != oldWidget.sdkTokens;
 }

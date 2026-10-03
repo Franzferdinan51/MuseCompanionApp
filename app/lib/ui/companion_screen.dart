@@ -19,14 +19,24 @@
 // the screen"), rendered at the phone's resolution in full color.
 
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:flutter/services.dart';
+import 'package:model_viewer_plus/model_viewer_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app/model.dart';
 import '../src/gadget/service.dart';
+import 'chat_screen.dart';
+import 'pairing_screen.dart';
 import 'scope.dart';
 import 'settings_screen.dart';
+
+/// Shared observer so the companion screen knows when it is covered.
+final RouteObserver<ModalRoute<dynamic>> routeObserver =
+    RouteObserver<ModalRoute<dynamic>>();
 
 class CompanionScreen extends StatefulWidget {
   const CompanionScreen({super.key});
@@ -35,8 +45,10 @@ class CompanionScreen extends StatefulWidget {
   State<CompanionScreen> createState() => _CompanionScreenState();
 }
 
-class _CompanionScreenState extends State<CompanionScreen> {
+class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
   StreamSubscription<ConnectionState>? _connectionSub;
+  StreamSubscription<void>? _presentationSub;
+  bool _routeVisible = true;
 
   @override
   void didChangeDependencies() {
@@ -44,6 +56,7 @@ class _CompanionScreenState extends State<CompanionScreen> {
     // (Re)bind once per scope: dependOnInheritedWidget cannot run in
     // initState, and the subscription must be released on dispose.
     _connectionSub?.cancel();
+    _presentationSub?.cancel();
     final scope = AppScope.of(context);
     scope.presentation.applyConnection(scope.service.connectionState,
         detail: scope.service.statusDetail);
@@ -54,12 +67,55 @@ class _CompanionScreenState extends State<CompanionScreen> {
           state, detail: scope.service.statusDetail);
       scope.presentation.applyName(scope.service.agentName);
     });
+    _presentationSub = scope.presentation.stream.listen((_) {
+      if (mounted) _applyWakelock();
+    });
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      routeObserver.subscribe(this, route);
+      _routeVisible = route.isCurrent;
+    }
+    _applyWakelock();
   }
 
   @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _connectionSub?.cancel();
+    _presentationSub?.cancel();
+    // Never leave the display pinned on after the screen goes away.
+    WakelockPlus.toggle(enable: false).catchError((_) => false);
     super.dispose();
+  }
+
+  @override
+  void didPush() => _onVisibility(true);
+
+  @override
+  void didPopNext() => _onVisibility(true);
+
+  @override
+  void didPushNext() => _onVisibility(false);
+
+  @override
+  void didPop() => _onVisibility(false);
+
+  void _onVisibility(bool visible) {
+    _routeVisible = visible;
+    _applyWakelock();
+  }
+
+  Future<void> _applyWakelock() async {
+    final scope = AppScope.of(context);
+    final enable =
+        _routeVisible && scope.presentation.settings.keepScreenOn;
+    try {
+      await WakelockPlus.toggle(enable: enable);
+    } on MissingPluginException {
+      // Tests and platforms without the plugin: nothing to pin.
+    } on PlatformException {
+      // Best-effort display hint; never break the screen over it.
+    }
   }
 
   @override
@@ -237,18 +293,74 @@ class _Placeholder extends StatelessWidget {
   }
 }
 
-class _CharacterImage extends StatelessWidget {
+class _CharacterImage extends StatefulWidget {
   const _CharacterImage({required this.bytes}) : super();
 
   final Uint8List bytes;
 
   @override
+  State<_CharacterImage> createState() => _CharacterImageState();
+}
+
+class _CharacterImageState extends State<_CharacterImage> {
+  /// Staging future for the GLB branch; null when showing a 2D image.
+  Future<String>? _modelPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeStageModel();
+  }
+
+  @override
+  void didUpdateWidget(_CharacterImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.bytes, oldWidget.bytes)) {
+      _maybeStageModel();
+    }
+  }
+
+  void _maybeStageModel() {
+    _modelPath =
+        isGlbModel(widget.bytes) ? _stageModel(widget.bytes) : null;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return FittedBox(
-      fit: BoxFit.cover,
-      child: Image.memory(bytes, gaplessPlayback: true),
+    final modelPath = _modelPath;
+    // The 2D path is byte-for-byte the historical behavior.
+    if (modelPath == null) {
+      return FittedBox(
+        fit: BoxFit.cover,
+        child: Image.memory(widget.bytes, gaplessPlayback: true),
+      );
+    }
+    return FutureBuilder<String>(
+      future: modelPath,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return ModelViewer(
+          src: 'file://${snapshot.data}',
+          autoRotate: true,
+          disableZoom: true,
+          backgroundColor: Colors.transparent,
+        );
+      },
     );
   }
+}
+
+/// Write GLB [bytes] to a temp file for the embedded 3D viewer.
+///
+/// A fixed name is fine: one avatar is shown at a time, and overwriting
+/// keeps the temp directory from filling with stale models.
+Future<String> _stageModel(Uint8List bytes) async {
+  final dir = await getTemporaryDirectory();
+  final file = File('${dir.path}/muse_avatar.glb');
+  await file.writeAsBytes(bytes);
+  return file.path;
 }
 
 class _StatusLines extends StatelessWidget {
@@ -310,14 +422,38 @@ class _BottomBar extends StatelessWidget {
               ),
             ],
           ),
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const SettingsScreen(),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (state == ConnectionState.unpaired)
+                FilledButton.tonalIcon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<bool>(
+                      builder: (_) => const PairingScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.bluetooth, size: 18),
+                  label: const Text('Pair'),
+                ),
+              IconButton(
+                tooltip: 'Message',
+                icon: const Icon(Icons.chat_bubble_outline),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ChatScreen(),
+                  ),
+                ),
               ),
-            ),
+              IconButton(
+                tooltip: 'Settings',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SettingsScreen(),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

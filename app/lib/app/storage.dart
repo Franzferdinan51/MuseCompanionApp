@@ -30,6 +30,7 @@ import 'model.dart';
 
 const String _pairingKey = 'muse_pairing_record';
 const String _identityKey = 'muse_identity_mac';
+const String _sdkTokenKey = 'muse_sdk_token';
 const String _settingsPrefix = 'muse_settings_';
 const String _statusKey = 'muse_last_status';
 
@@ -60,6 +61,24 @@ class SecurePairingStore implements PairingStore {
   Future<void> delete() async {
     await _storage.delete(key: _pairingKey);
   }
+}
+
+/// Optional gadgets.muse.ai SDK token, kept in encrypted storage.
+///
+/// Community gadgets pair and run without one; when set, the service
+/// reports it on token refresh so API-side gadget features light up.
+class SecureSdkTokenStore {
+  SecureSdkTokenStore([FlutterSecureStorage? storage])
+      : _storage = storage ?? const FlutterSecureStorage();
+
+  final FlutterSecureStorage _storage;
+
+  Future<String?> load() => _storage.read(key: _sdkTokenKey);
+
+  Future<void> save(String token) =>
+      _storage.write(key: _sdkTokenKey, value: token);
+
+  Future<void> delete() => _storage.delete(key: _sdkTokenKey);
 }
 
 /// A stable device identity persisted across upgrades and unpairings.

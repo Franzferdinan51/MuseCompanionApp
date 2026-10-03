@@ -155,4 +155,38 @@ void main() {
       expect(next.keepScreenOn, isTrue);
     });
   });
+
+  group('3D avatar (GLB) detection', () {
+    test('glTF magic bytes detect a model', () {
+      final glb = Uint8List.fromList(
+          [0x67, 0x6C, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00]);
+      expect(isGlbModel(glb), isTrue);
+    });
+
+    test('image bytes are not a model', () {
+      // PNG signature.
+      final png = Uint8List.fromList(
+          [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      expect(isGlbModel(png), isFalse);
+    });
+
+    test('short buffers are not a model', () {
+      expect(isGlbModel(Uint8List(0)), isFalse);
+      expect(isGlbModel(Uint8List.fromList([0x67, 0x6C])), isFalse);
+    });
+
+    test('characterIsModel follows the stored bytes', () {
+      final state = PresentationState();
+      expect(state.characterIsModel, isFalse);
+      state.applyCharacter(Uint8List.fromList(
+          [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+      expect(state.characterIsModel, isFalse);
+      state.applyCharacter(Uint8List.fromList(
+          [0x67, 0x6C, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00]));
+      expect(state.characterIsModel, isTrue);
+      state.applyPlaceholder();
+      expect(state.characterIsModel, isFalse);
+      state.close();
+    });
+  });
 }

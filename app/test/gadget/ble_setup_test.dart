@@ -380,7 +380,7 @@ void main() {
         {'refresh_token': ''},
         {'token_type': 'user'},
         {'access_token': null},
-        {'password': null},
+        {'token_type': null},
       ];
       for (final change in variants) {
         final h = _Harness();
@@ -391,6 +391,29 @@ void main() {
             reason: 'for $change');
         expect(h.pairing.state, PairingState.ready);
       }
+    });
+
+    test('provision without wifi fields succeeds', () async {
+      final h = _Harness();
+      await h.pair();
+      await h.sendEncrypted({
+        'action': 'provision_v2',
+        'access_token': 'device-access',
+        'refresh_token': 'device-refresh',
+        'token_type': 'device',
+        'username': 'someone',
+        'api_url_v2': 'https://api.example',
+      });
+      await h.waitForStatus('auth_ok');
+      expect(h.saved.single.accessToken, 'device-access');
+    });
+
+    test('v1 provision action provisions like v2', () async {
+      final h = _Harness();
+      await h.pair();
+      await h.sendEncrypted({..._provision, 'action': 'provision'});
+      await h.waitForStatus('auth_ok');
+      expect(h.saved.single.refreshToken, 'device-refresh');
     });
 
     test('offline device reports wifi failure and can retry', () async {
