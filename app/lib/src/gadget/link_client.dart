@@ -360,6 +360,7 @@ class LinkSession {
   int _inflightInvokes = 0;
   final List<Completer<void>> _invokeWaiters = [];
   final Set<Future<void>> _tasks = {};
+  Timer? _heartbeatTimer;
   final Map<int, MessageDecoder> _sideDecoders = {};
   int _streamId = 0;
   String _registerId = '';
@@ -721,9 +722,17 @@ class LinkSession {
         onRegistered?.call();
         // The firmware sends one heartbeat as soon as register is acked,
         // then daily. The VM uses it as a sign the command path is up.
+        // Send heartbeats every 60s to keep the command path marked as up.
         final beat = send({'method': 'link.heartbeat'});
         _tasks.add(beat);
         beat.whenComplete(() => _tasks.remove(beat));
+        // Periodic heartbeat to keep device.invoke routing alive.
+        _heartbeatTimer?.cancel();
+        _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+          final hb = send({'method': 'link.heartbeat'});
+          _tasks.add(hb);
+          hb.whenComplete(() => _tasks.remove(hb));
+        });
         final task = _openChatSubscription();
         _tasks.add(task);
         task.whenComplete(() => _tasks.remove(task));
