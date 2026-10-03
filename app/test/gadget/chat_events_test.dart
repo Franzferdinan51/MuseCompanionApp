@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:muse_companion/src/gadget/chat_events.dart';
 
 void main() {
-  test('chat posts include output modality and file items', () {
+  test('a voice note is a voice turn and a photo stays text', () {
     final body = buildChatRequest(
       message: '',
       deviceId: 'node-1',
@@ -17,13 +17,45 @@ void main() {
         ),
       ],
     );
-    expect(body['output_modality'], 'text');
+    expect(body['output_modality'], 'voice');
     expect(body['message'], '');
     expect(body.containsKey('session_id'), isFalse);
     final items = body['items'] as List;
     expect(items.single['type'], 'file');
     expect(items.single['mime_type'], 'audio/wav');
+    expect(items.single['filename'], 'voice_note.wav');
     expect(items.single['data_base64'], base64Encode([9, 8]));
+
+    final prompted = buildChatRequest(
+      message: 'what did I say?',
+      deviceId: 'node-1',
+      attachments: [
+        ChatAttachment(
+          mimeType: 'Audio/WAV',
+          filename: 'voice_note.wav',
+          bytes: Uint8List.fromList([3]),
+        ),
+      ],
+    );
+    expect(prompted['output_modality'], 'voice');
+    expect(prompted['message'], 'what did I say?');
+
+    final photo = buildChatRequest(
+      message: 'What do you see?',
+      deviceId: 'node-1',
+      attachments: [
+        ChatAttachment(
+          mimeType: 'image/jpeg',
+          filename: 'camera.jpg',
+          bytes: Uint8List.fromList([1, 2]),
+        ),
+      ],
+    );
+    expect(photo['output_modality'], 'text');
+    expect(
+      buildChatRequest(message: 'hello', deviceId: 'node-1')['output_modality'],
+      'text',
+    );
   });
 
   test('ndjson decoder keeps split lines and skips replays', () {
