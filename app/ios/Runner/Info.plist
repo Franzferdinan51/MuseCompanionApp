@@ -68,5 +68,29 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Muse Companion uses Bluetooth to pair with your Muse device and stay connected in the background.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Muse Companion uses Bluetooth to communicate with your Muse device.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Muse Companion uses the microphone for hold-to-talk voice messages.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Muse Companion uses the camera to show Muse what you see.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Muse Companion accesses contacts so you can message people by name.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Muse Companion reads your calendar to help with scheduling.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Muse Companion uses your location for contextual assistance.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Muse Companion uses speech recognition to transcribe your voice messages.</string>
+
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-peripheral</string>
+		<string>bluetooth-central</string>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>
