@@ -301,16 +301,9 @@ class _AutoCaptureScheduler {
       final stamp =
           '${now.year}-${_two(now.month)}-${_two(now.day)} '
           '${_two(now.hour)}:${_two(now.minute)}';
-      var message = 'Auto-capture $stamp (${s.cameraFacing} camera)';
-      // Include ADB info if sharing is enabled.
-      if (s.adbInfoSharingEnabled) {
-        try {
-          final info = await _phone.adbInfo();
-          final adbOn = info['adb_enabled'] == true;
-          final model = info['model'] ?? 'unknown';
-          message += '\nADB: ${adbOn ? 'enabled' : 'disabled'} ($model)';
-        } catch (_) {}
-      }
+      final message = 'Auto-capture $stamp (${s.cameraFacing} camera)';
+      // TODO: ADB info was sending as empty voice notes instead of text.
+      // Disabled until the sendChat routing is fixed.
       await _poster.send(
         message,
         [ChatAttachment(mimeType: 'image/jpeg', filename: 'auto-capture.jpg', bytes: jpeg)],
