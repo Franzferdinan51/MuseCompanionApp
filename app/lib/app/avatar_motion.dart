@@ -175,6 +175,9 @@ AvatarPose? poseForStatus(String text) {
       value == 'listening...') {
     return AvatarPose.listening;
   }
-  if (value == 'looking through the camera') return AvatarPose.thinking;
+  if (value == 'looking through the camera' ||
+      value == 'looking at the screen') {
+    return AvatarPose.thinking;
+  }
   return null;
 }

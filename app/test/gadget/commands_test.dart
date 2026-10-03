@@ -89,6 +89,14 @@ class _FakePhone implements PhoneActions {
     Map<String, Object?> params,
   ) async {
     calls.add((command, params));
+    if (command == 'phone.screenshot') {
+      return {
+        'jpeg': Uint8List.fromList([9, 8, 7]),
+        'width': 100,
+        'height': 200,
+        'status': 'Looking at the screen',
+      };
+    }
     return {...params, 'command': command};
   }
 }
@@ -285,6 +293,37 @@ void main() {
       expect(phone.lastFacing, 'back');
     });
 
+    test('screenshot posts the screen and leaves the jpeg out of the result', () async {
+      final phone = _FakePhone();
+      String? posted;
+      List<ChatAttachment>? items;
+      final seeing = CompanionExecutor(
+        display: display,
+        health: _FakeHealth(),
+        phone: phone,
+        postToMuse: (message, attachments) async {
+          posted = message;
+          items = attachments;
+          return {'ok': true};
+        },
+      );
+      final result = await seeing.run('phone.screenshot', {
+        'prompt': 'What is open?',
+      }, null);
+      expect(result['ok'], isTrue);
+      expect(display.status, 'Looking at the screen');
+      expect(posted, 'What is open?');
+      expect(items, hasLength(1));
+      expect(items!.single.filename, 'screen.jpg');
+      expect(items!.single.bytes, [9, 8, 7]);
+      final payload = result['payload'] as Map;
+      expect(payload['kind'], 'screenshot');
+      expect(payload['width'], 100);
+      expect(payload['height'], 200);
+      expect(payload.containsKey('jpeg'), isFalse);
+      expect(phone.calls.single.$1, 'phone.screenshot');
+    });
+
     test('vision uses the saved camera unless facing is set', () async {
       final phone = _FakePhone();
       final seeing = CompanionExecutor(
@@ -318,6 +357,13 @@ void main() {
         'phone.timer',
         'phone.device',
         'phone.screen',
+        'phone.screenshot',
+        'phone.ui',
+        'phone.tap',
+        'phone.swipe',
+        'phone.type',
+        'phone.press',
+        'phone.screen_control',
       ]) {
         expect(specs.containsKey(name), isTrue, reason: name);
       }

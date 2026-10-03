@@ -146,7 +146,7 @@ Commands registered with `link.register`:
 | `device.health` | Battery, charging, model, OS, app version |
 | `vision.capture` | Take a photo and post it into chat so the Muse can see it |
 | `voice.listen` | Record a short voice note and post it into chat |
-| `phone.open_url`, `phone.launch_app`, `phone.list_apps` | Open a link or an installed app, or list launchable apps |
+| `phone.open_url`, `phone.launch_app`, `phone.list_apps` | Open a link or an installed app, or list launchable apps. A query narrows the list. Opening from the background needs Screen control |
 | `phone.clipboard`, `phone.flashlight`, `phone.volume`, `phone.brightness` | Clipboard, torch, volume (music, ring, alarm, notification, or voice), screen brightness |
 | `phone.location` | Last known location, then one fresh update |
 | `phone.notify`, `phone.alarm`, `phone.timer` | Show a notification, set an alarm, or start a timer |
@@ -157,6 +157,9 @@ Commands registered with `link.register`:
 | `phone.ringer`, `phone.dnd`, `phone.vibrate`, `phone.rotation` | Ringer mode, Do Not Disturb, a short vibration, screen rotation |
 | `phone.radio`, `phone.settings` | Radio status, or open a system panel or settings page. No silent radio toggle |
 | `phone.device`, `phone.screen` | Device status (no IMEI or serial), or wake the screen |
+| `phone.screenshot`, `phone.ui` | Post a screenshot into chat, or read on-screen text and buttons. Needs Screen control |
+| `phone.tap`, `phone.swipe`, `phone.type`, `phone.press` | Tap, swipe, type, or press back, home, recents, notifications, quick settings, lock, or power. Needs Screen control |
+| `phone.screen_control` | Report whether Screen control is on, or open its system page |
 
 There is no shell command. The phone is controlled through this list.
 

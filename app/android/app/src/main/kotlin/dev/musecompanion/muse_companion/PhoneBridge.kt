@@ -142,10 +142,12 @@ class PhoneBridge(private val activity: MainActivity) {
                         val command = call.argument<String>("command") ?: ""
                         @Suppress("UNCHECKED_CAST")
                         val params = call.argument<Map<String, Any?>>("params") ?: emptyMap()
-                        if (command == "phone.location") {
-                            locate(result)
-                        } else {
-                            result.success(dispatch(command, params))
+                        when (command) {
+                            "phone.location" -> locate(result)
+                            "phone.screenshot" -> ScreenControl.screenshot(context, main, io, result)
+                            "phone.tap" -> ScreenControl.tap(context, main, params, result)
+                            "phone.swipe" -> ScreenControl.swipe(context, main, params, result)
+                            else -> result.success(dispatch(command, params))
                         }
                     }
                     else -> result.notImplemented()
@@ -694,7 +696,7 @@ class PhoneBridge(private val activity: MainActivity) {
         val intent = Intent("com.android.settings.TTS_SETTINGS")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
-            context.startActivity(intent)
+            startExternal(intent)
         } catch (_: ActivityNotFoundException) {
             throw IllegalStateException("speech settings are not available")
         }
@@ -858,7 +860,14 @@ class PhoneBridge(private val activity: MainActivity) {
         return when (command) {
             "phone.open_url" -> openUrl(params.string("url"))
             "phone.launch_app" -> launchApp(params.string("name"))
-            "phone.list_apps" -> mapOf("apps" to listApps())
+            "phone.list_apps" -> listApps(params.string("query"))
+            "phone.ui" -> ScreenControl.ui(context, params.string("query"))
+            "phone.type" -> ScreenControl.type(context, params.string("text"), params.string("target"))
+            "phone.press" -> ScreenControl.press(
+                context,
+                params.string("key").ifBlank { params.string("action") },
+            )
+            "phone.screen_control" -> ScreenControl.screenControl(activity, context, params.string("action"))
             "phone.clipboard" -> clipboard(params.string("action"), params.string("text"))
             "phone.flashlight" -> flashlight(params["on"] == true)
             "phone.volume" -> volume(params.int("level"), params.string("stream"))
@@ -899,39 +908,26 @@ class PhoneBridge(private val activity: MainActivity) {
         require(url.startsWith("http://") || url.startsWith("https://")) { "url must be http(s)" }
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        startExternal(intent)
         return mapOf("status" to "opened", "url" to url)
     }
 
     private fun launchApp(name: String): Map<String, Any?> {
-        require(name.isNotBlank()) { "name is required" }
-        val pm = context.packageManager
-        val direct = pm.getLaunchIntentForPackage(name)
-        val intent = direct ?: run {
-            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-            val match = pm.queryIntentActivities(main, 0).firstOrNull { info ->
-                val label = info.loadLabel(pm).toString()
-                label.contains(name, ignoreCase = true) ||
-                    info.activityInfo.packageName.contains(name, ignoreCase = true)
-            } ?: throw IllegalArgumentException("no app matches $name")
-            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                .setClassName(match.activityInfo.packageName, match.activityInfo.name)
-        }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-        return mapOf("status" to "launched", "name" to name)
+        val match = ScreenControl.resolveLaunch(context.packageManager, name)
+        val intent = context.packageManager.getLaunchIntentForPackage(match.packageName)
+            ?: Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setClassName(match.packageName, match.activity)
+        startExternal(intent)
+        return mapOf(
+            "status" to "launched",
+            "name" to match.label,
+            "package" to match.packageName,
+        )
     }
 
-    private fun listApps(): List<Map<String, String>> {
-        val pm = context.packageManager
-        val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return pm.queryIntentActivities(main, 0).map { info ->
-            mapOf(
-                "name" to info.loadLabel(pm).toString(),
-                "package" to info.activityInfo.packageName,
-            )
-        }.sortedBy { it["name"] }.take(80)
-    }
+    private fun listApps(query: String): Map<String, Any?> =
+        ScreenControl.listApps(context.packageManager, query)
 
     private fun clipboard(action: String, text: String): Map<String, Any?> {
         val clipboard = context.getSystemService(ClipboardManager::class.java)
@@ -1046,7 +1042,7 @@ class PhoneBridge(private val activity: MainActivity) {
             putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(intent)
+        startExternal(intent)
         return mapOf("status" to "set", "hour" to hour, "minute" to minute)
     }
 
@@ -1055,7 +1051,7 @@ class PhoneBridge(private val activity: MainActivity) {
         val action = if (place) Intent.ACTION_CALL else Intent.ACTION_DIAL
         val intent = Intent(action, android.net.Uri.parse("tel:$number"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        startExternal(intent)
         return mapOf("status" to if (place) "calling" else "dialer", "number" to number)
     }
 
@@ -1066,7 +1062,7 @@ class PhoneBridge(private val activity: MainActivity) {
                 putExtra("sms_body", text)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
+            startExternal(intent)
             return mapOf("status" to "composer", "sent" to false)
         }
         val sms = if (Build.VERSION.SDK_INT >= 31) {
@@ -1162,7 +1158,7 @@ class PhoneBridge(private val activity: MainActivity) {
             putExtra(Intent.EXTRA_TEXT, text)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        startExternal(Intent.createChooser(intent, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return mapOf("status" to "sharing")
     }
 
@@ -1355,7 +1351,7 @@ class PhoneBridge(private val activity: MainActivity) {
             putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(intent)
+        startExternal(intent)
         return mapOf("status" to "set", "seconds" to seconds)
     }
 
@@ -1385,6 +1381,11 @@ class PhoneBridge(private val activity: MainActivity) {
             "storage_total_bytes" to stat.totalBytes,
             "screen_on" to (power?.isInteractive == true),
             "orientation" to rotation,
+            "screen_width" to ScreenControl.displaySize(context).first,
+            "screen_height" to ScreenControl.displaySize(context).second,
+            "screen_control" to (
+                MuseAccessibilityService.instance != null || ScreenControl.enabled(context)
+                ),
             "ringer" to ringer("get", ""),
             "wifi" to wifiStatus(),
             "bluetooth" to bluetoothStatus(),
@@ -1507,8 +1508,11 @@ class PhoneBridge(private val activity: MainActivity) {
         }
 
     private fun startSettings(intent: Intent) {
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        startExternal(intent)
+    }
+
+    private fun startExternal(intent: Intent) {
+        ScreenControl.startExternal(activity, context, intent)
     }
 
     private fun dndGranted(): Boolean {
@@ -1596,6 +1600,9 @@ class PhoneBridge(private val activity: MainActivity) {
             "calendar" to granted(Manifest.permission.READ_CALENDAR),
             "notifications" to granted(Manifest.permission.POST_NOTIFICATIONS),
             "notification_listener" to MuseNotificationListener.enabled(),
+            "screen_control" to (
+                MuseAccessibilityService.instance != null || ScreenControl.enabled(context)
+                ),
             "flashlight" to context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH),
             "write_settings" to Settings.System.canWrite(context),
             "dnd" to dndGranted(),
@@ -1608,7 +1615,7 @@ class PhoneBridge(private val activity: MainActivity) {
     private fun openNotificationAccess() {
         val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        startExternal(intent)
     }
 
     private fun fail(result: MethodChannel.Result, message: String) {

@@ -20,6 +20,8 @@
 // gadget's shell and the phone app's own device pairing — it lets the
 // Muse see, hear, and act on this phone.
 
+import 'dart:typed_data';
+
 import 'chat_events.dart';
 import 'phone_actions.dart';
 
@@ -189,15 +191,23 @@ Map<String, Object?> companionCommandSpecs({
     },
     'phone.launch_app': {
       'description':
-          'Open an installed app by package name or by a name fragment '
-          '(for example "maps" or "com.google.android.apps.maps").',
-      'required': {'name': stringParam('Package name or app name fragment.')},
+          'Open an installed app by exact package name or app name '
+          '(for example "maps" or "com.google.android.apps.maps"). '
+          'A weak name that matches several apps returns those names '
+          'instead of opening one. Turn on Screen control so this still '
+          'works while Muse Companion is in the background.',
+      'required': {'name': stringParam('Package name or app name.')},
       'optional': <String, Object?>{},
     },
     'phone.list_apps': {
-      'description': 'List launchable apps as name and package, capped at 80.',
+      'description':
+          'List launchable apps as name and package. Without a query, '
+          'returns up to 200 and sets truncated when more exist. With a '
+          'query, returns up to 40 matches.',
       'required': <String, Object?>{},
-      'optional': <String, Object?>{},
+      'optional': {
+        'query': stringParam('Name or package fragment. Omit to list apps.'),
+      },
     },
     'phone.clipboard': {
       'description': 'Read or replace the phone clipboard.',
@@ -434,6 +444,124 @@ Map<String, Object?> companionCommandSpecs({
       'required': <String, Object?>{},
       'optional': {'action': stringParam('"status" (default) or "wake".')},
     },
+    'phone.screenshot': {
+      'description':
+          'Take a screenshot of the phone and post it in this chat so you '
+          'can see the screen. Requires Screen control, which the user turns '
+          'on in Companion Settings. The command returns once the picture '
+          'has been posted. Optional prompt is the question to ask about it.',
+      'required': <String, Object?>{},
+      'optional': {
+        'prompt': stringParam(
+          'Question to ask about the screenshot. Defaults to asking what is on screen.',
+        ),
+      },
+      'timeout_ms': drawImageTimeoutMs,
+    },
+    'phone.ui': {
+      'description':
+          'Read what is on the phone screen: text, bounds as '
+          'left,top,right,bottom, and whether each control is clickable, '
+          'editable, or focused. Up to 60 controls. Optional query keeps '
+          'only matching text. Requires Screen control.',
+      'required': <String, Object?>{},
+      'optional': {
+        'query': stringParam('Text, description, or id fragment to keep.'),
+      },
+    },
+    'phone.tap': {
+      'description':
+          'Tap the phone screen, like a mouse click. Pass text to tap a '
+          'visible label, or x and y in pixels, or x_percent and y_percent '
+          'from 0 to 100. long=true holds the tap. Requires Screen control.',
+      'required': <String, Object?>{},
+      'optional': {
+        'text': stringParam('Visible label or content description to tap.'),
+        'x': intParam('Horizontal pixel.'),
+        'y': intParam('Vertical pixel.'),
+        'x_percent': intParam(
+          'Horizontal position, 0 to 100. Overrides x.',
+          minimum: 0,
+          maximum: 100,
+        ),
+        'y_percent': intParam(
+          'Vertical position, 0 to 100. Overrides y.',
+          minimum: 0,
+          maximum: 100,
+        ),
+        'long': {
+          'type': 'boolean',
+          'description': 'Hold the tap instead of a short tap.',
+        },
+      },
+    },
+    'phone.swipe': {
+      'description':
+          'Swipe on the phone screen. Give x,y and x2,y2 in pixels, or '
+          'x_percent, y_percent, x2_percent, and y2_percent from 0 to 100. '
+          'duration is milliseconds from 80 to 2000, default 300. '
+          'Requires Screen control.',
+      'required': <String, Object?>{},
+      'optional': {
+        'x': intParam('Start horizontal pixel.'),
+        'y': intParam('Start vertical pixel.'),
+        'x2': intParam('End horizontal pixel.'),
+        'y2': intParam('End vertical pixel.'),
+        'x_percent': intParam(
+          'Start horizontal percent, 0 to 100.',
+          minimum: 0,
+          maximum: 100,
+        ),
+        'y_percent': intParam(
+          'Start vertical percent, 0 to 100.',
+          minimum: 0,
+          maximum: 100,
+        ),
+        'x2_percent': intParam(
+          'End horizontal percent, 0 to 100.',
+          minimum: 0,
+          maximum: 100,
+        ),
+        'y2_percent': intParam(
+          'End vertical percent, 0 to 100.',
+          minimum: 0,
+          maximum: 100,
+        ),
+        'duration': intParam(
+          'Swipe length in milliseconds, 80 to 2000. Default 300.',
+          minimum: 80,
+          maximum: 2000,
+        ),
+      },
+    },
+    'phone.type': {
+      'description':
+          'Replace the text in the focused field. Optional target is a '
+          'hint or current value that picks the field. Requires Screen control.',
+      'required': {'text': stringParam('Text to put in the field.')},
+      'optional': {
+        'target': stringParam('Hint or current text of the field to fill.'),
+      },
+    },
+    'phone.press': {
+      'description':
+          'Press a system key: back, home, recents, notifications, '
+          'quick_settings, lock, or power. Requires Screen control.',
+      'required': {
+        'key': stringParam(
+          'back, home, recents, notifications, quick_settings, lock, or power.',
+        ),
+      },
+      'optional': <String, Object?>{},
+    },
+    'phone.screen_control': {
+      'description':
+          'Report whether Screen control is on, or open its system page so '
+          'the user can turn it on. action is "status" (default) or "open". '
+          'You cannot turn it on yourself.',
+      'required': <String, Object?>{},
+      'optional': {'action': stringParam('"status" or "open".')},
+    },
   };
 }
 
@@ -549,6 +677,8 @@ class CompanionExecutor {
           return okResult(await health.health());
         case 'vision.capture':
           return await _capture(params);
+        case 'phone.screenshot':
+          return await _screenshot(params);
         case 'voice.listen':
           return await _listen(params);
         case 'phone.speak':
@@ -657,6 +787,57 @@ class CompanionExecutor {
       ),
       'photo',
     );
+  }
+
+  Future<Map<String, Object?>> _screenshot(Map<String, Object?> params) async {
+    final phone = _requirePhone();
+    if (phone is Map<String, Object?>) return phone;
+    final prompt = params['prompt'];
+    final question = prompt is String && prompt.trim().isNotEmpty
+        ? prompt.trim()
+        : 'Look at this screenshot of the phone and describe what is on the screen.';
+    await display.setStatus('Looking at the screen');
+    final result = await (phone as PhoneActions).run('phone.screenshot', params);
+    final bytes = _jpegBytes(result['jpeg']);
+    if (bytes == null || bytes.isEmpty) {
+      return errorResult('the phone returned an empty screenshot');
+    }
+    final posted = await _postSeen(
+      question,
+      ChatAttachment(
+        mimeType: 'image/jpeg',
+        filename: 'screen.jpg',
+        bytes: bytes,
+      ),
+      'screenshot',
+    );
+    if (posted['ok'] != true) return posted;
+    final payload = Map<String, Object?>.from(posted['payload']! as Map);
+    final width = _asInt(result['width']);
+    final height = _asInt(result['height']);
+    if (width != null) payload['width'] = width;
+    if (height != null) payload['height'] = height;
+    return okResult(payload);
+  }
+
+  Uint8List? _jpegBytes(Object? raw) {
+    if (raw is Uint8List) return raw;
+    if (raw is List) {
+      final bytes = Uint8List(raw.length);
+      for (var i = 0; i < raw.length; i++) {
+        final value = raw[i];
+        if (value is! int) return null;
+        bytes[i] = value;
+      }
+      return bytes;
+    }
+    return null;
+  }
+
+  int? _asInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return null;
   }
 
   Future<Map<String, Object?>> _listen(Map<String, Object?> params) async {
@@ -787,6 +968,9 @@ String companionIntroMessage() {
       'device (open links, launch apps, notifications, messages, contacts, '
       'calendar, location, alarms, timers, clipboard, flashlight, volume, '
       'ringer, brightness, rotation, vibration, and spoken replies). '
+      'Once Screen control is on, phone.screenshot shows you the screen, '
+      'phone.ui reads it, and phone.tap, phone.swipe, phone.type, and '
+      'phone.press use it. '
       'Wi-Fi, Bluetooth, NFC, and airplane mode open the system panel. '
       'Each reply you write is shown as the caption under the '
       'character, the way a Muse screen does, and spoken when the phone is '

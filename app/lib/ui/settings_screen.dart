@@ -18,7 +18,8 @@
 // the presentation state) as the user changes them. Theme, keep-screen-on
 // and spoken replies are also writable by the Muse through
 // `companion.set_display`. Calls, texts, the saved camera, speech volume,
-// and the spoken voice are not: only this screen can change those.
+// the spoken voice, and Screen control are not: only this screen, or the
+// system Accessibility page it opens, can change those.
 
 import 'dart:async';
 
@@ -710,17 +711,38 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 16),
           _SettingCard(
+            title: 'Screen control',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This is how Muse uses the phone the way computer use works on a desktop. It can see the screen, take a screenshot, tap, swipe, type, and open apps while Companion is in the background. You turn it on yourself in system Accessibility settings. It does not run a shell. If the switch is greyed out, open this app in system settings, allow restricted settings, then turn Screen control on.',
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _grants['screen_control'] == true
+                      ? 'Screen control is on.'
+                      : 'Screen control is off.',
+                ),
+                const SizedBox(height: 8),
+                _permitButton('Turn on screen control', _openScreenControl),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
             title: 'Phone control',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Muse can use this phone: camera, microphone, volume, ringer, brightness, rotation, flashlight, vibration, alarms, timers, media keys, launchable apps, the clipboard, the share sheet, contacts, calendar, location, and notifications you allow. Wi-Fi, Bluetooth, NFC, and airplane mode open the system panel. Android does not let an app flip those radios itself. Placing a call or sending a text stays off until you turn it on.',
+                  'Muse can use this phone: camera, microphone, volume, ringer, brightness, rotation, flashlight, vibration, alarms, timers, media keys, launchable apps, the clipboard, the share sheet, contacts, calendar, location, and notifications you allow. Seeing the screen, tapping, and typing need Screen control above. Wi-Fi, Bluetooth, NFC, and airplane mode open the system panel. Android does not let an app flip those radios itself. Placing a call or sending a text stays off until you turn it on.',
                 ),
                 const SizedBox(height: 8),
                 if (_grants.isNotEmpty)
                   Wrap(
                     children: [
+                      _grantChip('screen_control', 'Screen control'),
                       _grantChip('camera', 'Camera'),
                       _grantChip('microphone', 'Microphone'),
                       _grantChip('location', 'Location'),
@@ -851,6 +873,19 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _openPage(String page) async {
     try {
       await AppScope.of(context).phone.run('phone.settings', {'page': page});
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _openScreenControl() async {
+    try {
+      await AppScope.of(
+        context,
+      ).phone.run('phone.screen_control', {'action': 'open'});
     } on PhoneActionException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

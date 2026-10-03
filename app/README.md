@@ -138,7 +138,7 @@ survive. The dashboard counters are the record that stays.
 | `vision.capture` | Take a camera photo and post it to chat. Facing follows Settings (Back or Front) unless the command sets `facing`. |
 | `voice.listen` | Record 1–20 seconds (default 5) and post a voice note. |
 | `phone.open_url` | Open an `http` or `https` URL. |
-| `phone.launch_app`, `phone.list_apps` | Open an app by package or name, or list launchable apps. |
+| `phone.launch_app`, `phone.list_apps` | Open an app by package or name, or list launchable apps. A query narrows the list. Opening from the background needs Screen control. |
 | `phone.clipboard` | Read or set the clipboard. |
 | `phone.flashlight` | Torch on or off. |
 | `phone.volume`, `phone.brightness` | Volume on music, ring, alarm, notification, or voice (default music). Brightness level or auto/manual, when the system grant exists. |
@@ -158,6 +158,9 @@ survive. The dashboard counters are the record that stays.
 | `phone.settings` | Open one whitelisted system page (display, sound, apps, battery, and the radio pages). |
 | `phone.device` | Manufacturer, model, Android release, battery, storage, ringer, and radio status. No accounts, IMEI, or serial. |
 | `phone.screen` | Whether the screen is on, or wake it for a few seconds. |
+| `phone.screenshot`, `phone.ui` | Post a screenshot into chat, or read on-screen text and buttons. Needs Screen control. |
+| `phone.tap`, `phone.swipe`, `phone.type`, `phone.press` | Tap, swipe, type into a field, or press back, home, recents, notifications, quick settings, lock, or power. Needs Screen control. |
+| `phone.screen_control` | Report whether Screen control is on, or open its system page. The user turns it on. |
 
 ## Architecture
 

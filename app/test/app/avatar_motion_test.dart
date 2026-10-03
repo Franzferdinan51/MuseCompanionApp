@@ -29,6 +29,7 @@ void main() {
     expect(poseForActivity('sleep'), AvatarPose.off);
     expect(poseForStatus('Listening…'), AvatarPose.listening);
     expect(poseForStatus('Looking through the camera'), AvatarPose.thinking);
+    expect(poseForStatus('Looking at the screen'), AvatarPose.thinking);
     expect(poseForStatus('Hello'), isNull);
     expect(captionSetsThinking(streaming: true, pose: AvatarPose.idle), isTrue);
     expect(
