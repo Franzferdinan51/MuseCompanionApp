@@ -26,6 +26,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/mock_ble.dart';
+import '../helpers/mock_platform.dart';
 
 void main() {
   testWidgets('diagnostics shows state, identity and the setup log',
@@ -33,6 +34,9 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     final native = MockBleNative()..install();
     addTearDown(native.uninstall);
+    // The copy button awaits the clipboard; the channel must answer.
+    final platform = MockPlatformPlugins()..install();
+    addTearDown(platform.uninstall);
     PackageInfo.setMockInitialValues(
       appName: 'Muse Companion',
       packageName: 'dev.musecompanion.muse_companion',
@@ -96,5 +100,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(find.text('Copied'), findsOneWidget);
+    // Fire the 2s confirmation-reset timer explicitly: pumpAndSettle
+    // only advances while frames are scheduled, so a bare timer would
+    // survive to teardown and fail the test.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
   });
 }

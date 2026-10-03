@@ -26,6 +26,8 @@ import 'package:muse_companion/ui/pairing_screen.dart';
 import 'package:muse_companion/ui/scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/mock_platform.dart';
+
 void main() {
   group('pairingStepIndex', () {
     test('idle starts at the waiting step', () {
@@ -83,10 +85,14 @@ void main() {
 
   group('PairingScreen', () {
     late TestDefaultBinaryMessenger messenger;
+    late MockPlatformPlugins platform;
 
     setUp(() {
       TestWidgetsFlutterBinding.ensureInitialized();
       messenger = TestWidgetsFlutterBinding.instance.defaultBinaryMessenger;
+      // The wizard saves the (empty) SDK token before advertising; the
+      // secure-storage channel must answer or the start stalls.
+      platform = MockPlatformPlugins()..install();
       messenger.setMockMethodCallHandler(
         const MethodChannel(bleMethodChannel),
         (call) async => switch (call.method) {
@@ -110,6 +116,7 @@ void main() {
           const MethodChannel(bleMethodChannel), null);
       messenger.setMockStreamHandler(
           const EventChannel(bleEventChannel), null);
+      platform.uninstall();
     });
 
     Future<void> pumpScreen(WidgetTester tester) async {

@@ -390,22 +390,44 @@ class BlePeripheralManager {
   }
 
   Future<void> dispose() async {
+    // Idempotent: tests stop in the body and again in addTearDown, and a
+    // second close() would wedge awaiting an already-closed controller.
+    // The closes are not awaited: like subscription cancels, a close()
+    // future only completes on real event-loop turns, which never come
+    // under widget-test fake async when a listener (e.g. a mounted
+    // DiagnosticsScreen) is still subscribed. close() itself takes effect
+    // synchronously; only the done-delivery signal is dropped.
+    if (_disposed) return;
     _disposed = true;
     await stop();
-    await _states.close();
-    await _setupEvents.close();
-    await _logLines.close();
+    unawaited(_states.close());
+    unawaited(_setupEvents.close());
+    unawaited(_logLines.close());
   }
 
   Future<void> _tearDownSetup() async {
-    await _events?.cancel();
+    // Never await subscription cancels here: a cancel() future only
+    // completes on real event-loop turns, which never come under
+    // widget-test fake async, so awaiting wedges stop/dispose/teardown.
+    // The subscriptions are dropped first so nothing further is
+    // processed; straggler events are harmless (broadcast streams with
+    // guarded listeners, and _setup is nulled below).
+    final events = _events;
     _events = null;
-    await _setupSub?.cancel();
+    unawaited(events?.cancel().catchError((_) {}));
+    final setupSub = _setupSub;
     _setupSub = null;
+    unawaited(setupSub?.cancel().catchError((_) {}));
     final setup = _setup;
     _setup = null;
     if (setup != null) {
-      await setup.stop();
+      // Not awaited: SetupController.stop() awaits its in-flight RX tail,
+      // whose completion signal never arrives under widget-test fake
+      // async once the test body has returned (addTearDown phase). The
+      // stop itself takes effect synchronously (_running=false + poison
+      // pill), so the session still shuts down; only the acknowledgement
+      // is dropped. Same class of wedge as the cancels above.
+      unawaited(setup.stop());
     }
   }
 
