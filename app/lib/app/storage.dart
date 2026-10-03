@@ -33,6 +33,7 @@ const String _identityKey = 'muse_identity_mac';
 const String _sdkTokenKey = 'muse_sdk_token';
 const String _settingsPrefix = 'muse_settings_';
 const String _statusKey = 'muse_last_status';
+const String _introKey = 'muse_intro_sent';
 
 /// PairingStore backed by encrypted device storage.
 class SecurePairingStore implements PairingStore {
@@ -147,5 +148,15 @@ class SettingsStore {
 
   Future<void> saveStatus(String text) async {
     await _prefs.setString(_statusKey, text);
+  }
+
+  /// Whether the one-time setup message was already accepted by Muse.
+  ///
+  /// Opening the app starts a new process. Without this, every launch
+  /// posts the initialize message again.
+  bool loadIntroSent() => _prefs.getBool(_introKey) ?? false;
+
+  Future<void> saveIntroSent(bool sent) async {
+    await _prefs.setBool(_introKey, sent);
   }
 }

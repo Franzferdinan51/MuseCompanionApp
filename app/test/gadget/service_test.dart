@@ -5,7 +5,9 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:muse_companion/app/storage.dart';
 import 'package:muse_companion/src/gadget/chat_events.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:muse_companion/src/gadget/envelope.dart';
 import 'package:muse_companion/src/gadget/framing.dart';
 import 'package:muse_companion/src/gadget/identity.dart';
@@ -290,6 +292,62 @@ void main() {
       await _waitFor(service, ConnectionState.unpaired);
       expect(await store.load(), isNull);
       expect(link.connects, 1);
+      await service.stop();
+      await running;
+    });
+
+    test('a saved intro is not posted again when the app opens', () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = await SettingsStore.init();
+      await settings.saveIntroSent(true);
+      final reopened = await SettingsStore.init();
+      expect(reopened.loadIntroSent(), isTrue);
+
+      final store = MemoryPairingStore();
+      await store.save(_pairing());
+      final httpClient = MockClient((request) async {
+        if (request.url.path.endsWith('/fetch_vms')) {
+          return http.Response(_vmsBody(), 200);
+        }
+        return http.Response('', 404);
+      });
+      final gate = Completer<void>();
+      var sawIntro = false;
+      final link = _ScriptedLink(
+        (vm) async {
+          try {
+            final frame = await vm
+                .nextFrame()
+                .timeout(const Duration(milliseconds: 400));
+            if (frame.kind == ServiceFrameKind.request &&
+                (frame.value! as ApplicationRequest).path == chatPath) {
+              sawIntro = true;
+            }
+          } on TimeoutException {
+            sawIntro = false;
+          }
+          await vm.socket.close();
+        },
+        gate: gate.future,
+      );
+      final service = GadgetService(
+        identity: const Identity('02:aa:bb:cc:dd:ee'),
+        commands: const {},
+        runCommand: (_, _, _) async => {'ok': true},
+        pairingStore: store,
+        version: '0.1.0',
+        connect: link.connect,
+        httpClient: httpClient,
+        introSent: settings.loadIntroSent(),
+        persistIntro: settings.saveIntroSent,
+      );
+      final running = service.start();
+      await _waitFor(service, ConnectionState.connected);
+      gate.complete();
+      await _waitFor(service, ConnectionState.waiting);
+      expect(sawIntro, isFalse);
+      await service.unpair();
+      expect(settings.loadIntroSent(), isFalse);
       await service.stop();
       await running;
     });

@@ -122,6 +122,8 @@ class GadgetService {
     http.Client? httpClient,
     ServiceLogger logger = _nullLogger,
     this.onCharacterUrl,
+    bool introSent = false,
+    this.persistIntro,
   })  : _identity = identity,
         _commands = commands,
         _runCommand = runCommand,
@@ -131,7 +133,8 @@ class GadgetService {
         _displayName = displayName,
         _connect = connect,
         _httpClient = httpClient,
-        _logger = logger;
+        _logger = logger,
+        _introSent = introSent;
 
   final Identity _identity;
   final Map<String, Object?> _commands;
@@ -146,6 +149,10 @@ class GadgetService {
 
   /// Draws a character image discovered on `GET /identity`.
   final Future<void> Function(String url)? onCharacterUrl;
+
+  /// Remembers that the setup message was accepted, across app launches.
+  /// Called with false when the pairing is removed.
+  final Future<void> Function(bool sent)? persistIntro;
 
   final StreamController<ConnectionState> _state =
       StreamController<ConnectionState>.broadcast();
@@ -163,7 +170,8 @@ class GadgetService {
   LinkSession? _current;
   String? _agentName;
   Future<void>? _loop;
-  bool _introSent = false;
+  bool _introSent;
+  bool _introSkipLogged = false;
   int _invokesSeen = 0;
   int _resultsSent = 0;
   String _lastCommand = '';
@@ -284,7 +292,14 @@ class GadgetService {
   Future<void> unpair() async {
     await _pairingStore.delete();
     _agentName = null;
+    await _clearIntro();
+  }
+
+  Future<void> _clearIntro() async {
     _introSent = false;
+    _introSkipLogged = false;
+    final persist = persistIntro;
+    if (persist != null) await persist(false);
   }
 
   /// Update the SDK token reported on token refresh (null clears it).
@@ -346,6 +361,7 @@ class GadgetService {
       if (outcome == Outcome.unpaired) {
         await _pairingStore.delete();
         _agentName = null;
+        await _clearIntro();
         _log('pairing removed; pair again to set up');
         _setState(ConnectionState.unpaired);
         continue;
@@ -455,17 +471,31 @@ class GadgetService {
     return (outcome, lasted);
   }
 
-  /// Ask the Muse to draw its character. Pocket does this once the session
-  /// is registered; without it a successful connection never shows an avatar.
-  /// Retried on the next session when the post is not accepted.
+  /// Ask the Muse to draw its character, once per pairing.
+  ///
+  /// The acceptance is persisted by [persistIntro]. Opening the app again
+  /// must not post the initialize message a second time. A rejected post
+  /// is retried on a later session. Unpair clears the flag.
   Future<void> _introduce(LinkSession session) async {
-    if (_introSent || !identical(_current, session)) return;
-    if (session.registeredAt == null) return;
+    if (_introSent) {
+      if (!_introSkipLogged) {
+        _introSkipLogged = true;
+        _log('setup message already sent');
+      }
+      return;
+    }
+    if (!identical(_current, session) || session.registeredAt == null) return;
+    // Claim the send before the await so a second subscribe cannot post
+    // another copy while this one is in flight.
+    _introSent = true;
     final result = await session.sendChat(companionIntroMessage());
-    if (result['ok'] == true && identical(_current, session)) {
-      _introSent = true;
+    if (!identical(_current, session)) return;
+    if (result['ok'] == true) {
       _log('asked the Muse for its character');
-    } else if (identical(_current, session)) {
+      final persist = persistIntro;
+      if (persist != null) unawaited(persist(true));
+    } else {
+      _introSent = false;
       _log('character intro was not accepted: ${result['error'] ?? result['status']}');
     }
   }
@@ -524,6 +554,7 @@ class GadgetService {
     }
     if (refreshed.status == 401) {
       await _pairingStore.delete();
+      await _clearIntro();
       _log('pairing revoked; pair again to set up');
       _setState(ConnectionState.unpaired);
       return null;

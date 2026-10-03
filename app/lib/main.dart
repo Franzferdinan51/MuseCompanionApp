@@ -57,6 +57,11 @@ Future<void> main() async {
   final cachedCharacter = await AppCompanionDisplay.loadCachedCharacter();
   if (cachedCharacter != null) {
     presentation.applyCharacter(cachedCharacter);
+    // The portrait is already on the phone, so the setup message has done
+    // its job. Remember that before the link comes up.
+    if (!settings.loadIntroSent()) {
+      await settings.saveIntroSent(true);
+    }
   }
 
   final health = AppCompanionHealth(appVersion: _appVersion);
@@ -91,6 +96,8 @@ Future<void> main() async {
     sdkToken: savedSdkToken?.isEmpty == true ? null : savedSdkToken,
     displayName: 'Muse Companion',
     logger: (message) => debugPrint('[muse] $message'),
+    introSent: settings.loadIntroSent(),
+    persistIntro: settings.saveIntroSent,
     onCharacterUrl: (url) async {
       await executor.run('display.draw_url', {'url': url}, null);
     },
