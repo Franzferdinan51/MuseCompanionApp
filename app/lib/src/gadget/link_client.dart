@@ -16,7 +16,7 @@
 // (linux/src/musegadget/link_client.py).
 //
 // One control session with a Muse VM. Opens a WebSocket to `/v1/noise`
-// with the per-VM Bearer [REDACTED] an Authorization header, runs the Noise XX
+// with the per-VM credential in an Authorization header, runs the Noise XX
 // handshake, then opens a long-lived `POST /link-control` stream. Both
 // directions of that stream carry JSON messages, each prefixed with its
 // length as a little-endian u32:
@@ -279,18 +279,22 @@ class LinkSession {
       return rejected.status == 401 ? Outcome.authRejected : Outcome.forbidden;
     }
     _socket = socket;
+    // One subscription for the session lifetime: handshake and read loop
+    // share it so no frame is dropped between them.
+    final incoming = StreamIterator(socket.stream);
     try {
-      _transport = await _handshake(socket).timeout(handshakeTimeout);
+      _transport =
+          await _handshake(socket, incoming).timeout(handshakeTimeout);
       await _openControlStream();
       _requestIdentity();
       if (waitForStop == null) {
-        return await _readLoop();
+        return await _readLoop(incoming);
       }
       var stopNotified = false;
       final stopFuture = waitForStop().then((_) {
         stopNotified = true;
       });
-      final readFuture = _readLoop();
+      final readFuture = _readLoop(incoming);
       await Future.any([readFuture, stopFuture]);
       if (stopNotified) {
         return Outcome.stopped;
@@ -303,7 +307,10 @@ class LinkSession {
         }
       }
       _requests.clear();
+      // Close first so a pending moveNext in the read loop completes,
+      // then release the subscription.
       await socket.close();
+      await incoming.cancel();
     }
   }
 
@@ -338,13 +345,17 @@ class LinkSession {
     return int.tryParse(match.group(1)!);
   }
 
-  Future<NoiseTransport> _handshake(LinkSocket socket) async {
+  Future<NoiseTransport> _handshake(
+      LinkSocket socket, StreamIterator<Uint8List> incoming) async {
     final initiator = NoiseXXInitiator();
     await initiator.initialize();
     await socket.send(await initiator.writeMessage1());
-    final msg2 = await socket.stream.first;
+    if (!await incoming.moveNext()) {
+      throw StateError('connection closed during handshake');
+    }
+    final msg2 = incoming.current;
     await initiator.readMessage2(msg2);
-    // The Bearer [REDACTED] authenticated us at the upgrade; message 3
+    // The Authorization header authenticated us at upgrade; message 3
     // carries an empty payload.
     await socket.send(await initiator.writeMessage3());
     final (send, recv) = await initiator.split();
@@ -408,41 +419,52 @@ class LinkSession {
     if (transport == null) {
       return {'ok': false, 'error': 'not connected to the Muse'};
     }
-    final requestBody = <String, Object?>{
-      'message': message,
-      'device_id': _device.nodeId,
-    };
-    if (sessionId != null && sessionId.isNotEmpty) {
-      requestBody['session_id'] = sessionId;
-    }
-    final body = Uint8List.fromList(utf8.encode(json.encode(requestBody)));
-    final headers = [
-      const Header('Content-Type', 'application/json'),
-      Header('x-request-id', newUuid()),
-      const Header('x-app-id', appId),
-    ];
-    final encrypted = await transport.encryptHttpRequest('POST', chatPath,
-        body: body, headers: headers);
-    final request = _Request();
-    _requests[encrypted.streamId] = request;
+    // Note: no registered gate here; the service layer refuses chats
+    // until the VM accepts link.register (mirroring the reference).
     try {
-      await _sendFrames(encrypted.frames);
-      final (status, response) =
-          await request.done.future.timeout(requestTimeout);
-      Object? decoded;
-      if (response.isNotEmpty) {
-        try {
-          decoded = json.decode(utf8.decode(response));
-        } on FormatException {
-          decoded = utf8.decode(response, allowMalformed: true);
-          if ((decoded as String).length > 2000) {
-            decoded = decoded.substring(0, 2000);
+      final requestBody = <String, Object?>{
+        'message': message,
+        'device_id': _device.nodeId,
+      };
+      if (sessionId != null && sessionId.isNotEmpty) {
+        requestBody['session_id'] = sessionId;
+      }
+      final body = Uint8List.fromList(utf8.encode(json.encode(requestBody)));
+      final headers = [
+        const Header('Content-Type', 'application/json'),
+        Header('x-request-id', newUuid()),
+        const Header('x-app-id', appId),
+      ];
+      final encrypted = await transport.encryptHttpRequest('POST', chatPath,
+          body: body, headers: headers);
+      final request = _Request();
+      _requests[encrypted.streamId] = request;
+      try {
+        await _sendFrames(encrypted.frames);
+        final (status, response) =
+            await request.done.future.timeout(requestTimeout);
+        Object? decoded;
+        if (response.isNotEmpty) {
+          try {
+            decoded = json.decode(utf8.decode(response));
+          } on FormatException {
+            decoded = utf8.decode(response, allowMalformed: true);
+            if ((decoded as String).length > 2000) {
+              decoded = decoded.substring(0, 2000);
+            }
           }
         }
+        return {
+          'ok': status >= 200 && status < 300,
+          'status': status,
+          'response': decoded
+        };
+      } finally {
+        _requests.remove(encrypted.streamId);
       }
-      return {'ok': status >= 200 && status < 300, 'status': status, 'response': decoded};
-    } finally {
-      _requests.remove(encrypted.streamId);
+    } catch (e) {
+      // The session ended mid-request (close, reset, timeout).
+      return {'ok': false, 'error': '$e'};
     }
   }
 
@@ -465,11 +487,11 @@ class LinkSession {
     return next;
   }
 
-  Future<Outcome> _readLoop() async {
+  Future<Outcome> _readLoop(StreamIterator<Uint8List> incoming) async {
     final decoder = MessageDecoder();
-    final socket = _socket!;
     final transport = _transport!;
-    await for (final raw in socket.stream) {
+    while (await incoming.moveNext()) {
+      final raw = incoming.current;
       DecryptedFrame? frame;
       try {
         frame = await transport.decryptFrame(raw);

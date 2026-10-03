@@ -50,14 +50,16 @@ Map<String, Object?> companionCommandSpecs({
 
   final drawUrlDescription =
       'Download a full-color image and draw it on the ${screenWidth}x$screenHeight '
-      'companion display. Takes an http:// or https:// URL of a JPEG, PNG, '
-      'WebP or GIF; any resolution works and the device scales and crops it '
-      'to fill the character canvas while keeping the subject centered. '
-      'Plain http:// uses the least device memory. Replies when the image '
-      'is drawn and cached on the device. The character stays visible until '
-      'replaced or cleared with display.show_animation, and survives app '
-      'restarts. Prefer a square portrait of the character on a clean '
-      'background; photographic detail and color are fully supported.';
+      'companion display. Takes an http:// or https:// URL of a baseline '
+      '(not progressive) JPEG, PNG, WebP or GIF; any resolution works and '
+      'the device scales and crops it to fill the character canvas while '
+      'keeping the subject centered, and a JPEG as large as the screen '
+      'looks best. Plain http:// uses the least device memory. Replies '
+      'when the image is drawn and cached on the device. The character '
+      'stays visible until replaced or cleared with '
+      'display.show_animation, and survives app restarts. Prefer a square '
+      'portrait of the character on a clean background; photographic '
+      'detail and color are fully supported.';
 
   final statusDescription =
       'Update the caption below the character. The character remains '
@@ -149,7 +151,7 @@ class ImageDrawResult {
         bytes = 0,
         fromCache = false;
 
-  final bool get isOk => error == null;
+  bool get isOk => error == null;
   final String? error;
   final int width;
   final int height;

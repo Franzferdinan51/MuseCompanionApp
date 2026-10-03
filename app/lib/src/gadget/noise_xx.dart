@@ -129,7 +129,9 @@ Future<(Uint8List, Uint8List)> noiseHkdf(
 
 /// 12-byte AES-GCM nonce: four zero bytes plus the big-endian counter.
 Uint8List buildNonceIv(int nonce) {
-  if (nonce < 0 || nonce > 0xffffffffffffffff) {
+  // Dart ints are signed 64-bit, so any non-negative nonce fits the
+  // uint64 range by construction.
+  if (nonce < 0) {
     throw NoiseProtocolError('nonce outside uint64 range');
   }
   final iv = Uint8List(12);
@@ -463,4 +465,123 @@ class NoiseXXInitiator {
     _rs = null;
     return result;
   }
+
+  Uint8List? remoteStaticPublicKey() =>
+      _rs == null ? null : Uint8List.fromList(_rs!);
+
+  Uint8List handshakeHash() => _ss.handshakeHash();
+}
+
+/// Test responder for protocol verification (mirrors the reference SDK).
+///
+/// Used by tests and the fake VM; the app itself only initiates.
+class NoiseXXResponder {
+  NoiseXXResponder(
+      {Uint8List? payload, X25519KeyPairFactory? keyPairFactory})
+      : _payload = payload ?? Uint8List(0),
+        _keyPairFactory = keyPairFactory ?? _defaultKeyPairFactory;
+
+  final Uint8List _payload;
+  final X25519KeyPairFactory _keyPairFactory;
+  final _SymmetricState _ss = _SymmetricState();
+  NoiseKeyPair? _e;
+  NoiseKeyPair? _s;
+  Uint8List? _re;
+  _Phase _phase = _Phase.created;
+
+  void _requirePhase(_Phase expected, String method) {
+    if (_phase == _Phase.dead) {
+      throw NoiseProtocolError('NoiseXX: $method called on dead handshake');
+    }
+    if (_phase != expected) {
+      throw NoiseProtocolError(
+          'NoiseXX: $method called in wrong phase '
+          '(expected $expected, got $_phase)');
+    }
+  }
+
+  Future<void> initialize() async {
+    _requirePhase(_Phase.created, 'initialize');
+    await _ss.initialize();
+    _phase = _Phase.initialized;
+  }
+
+  Future<Uint8List> readMessage1AndWriteMessage2(Uint8List msg1) async {
+    _requirePhase(
+        _Phase.initialized, 'readMessage1AndWriteMessage2');
+    if (msg1.length < dhKeyLen) {
+      _phase = _Phase.dead;
+      throw NoiseProtocolError(
+          'NoiseXX: message 1 too short (${msg1.length} < $dhKeyLen)');
+    }
+    try {
+      _re = msg1.sublist(0, dhKeyLen);
+      await _ss.mixHash(_re!);
+      await _ss.decryptAndHash(msg1.sublist(dhKeyLen));
+
+      _e = await _keyPairFactory();
+      await _ss.mixHash(_e!.publicKeyBytes);
+
+      final ee = await _x25519Dh(_e!.keyPair, _re!);
+      await _ss.mixKey(ee);
+
+      _s = await _keyPairFactory();
+      final encS = await _ss.encryptAndHash(_s!.publicKeyBytes);
+
+      final es = await _x25519Dh(_s!.keyPair, _re!);
+      await _ss.mixKey(es);
+
+      final encPayload = await _ss.encryptAndHash(_payload);
+      _phase = _Phase.msg2Read;
+      final out = BytesBuilder()
+        ..add(_e!.publicKeyBytes)
+        ..add(encS)
+        ..add(encPayload);
+      return out.toBytes();
+    } catch (_) {
+      _phase = _Phase.dead;
+      rethrow;
+    }
+  }
+
+  Future<void> readMessage3(Uint8List msg3) async {
+    _requirePhase(_Phase.msg2Read, 'readMessage3');
+    if (msg3.length < minMsg3Len) {
+      _phase = _Phase.dead;
+      throw NoiseProtocolError(
+          'NoiseXX: message 3 too short (${msg3.length} < $minMsg3Len)');
+    }
+    try {
+      var offset = 0;
+      final rs = await _ss.decryptAndHash(
+          msg3.sublist(offset, offset + dhKeyLen + aeadTagLen));
+      offset += dhKeyLen + aeadTagLen;
+
+      final e = _e;
+      if (e == null) {
+        throw NoiseProtocolError('NoiseXX: missing responder ephemeral key');
+      }
+      final se = await _x25519Dh(e.keyPair, rs);
+      await _ss.mixKey(se);
+
+      await _ss.decryptAndHash(msg3.sublist(offset));
+      _phase = _Phase.msg3Sent;
+    } catch (_) {
+      _phase = _Phase.dead;
+      rethrow;
+    }
+  }
+
+  /// Split into (send, receive) transport ciphers (swapped vs initiator).
+  Future<(CipherState, CipherState)> split() async {
+    _requirePhase(_Phase.msg3Sent, 'split');
+    _phase = _Phase.split;
+    final (c1, c2) = await _ss.split();
+    _e = null;
+    _s = null;
+    _re = null;
+    return (c2, c1);
+  }
+
+  Uint8List handshakeHash() => _ss.handshakeHash();
 }

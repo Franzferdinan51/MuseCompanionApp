@@ -24,6 +24,8 @@
 
 import 'dart:async';
 
+import 'package:http/http.dart' as http;
+
 import 'identity.dart';
 import 'link_client.dart';
 import 'muse_api.dart';
@@ -115,6 +117,7 @@ class GadgetService {
     String? sdkToken,
     String displayName = 'Muse Companion',
     LinkConnector? connect,
+    http.Client? httpClient,
     ServiceLogger logger = _nullLogger,
   })  : _identity = identity,
         _commands = commands,
@@ -124,6 +127,7 @@ class GadgetService {
         _sdkToken = sdkToken,
         _displayName = displayName,
         _connect = connect,
+        _httpClient = httpClient,
         _logger = logger;
 
   final Identity _identity;
@@ -134,6 +138,7 @@ class GadgetService {
   final String? _sdkToken;
   final String _displayName;
   final LinkConnector? _connect;
+  final http.Client? _httpClient;
   final ServiceLogger _logger;
 
   final StreamController<ConnectionState> _state =
@@ -231,6 +236,7 @@ class GadgetService {
         _string(current, 'access_token'),
         root: api,
         version: _version,
+        client: _httpClient,
       );
       if (_stopRequested) break;
       if (fetched.status == 401) {
@@ -325,7 +331,6 @@ class GadgetService {
     };
     _logger('connecting to ${vm.vmName.isNotEmpty ? vm.vmName : vm.vmId}');
     _setState(ConnectionState.connecting, 'connecting to your Muse…');
-    final started = DateTime.now();
     _current = session;
     _setState(ConnectionState.connecting, 'registering…');
     Outcome outcome;
@@ -357,8 +362,10 @@ class GadgetService {
     final savedAt = pairing['access_token_saved_at'];
     final age = DateTime.now().millisecondsSinceEpoch / 1000 -
         (savedAt is num ? savedAt.toDouble() : 0);
-    final reportDue =
-        (_sdkToken != null && _sdkToken!.isNotEmpty) && !_sdkTokenReportAttempted;
+    final sdkToken = _sdkToken;
+    final reportDue = sdkToken != null &&
+        sdkToken.isNotEmpty &&
+        !_sdkTokenReportAttempted;
     final due = force || age >= tokenRefreshAgeS;
     if (!due && !reportDue) {
       return pairing;
@@ -378,6 +385,7 @@ class GadgetService {
       root: apiRoot(_string(pairing, 'api_url_v2')),
       sdkToken: _sdkToken,
       version: _version,
+      client: _httpClient,
     );
     if (refreshed.tokens != null) {
       final next = Map<String, Object?>.from(pairing)

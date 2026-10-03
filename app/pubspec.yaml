@@ -27,6 +27,8 @@ dependencies:
   battery_plus: ^6.2.1
 
   cupertino_icons: ^1.0.8
+  crypto: ^3.0.7
+  device_info_plus: ^12.4.0
 
 dev_dependencies:
   flutter_test:

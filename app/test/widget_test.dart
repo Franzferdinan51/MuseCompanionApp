@@ -1,30 +1,57 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// Smoke test for the companion screen: with a stubbed service scope the
+// home screen renders the placeholder, the unpaired state and the
+// settings affordance, and settings navigates.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:muse_companion/app/model.dart';
+import 'package:muse_companion/src/gadget/identity.dart';
+import 'package:muse_companion/src/gadget/service.dart';
+import 'package:muse_companion/ui/companion_screen.dart';
+import 'package:muse_companion/ui/scope.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:muse_companion/main.dart';
+import 'package:muse_companion/app/storage.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('companion screen renders unpaired placeholder',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.init();
+    final presentation = PresentationState(settings: settings.loadSettings());
+    final service = GadgetService(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      commands: const {},
+      runCommand: (_, _, _) async => {'ok': true},
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    addTearDown(() async {
+      await service.stop();
+      presentation.close();
+    });
+    // No pairing saved: the loop reports unpaired almost immediately.
+    unawaited(service.start());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(MaterialApp(
+      home: AppScope(
+        service: service,
+        presentation: presentation,
+        settings: settings,
+        child: const CompanionScreen(),
+      ),
+    ));
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('Muse'), findsOneWidget);
+    expect(find.text('Waiting for character'), findsOneWidget);
+    expect(find.text('Not paired'), findsOneWidget);
+    expect(find.byTooltip('Settings'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Companion Settings'), findsOneWidget);
   });
 }

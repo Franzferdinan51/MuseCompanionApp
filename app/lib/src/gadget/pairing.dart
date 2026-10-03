@@ -28,6 +28,7 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 
 import 'noise_xx.dart' show hmacSha256, sha256Bytes;
+import 'p256.dart';
 
 const int pairingVersion = 5;
 const String pairingModel = 'hatch_link';
@@ -61,7 +62,6 @@ final RegExp _b64urlRe = RegExp(r'[A-Za-z0-9_-]+');
 final RegExp _decimalRe = RegExp(r'[0-9]+');
 
 final AesGcm _aesGcm = AesGcm.with256bits();
-final Ecdh _ecdh = Ecdh.p256(length: 32);
 final Random _secureRandom = Random.secure();
 
 /// A handshake step failed; [status] is the wire error to report.
@@ -207,7 +207,11 @@ Future<SessionKeys> deriveSessionKeys(
     ..add(transcriptHash);
   final salt = await sha256Bytes(saltInput.toBytes());
   // HKDF-Extract(salt, ikm): PRK = HMAC(salt, ikm).
-  final sessionSecret = await hmacSha256(salt, ecdhSecret);
+  final prk = await hmacSha256(salt, ecdhSecret);
+  // The reference runs full HKDF here (extract then expand with the
+  // record label), and expands the result again per direction below.
+  final sessionSecret = await _hkdfExpand(
+      prk, Uint8List.fromList(recordLabel.codeUnits), 32);
   final mobileTx = await _hkdfExpand(
       sessionSecret, Uint8List.fromList('mobile->device'.codeUnits), 32);
   final mobileRx = await _hkdfExpand(
@@ -237,12 +241,10 @@ Uint8List recordAad(String sessionIdB64, int direction, int counter) {
 }
 
 /// Generates device P-256 keys; injectable so tests can replay fixed sessions.
-typedef DeviceKeyFactory = Future<EcKeyPairData> Function();
+typedef DeviceKeyFactory = Future<P256KeyPair> Function();
 
-Future<EcKeyPairData> _defaultDeviceKeyFactory() async {
-  final keyPair = await _ecdh.newKeyPair();
-  return keyPair as EcKeyPairData;
-}
+Future<P256KeyPair> _defaultDeviceKeyFactory() async =>
+    generateP256KeyPair();
 
 typedef RandomBytes = Uint8List Function(int length);
 
@@ -340,17 +342,16 @@ class PairingSession {
       mobileNonce = b64urlDecode(message['mobile_nonce']);
       if (mobilePub.length != _p256PointBytes ||
           mobilePub[0] != 0x04 ||
-          mobileNonce.length != _nonceBytes) {
+          mobileNonce.length != _nonceBytes ||
+          !p256IsOnCurve(
+              mobilePub.sublist(1, 33), mobilePub.sublist(33, 65))) {
         throw const FormatException('invalid hello key material');
       }
-      // Validate the point parses as P-256 before doing any crypto.
-      _publicKeyFromPoint(mobilePub);
     } on FormatException {
       _resetLocked();
       throw PairingError(errorInvalidHello);
     }
 
-    final peer = _publicKeyFromPoint(mobilePub);
     final deviceKey = await _generateKey();
     final devicePub = _uncompressedPoint(deviceKey);
     final deviceNonce = _randomBytes(_nonceBytes);
@@ -369,9 +370,14 @@ class PairingSession {
     );
     final transcriptHash =
         await sha256Bytes(Uint8List.fromList(transcript.codeUnits));
-    final secret = await _ecdh.sharedSecretKey(
-        keyPair: deviceKey, remotePublicKey: peer);
-    final ecdhSecret = Uint8List.fromList(await secret.extractBytes());
+    late Uint8List ecdhSecret;
+    try {
+      ecdhSecret = p256Ecdh(deviceKey.d, mobilePub.sublist(1, 33),
+          mobilePub.sublist(33, 65));
+    } on ArgumentError {
+      _resetLocked();
+      throw PairingError(errorInvalidHello);
+    }
     final keys = await deriveSessionKeys(
         ecdhSecret, mobileNonce, deviceNonce, transcriptHash);
 
@@ -573,15 +579,7 @@ class PairingSession {
   }
 }
 
-EcPublicKey _publicKeyFromPoint(Uint8List point) {
-  return EcPublicKey(
-    x: point.sublist(1, 33),
-    y: point.sublist(33, 65),
-    type: KeyPairType.p256,
-  );
-}
-
-Uint8List _uncompressedPoint(EcKeyPairData keyPair) {
+Uint8List _uncompressedPoint(P256KeyPair keyPair) {
   final out = Uint8List(65);
   out[0] = 0x04;
   // Left-pad coordinates that omit leading zero bytes.
