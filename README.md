@@ -51,10 +51,10 @@ same session code is what a later iOS or desktop port would use.
 
 ## Status
 
-Version 0.2.4. The app pairs, keeps the link up, answers `link.invoke` and
+Version 0.2.5. The app pairs, keeps the link up, answers `link.invoke` and
 Hatch `device.invoke` (including a command that arrives on another stream or
-as bare JSON) with `link.result`, streams chat replies, draws the Muse as a
-64×64 pixel avatar with Waveshare motion, and exposes voice, vision, and
+as bare JSON) with `link.result`, streams chat replies, draws the Muse's
+picture sharply inside a fixed round stage, and exposes voice, vision, and
 phone commands.
 
 ## Getting started
@@ -159,7 +159,7 @@ There is no shell command. The phone is controlled through this list.
 
 ## Roadmap
 
-- A Play-signed release APK/AAB. Public v0.2.4 is on GitHub Releases and is signed with the debug keystore
+- A Play-signed release APK/AAB. Public v0.2.5 is on GitHub Releases and is signed with the debug keystore
 - iOS (CoreBluetooth peripheral), then macOS and Windows
 
 ## Contributing

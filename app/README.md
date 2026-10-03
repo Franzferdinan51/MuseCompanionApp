@@ -1,11 +1,11 @@
 # Muse Companion
 
-Version 0.2.4 (versionCode 6). Android package
+Version 0.2.5 (versionCode 7). Android package
 `dev.musecompanion.muse_companion`.
 
 The phone is the Muse gadget. It pairs over Bluetooth LE, keeps a Noise
-session with your Muse, and shows your Muse's own picture on a 64×64 pixel
-stage with live captions. Chat replies arrive on the phone. Gadget commands
+session with your Muse, and shows your Muse's own picture in a round stage
+with live captions. Chat replies arrive on the phone. Gadget commands
 are answered with `link.result` when they arrive.
 
 The app registers as `device_family` `companion`, `model_id` `companion-app`,
@@ -234,7 +234,7 @@ adb install -r build/app/outputs/flutter-apk/app-debug.apk
 
 Install the debug APK with `adb install -r`. Check the phone with
 `adb shell dumpsys package dev.musecompanion.muse_companion` and expect
-`versionName=0.2.4` and `versionCode=6`.
+`versionName=0.2.5` and `versionCode=7`.
 
 Narrower test runs:
 
@@ -267,7 +267,7 @@ MuseCompanionApp/
 │   ├── lib/
 │   ├── test/
 │   ├── android/
-│   └── pubspec.yaml     # version 0.2.4+6
+│   └── pubspec.yaml     # version 0.2.5+7
 ├── README.md
 └── LICENSE              # Apache-2.0
 ```
