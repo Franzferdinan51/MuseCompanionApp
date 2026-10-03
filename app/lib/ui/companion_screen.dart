@@ -15,8 +15,8 @@
 // The primary companion surface: name + battery header, the pixel avatar
 // on a black round stage, captions below it, and a bottom bar showing
 // connection state. The stage follows the Waveshare screen: a 64x64
-// portrait, state word, and the idle / listening / thinking / speaking
-// motion from muse_pixel.c.
+// portrait, state word, and the gadget life from muse_pixel.c: blinks,
+// gaze, boot, shutdown, and a short-tap pet.
 
 import 'dart:async';
 
@@ -54,6 +54,8 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
   StreamSubscription<ConnectionState>? _connectionSub;
   StreamSubscription<void>? _presentationSub;
   bool _routeVisible = true;
+  bool _bootArmed = false;
+  Timer? _bootTimer;
 
   @override
   void didChangeDependencies() {
@@ -68,6 +70,7 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
       detail: scope.service.statusDetail,
     );
     scope.presentation.applyName(scope.service.agentName);
+    _armBoot(scope);
     _connectionSub = scope.service.onStateChanged.listen((state) {
       if (!mounted) return;
       scope.presentation.applyConnection(
@@ -75,6 +78,7 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
         detail: scope.service.statusDetail,
       );
       scope.presentation.applyName(scope.service.agentName);
+      _applyLinkPose(scope, state);
     });
     _presentationSub = scope.presentation.stream.listen((_) {
       if (mounted) _applyWakelock();
@@ -87,8 +91,37 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
     _applyWakelock();
   }
 
+  /// One boot squash when the screen first shows an idle portrait.
+  /// The link starts in `stopped` before the loop runs, so that initial
+  /// state is not a shutdown.
+  void _armBoot(AppScope scope) {
+    if (_bootArmed) return;
+    _bootArmed = true;
+    if (scope.presentation.pose != AvatarPose.idle) return;
+    scope.presentation.applyPose(AvatarPose.boot);
+    _bootTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (!mounted) return;
+      if (scope.presentation.pose == AvatarPose.boot) {
+        scope.presentation.applyPose(AvatarPose.idle);
+      }
+    });
+  }
+
+  /// `stopped` is the link being shut down. Unpaired stays idle.
+  void _applyLinkPose(AppScope scope, ConnectionState state) {
+    final pose = scope.presentation.pose;
+    if (state == ConnectionState.stopped) {
+      if (pose != AvatarPose.error && pose != AvatarPose.off) {
+        scope.presentation.applyPose(AvatarPose.off);
+      }
+    } else if (pose == AvatarPose.off) {
+      scope.presentation.applyPose(AvatarPose.idle);
+    }
+  }
+
   @override
   void dispose() {
+    _bootTimer?.cancel();
     routeObserver.unsubscribe(this);
     _connectionSub?.cancel();
     _presentationSub?.cancel();
@@ -287,16 +320,49 @@ class _Character extends StatefulWidget {
 
 class _CharacterState extends State<_Character> {
   bool _holding = false;
+  bool _pointerDown = false;
   int _bounce = 0;
+  int _pets = 0;
+  Timer? _arm;
 
-  Future<void> _holdStart() async {
+  @override
+  void dispose() {
+    _arm?.cancel();
+    super.dispose();
+  }
+
+  void _needMuse() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Connect to your Muse before talking.')),
+    );
+  }
+
+  /// A release before this fires is a pet. The hold itself is unchanged.
+  static const _armDelay = Duration(milliseconds: 220);
+
+  void _holdStart() {
+    _pointerDown = true;
     setState(() => _bounce++);
-    if (_holding) return;
+    if (_holding || _arm != null) return;
+    _arm = Timer(_armDelay, () {
+      _arm = null;
+      if (!mounted || !_pointerDown) return;
+      unawaited(_beginRecording());
+    });
+  }
+
+  void _pet() {
+    if (!mounted) return;
+    setState(() => _pets++);
+    if (!AppScope.of(context).service.isRegistered) _needMuse();
+  }
+
+  Future<void> _beginRecording() async {
+    if (_holding || !_pointerDown) return;
     final scope = AppScope.of(context);
     if (!scope.service.isRegistered) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Connect to your Muse before talking.')),
-      );
+      if (!mounted) return;
+      _needMuse();
       return;
     }
     _holding = true;
@@ -315,6 +381,14 @@ class _CharacterState extends State<_Character> {
   }
 
   Future<void> _holdEnd() async {
+    _pointerDown = false;
+    final pending = _arm;
+    if (pending != null) {
+      pending.cancel();
+      _arm = null;
+      _pet();
+      return;
+    }
     if (!_holding) return;
     _holding = false;
     final scope = AppScope.of(context);
@@ -386,6 +460,7 @@ class _CharacterState extends State<_Character> {
               pose: presentation.pose,
               bytes: bytes,
               bounceGeneration: _bounce,
+              petGeneration: _pets,
             ),
           ),
           if (bytes == null)

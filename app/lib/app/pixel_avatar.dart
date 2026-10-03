@@ -12,6 +12,7 @@
 
 import 'dart:typed_data';
 
+import 'avatar_life.dart';
 import 'avatar_motion.dart';
 
 /// Grid the firmware renders into.
@@ -50,22 +51,8 @@ List<PixelSample> pixelScaleMap(int size) {
 
 /// Accent `0xRRGGBB` for the ring, meter, and state word.
 ///
-/// Same per-mode colours as `SCHEMES` in muse_pixel.c. Idle uses the idle
-/// accent. There is no separate boot or off pose on the phone.
-int avatarAccent(AvatarPose pose) {
-  switch (pose) {
-    case AvatarPose.listening:
-      return 0x5cb8ff;
-    case AvatarPose.thinking:
-      return 0xe07bff;
-    case AvatarPose.speaking:
-      return 0x6ff0bf;
-    case AvatarPose.error:
-      return 0xff5c5c;
-    case AvatarPose.idle:
-      return 0xa77dff;
-  }
-}
+/// Same per-mode colours as `SCHEMES` in muse_pixel.c.
+int avatarAccent(AvatarPose pose) => avatarScheme(pose).accent;
 
 /// Word drawn above the avatar. Idle is "READY", as on the board.
 String avatarStateLabel(AvatarPose pose) {
@@ -78,6 +65,10 @@ String avatarStateLabel(AvatarPose pose) {
       return 'SPEAKING';
     case AvatarPose.error:
       return 'ERROR';
+    case AvatarPose.boot:
+      return 'BOOT';
+    case AvatarPose.off:
+      return 'OFF';
     case AvatarPose.idle:
       return 'READY';
   }

@@ -21,8 +21,27 @@ void main() {
     expect(poseForActivity('speaking'), AvatarPose.speaking);
     expect(poseForActivity('using_tool'), AvatarPose.thinking);
     expect(poseForActivity('idle'), AvatarPose.idle);
+    expect(poseForActivity('boot'), AvatarPose.boot);
+    expect(poseForActivity('starting'), AvatarPose.boot);
+    expect(poseForActivity('off'), AvatarPose.off);
+    expect(poseForActivity('shutdown'), AvatarPose.off);
+    expect(poseForActivity('asleep'), AvatarPose.off);
+    expect(poseForActivity('sleep'), AvatarPose.off);
     expect(poseForStatus('Listening…'), AvatarPose.listening);
     expect(poseForStatus('Looking through the camera'), AvatarPose.thinking);
     expect(poseForStatus('Hello'), isNull);
+  });
+
+  test('boot and off hold still while error keeps its shake', () {
+    for (final pose in [AvatarPose.boot, AvatarPose.off]) {
+      final motion = avatarMotion(pose, 1.2);
+      expect(motion.bob, 0);
+      expect(motion.lean, 0);
+      expect(motion.scale, 1);
+      expect(motion.rings, isFalse);
+    }
+    final error = avatarMotion(AvatarPose.error, 1);
+    expect(error.lean, closeTo(math.sin(28) * 1.4, 1e-9));
+    expect(error.bob, 0);
   });
 }

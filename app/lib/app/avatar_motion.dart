@@ -26,7 +26,7 @@ import 'dart:math' as math;
 
 /// What the portrait is doing. Matches the gadget avatar states the phone
 /// can actually be in.
-enum AvatarPose { idle, listening, thinking, speaking, error }
+enum AvatarPose { idle, listening, thinking, speaking, error, boot, off }
 
 /// One frame of portrait motion. Offsets are in the same units as the
 /// pixel avatar (about one pixel on a 64-wide sprite). The screen scales
@@ -90,9 +90,20 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
         ringPhase: (t * 0.6) % 1,
       );
     case AvatarPose.error:
+      // Forever shake. The stage uses errorLean for the 0.6 s spec shake
+      // and leaves this return value unchanged.
       return AvatarMotion(
         bob: 0,
         lean: math.sin(t * 28) * 1.4,
+        scale: 1,
+        rings: false,
+        ringPhase: 0,
+      );
+    case AvatarPose.boot:
+    case AvatarPose.off:
+      return const AvatarMotion(
+        bob: 0,
+        lean: 0,
         scale: 1,
         rings: false,
         ringPhase: 0,
@@ -119,6 +130,14 @@ AvatarPose poseForActivity(String code) {
     case 'error':
     case 'failed':
       return AvatarPose.error;
+    case 'off':
+    case 'shutdown':
+    case 'asleep':
+    case 'sleep':
+      return AvatarPose.off;
+    case 'boot':
+    case 'starting':
+      return AvatarPose.boot;
     case '':
     case 'idle':
     case 'waiting':

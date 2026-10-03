@@ -26,10 +26,15 @@ void main() {
     expect(avatarAccent(AvatarPose.thinking), 0xe07bff);
     expect(avatarAccent(AvatarPose.speaking), 0x6ff0bf);
     expect(avatarAccent(AvatarPose.error), 0xff5c5c);
+    expect(avatarAccent(AvatarPose.boot), 0xa9c0ff);
+    expect(avatarAccent(AvatarPose.off), 0x7c72d0);
     expect(avatarStateLabel(AvatarPose.idle), 'READY');
     expect(avatarStateLabel(AvatarPose.listening), 'LISTENING');
     expect(avatarStateLabel(AvatarPose.thinking), 'THINKING');
     expect(avatarStateLabel(AvatarPose.speaking), 'SPEAKING');
+    expect(avatarStateLabel(AvatarPose.error), 'ERROR');
+    expect(avatarStateLabel(AvatarPose.boot), 'BOOT');
+    expect(avatarStateLabel(AvatarPose.off), 'OFF');
     expect(avatarCaptionRgb, 0xd8d2ff);
   });
 
@@ -72,5 +77,29 @@ void main() {
     }
     expect(clock.seconds, closeTo(2.0, 1e-9));
     expect(peak, greaterThan(0.9));
+  });
+
+  test('blinks land every 2.2–5.2 s, with a 0.28 s double blink', () {
+    final clock = BlinkClock();
+    final starts = <double>[];
+    var prev = 0.0;
+    for (var i = 0; i < 30000; i++) {
+      final shut = clock.advance(0.01);
+      if (shut > 0 && prev == 0) starts.add(clock.seconds);
+      prev = shut;
+    }
+    expect(starts.first, closeTo(1.51, 0.02));
+    var doubles = 0;
+    for (var i = 1; i < starts.length; i++) {
+      final gap = starts[i] - starts[i - 1];
+      if (gap < 0.5) {
+        doubles++;
+        expect(gap, closeTo(0.28, 0.02));
+      } else {
+        expect(gap, greaterThanOrEqualTo(2.2 - 1e-6));
+        expect(gap, lessThanOrEqualTo(5.2 + 1e-6));
+      }
+    }
+    expect(doubles, greaterThan(0));
   });
 }
