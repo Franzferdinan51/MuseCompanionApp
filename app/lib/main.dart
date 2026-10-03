@@ -19,9 +19,10 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart' hide ConnectionState;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
@@ -37,18 +38,33 @@ import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
 import 'ui/companion_screen.dart';
+import 'ui/muse_theme.dart';
 import 'ui/scope.dart';
 
 const String _appVersion = '0.2.4';
 
+/// Edge-to-edge, with the status and navigation bars hidden until a swipe.
+Future<void> _enterImmersive() {
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Color(0x00000000),
+      systemNavigationBarColor: Color(0x00000000),
+      systemNavigationBarContrastEnforced: false,
+    ),
+  );
+  return SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _enterImmersive();
   initForegroundSupport();
   initLinkService();
 
   final settings = await SettingsStore.init();
-  final identity =
-      await PersistentIdentity.loadOrCreate(const FlutterSecureStorage());
+  final identity = await PersistentIdentity.loadOrCreate(
+    const FlutterSecureStorage(),
+  );
   final presentation = PresentationState(settings: settings.loadSettings());
   final savedStatus = settings.loadStatus();
   if (savedStatus.isNotEmpty) {
@@ -129,8 +145,10 @@ Future<void> main() async {
     final image = httpsImageUrlInReply(text);
     if (image != null) {
       final host = Uri.tryParse(image)?.host;
-      debugPrint('[muse] drawing character from chat'
-          '${host == null || host.isEmpty ? '' : ' ($host)'}');
+      debugPrint(
+        '[muse] drawing character from chat'
+        '${host == null || host.isEmpty ? '' : ' ($host)'}',
+      );
       unawaited(_drawChatCharacter(display, image));
     }
     final caption = captionFromReply(text);
@@ -159,15 +177,17 @@ Future<void> main() async {
     logger: (message) => debugPrint('[ble-setup] $message'),
   );
 
-  runApp(MuseCompanionApp(
-    service: service,
-    presentation: presentation,
-    settings: settings,
-    ble: ble,
-    chat: chat,
-    sdkTokens: sdkTokens,
-    phone: phone,
-  ));
+  runApp(
+    MuseCompanionApp(
+      service: service,
+      presentation: presentation,
+      settings: settings,
+      ble: ble,
+      chat: chat,
+      sdkTokens: sdkTokens,
+      phone: phone,
+    ),
+  );
 }
 
 /// Download a portrait Muse put in a chat reply. The invoke channel is
@@ -189,7 +209,10 @@ Future<void> _drawChatCharacter(AppCompanionDisplay display, String url) async {
 /// Set the speaker, then read [spoken]. The speaking pose lasts until the
 /// utterance finishes. A new hold that moved the pose is left alone.
 Future<void> _speakReply(
-    PhoneBridge phone, PresentationState presentation, String spoken) async {
+  PhoneBridge phone,
+  PresentationState presentation,
+  String spoken,
+) async {
   presentation.applyPose(AvatarPose.speaking);
   try {
     await phone.run('phone.volume', {
@@ -212,7 +235,9 @@ class _ChatPoster {
   void bind(GadgetService service) => _service = service;
 
   Future<Map<String, Object?>> send(
-      String message, List<ChatAttachment> attachments) {
+    String message,
+    List<ChatAttachment> attachments,
+  ) {
     final service = _service;
     if (service == null) {
       return Future.value({'ok': false, 'error': 'not ready'});
@@ -224,8 +249,7 @@ class _ChatPoster {
 /// Physical pixels of the primary view; the Muse sizes art from this.
 ({int width, int height}) _screenSize() {
   try {
-    final view =
-        WidgetsBinding.instance.platformDispatcher.views.first;
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
     final size = view.physicalSize;
     final width = size.width.round();
     final height = size.height.round();
@@ -287,19 +311,23 @@ class MuseCompanionApp extends StatefulWidget {
   State<MuseCompanionApp> createState() => _MuseCompanionAppState();
 }
 
-class _MuseCompanionAppState extends State<MuseCompanionApp> {
+class _MuseCompanionAppState extends State<MuseCompanionApp>
+    with WidgetsBindingObserver {
   Timer? _healthTimer;
   StreamSubscription<ConnectionState>? _linkSub;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Start the connection loop (idempotent). Pairing happens through the
     // existing gadget stack; nothing here re-implements it.
     widget.service.start();
     _pollHealth();
-    _healthTimer =
-        Timer.periodic(const Duration(minutes: 1), (_) => _pollHealth());
+    _healthTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _pollHealth(),
+    );
     // Keep the link alive in the background (Android) and mirror its
     // state into the persistent notification.
     _linkSub = widget.service.onStateChanged.listen((_) {
@@ -320,8 +348,7 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
 
   Future<void> _pollHealth() async {
     try {
-      final info =
-          await AppCompanionHealth(appVersion: _appVersion).health();
+      final info = await AppCompanionHealth(appVersion: _appVersion).health();
       final battery = info['battery_level'] as int?;
       widget.presentation.applyBattery(battery);
     } on Exception {
@@ -330,7 +357,15 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_enterImmersive());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _healthTimer?.cancel();
     _linkSub?.cancel();
     widget.service.stop();
@@ -340,18 +375,7 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
     super.dispose();
   }
 
-  ThemeData _themeFor(Brightness brightness) {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF6C4CF0),
-        brightness: brightness,
-      ),
-      scaffoldBackgroundColor: brightness == Brightness.dark
-          ? const Color(0xFF121217)
-          : const Color(0xFFF4F2FA),
-    );
-  }
+  ThemeData _themeFor(Brightness brightness) => museTheme(brightness);
 
   ThemeMode _modeFor(String theme) {
     switch (theme) {
@@ -384,6 +408,18 @@ class _MuseCompanionAppState extends State<MuseCompanionApp> {
           theme: _themeFor(Brightness.light),
           darkTheme: _themeFor(Brightness.dark),
           themeMode: _modeFor(widget.presentation.settings.theme),
+          builder: (context, child) {
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: const SystemUiOverlayStyle(
+                statusBarColor: Color(0x00000000),
+                systemNavigationBarColor: Color(0x00000000),
+                systemNavigationBarContrastEnforced: false,
+                statusBarIconBrightness: Brightness.light,
+                systemNavigationBarIconBrightness: Brightness.light,
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: const CompanionScreen(),
         ),
       ),

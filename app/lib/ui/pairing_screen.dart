@@ -26,6 +26,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../app/ble_peripheral.dart';
 import '../src/gadget/ble_setup.dart';
+import 'muse_theme.dart';
 import 'scope.dart';
 
 /// Wizard step derived from the peripheral state and latest setup event.
@@ -97,10 +98,13 @@ class _PairingScreenState extends State<PairingScreen> {
     });
     if (!_sdkLoaded) {
       _sdkLoaded = true;
-      scope.sdkTokens.load().then((saved) {
-        if (!mounted || saved == null || saved.isEmpty) return;
-        _sdkController.text = saved;
-      }).catchError((_) {});
+      scope.sdkTokens
+          .load()
+          .then((saved) {
+            if (!mounted || saved == null || saved.isEmpty) return;
+            _sdkController.text = saved;
+          })
+          .catchError((_) {});
     }
   }
 
@@ -124,12 +128,12 @@ class _PairingScreenState extends State<PairingScreen> {
           Permission.bluetoothConnect,
         ].request();
         final blocked = statuses.values.any(
-            (s) => s.isDenied || s.isPermanentlyDenied || s.isRestricted);
+          (s) => s.isDenied || s.isPermanentlyDenied || s.isRestricted,
+        );
         if (blocked) {
           if (!mounted) return;
           setState(() => _busy = false);
-          final permanently =
-              statuses.values.any((s) => s.isPermanentlyDenied);
+          final permanently = statuses.values.any((s) => s.isPermanentlyDenied);
           await _showPermissionSheet(permanently);
           return;
         }
@@ -161,8 +165,8 @@ class _PairingScreenState extends State<PairingScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text(
-                'Could not save the SDK token; continuing without it.')),
+          content: Text('Could not save the SDK token; continuing without it.'),
+        ),
       );
     }
   }
@@ -177,8 +181,10 @@ class _PairingScreenState extends State<PairingScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Bluetooth permission needed',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Bluetooth permission needed',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             const Text(
               'The companion advertises as your gadget so the Muse app '
@@ -231,14 +237,10 @@ class _PairingScreenState extends State<PairingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final ble = AppScope.of(context).ble;
     final state = ble.state;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pair a Muse'),
-        backgroundColor: theme.colorScheme.surface,
-      ),
+    return MusePage(
+      appBar: AppBar(title: const Text('Pair a Muse')),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -246,33 +248,30 @@ class _PairingScreenState extends State<PairingScreen> {
           const SizedBox(height: 16),
           switch (state) {
             BlePeripheralState.idle => _IdleCard(
-                busy: _busy,
-                sdkController: _sdkController,
-                onStart: _start,
-              ),
+              busy: _busy,
+              sdkController: _sdkController,
+              onStart: _start,
+            ),
             BlePeripheralState.starting => _WorkingCard(
-                label: _busy
-                    ? 'Requesting Bluetooth…'
-                    : 'Starting advertiser…',
-              ),
+              label: _busy ? 'Requesting Bluetooth…' : 'Starting advertiser…',
+            ),
             BlePeripheralState.advertising ||
-            BlePeripheralState.connected =>
-              _ProgressCard(
-                state: state,
-                lastSetup: _lastSetup,
-                detail: _setupDetail,
-                busy: _busy,
-                onStop: _stop,
-              ),
+            BlePeripheralState.connected => _ProgressCard(
+              state: state,
+              lastSetup: _lastSetup,
+              detail: _setupDetail,
+              busy: _busy,
+              onStop: _stop,
+            ),
             BlePeripheralState.done => _DoneCard(onFinish: _finish),
             BlePeripheralState.error => _ErrorCard(
-                detail: ble.detail,
-                busy: _busy,
-                onRetry: _start,
-              ),
+              detail: ble.detail,
+              busy: _busy,
+              onRetry: _start,
+            ),
             BlePeripheralState.unsupported => _UnsupportedCard(
-                detail: ble.detail,
-              ),
+              detail: ble.detail,
+            ),
           },
         ],
       ),
@@ -289,43 +288,44 @@ class _NameCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.surfaceContainerHighest,
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Stack(
-              alignment: Alignment.center,
+    return MuseBubble(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              if (active)
+                const SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              Icon(Icons.bluetooth, size: 28, color: theme.colorScheme.primary),
+            ],
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (active)
-                  const SizedBox(
-                    width: 56,
-                    height: 56,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                Text(
+                  'This phone advertises as',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
                   ),
-                Icon(Icons.bluetooth,
-                    size: 28, color: theme.colorScheme.primary),
+                ),
+                SelectableText(
+                  name,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('This phone advertises as',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.outline)),
-                  SelectableText(name,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.primary)),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -345,49 +345,45 @@ class _IdleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('How pairing works', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 12),
-            const _Step('Start advertising below.'),
-            const _Step(
-                'Open the Muse app and add a gadget.'),
-            const _Step('Pick this phone from the list and approve.'),
-            const _Step('Credentials are verified, then saved securely.'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: sdkController,
-              obscureText: true,
-              enableSuggestions: false,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'SDK token (optional)',
-                helperText:
-                    'From gadgets.muse.ai — only for developer gadget features.',
-                helperMaxLines: 2,
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.key_outlined),
-              ),
+    return MuseBubble(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('How pairing works', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          const _Step('Start advertising below.'),
+          const _Step('Open the Muse app and add a gadget.'),
+          const _Step('Pick this phone from the list and approve.'),
+          const _Step('Credentials are verified, then saved securely.'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: sdkController,
+            obscureText: true,
+            enableSuggestions: false,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'SDK token (optional)',
+              helperText:
+                  'From gadgets.muse.ai — only for developer gadget features.',
+              helperMaxLines: 2,
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.key_outlined),
             ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: busy ? null : onStart,
-              icon: busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.bluetooth_searching),
-              label: Text(busy ? 'Starting…' : 'Start pairing'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: busy ? null : onStart,
+            icon: busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.bluetooth_searching),
+            label: Text(busy ? 'Starting…' : 'Start pairing'),
+          ),
+        ],
       ),
     );
   }
@@ -407,8 +403,8 @@ class _Step extends StatelessWidget {
         children: [
           Text('•  ', style: Theme.of(context).textTheme.bodyMedium),
           Expanded(
-              child: Text(text,
-                  style: Theme.of(context).textTheme.bodyMedium)),
+            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+          ),
         ],
       ),
     );
@@ -422,17 +418,14 @@ class _WorkingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 16),
-            Text(label, style: Theme.of(context).textTheme.bodyLarge),
-          ],
-        ),
+    return MuseBubble(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(width: 16),
+          Text(label, style: Theme.of(context).textTheme.bodyLarge),
+        ],
       ),
     );
   }
@@ -464,45 +457,44 @@ class _ProgressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final index = pairingStepIndex(state, lastSetup);
-    final failed = lastSetup == SetupEventKind.failed ||
+    final failed =
+        lastSetup == SetupEventKind.failed ||
         lastSetup == SetupEventKind.wifiFailed;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              state == BlePeripheralState.connected
-                  ? 'Muse app connected'
-                  : 'Advertising — open the Muse app',
-              style: theme.textTheme.titleMedium,
+    return MuseBubble(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            state == BlePeripheralState.connected
+                ? 'Muse app connected'
+                : 'Advertising — open the Muse app',
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < _labels.length; i++)
+            _ProgressRow(
+              label: _labels[i],
+              done: i < index,
+              active: i == index && !failed,
+              failed: i == index && failed,
             ),
-            const SizedBox(height: 12),
-            for (var i = 0; i < _labels.length; i++)
-              _ProgressRow(
-                label: _labels[i],
-                done: i < index,
-                active: i == index && !failed,
-                failed: i == index && failed,
+          if (failed && detail.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              _friendlyDetail(detail),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
               ),
-            if (failed && detail.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                _friendlyDetail(detail),
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: busy ? null : onStop,
-              icon: const Icon(Icons.stop),
-              label: const Text('Stop'),
             ),
           ],
-        ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: busy ? null : onStop,
+            icon: const Icon(Icons.stop),
+            label: const Text('Stop'),
+          ),
+        ],
       ),
     );
   }
@@ -549,21 +541,28 @@ class _ProgressRow extends StatelessWidget {
     final theme = Theme.of(context);
     final Widget icon;
     if (done) {
-      icon = Icon(Icons.check_circle,
-          color: theme.colorScheme.primary, size: 20);
+      icon = Icon(
+        Icons.check_circle,
+        color: theme.colorScheme.primary,
+        size: 20,
+      );
     } else if (failed) {
-      icon =
-          Icon(Icons.error, color: theme.colorScheme.error, size: 20);
+      icon = Icon(Icons.error, color: theme.colorScheme.error, size: 20);
     } else if (active) {
       icon = SizedBox(
         width: 18,
         height: 18,
         child: CircularProgressIndicator(
-            strokeWidth: 2, color: theme.colorScheme.primary),
+          strokeWidth: 2,
+          color: theme.colorScheme.primary,
+        ),
       );
     } else {
-      icon = Icon(Icons.circle_outlined,
-          color: theme.colorScheme.outline, size: 20);
+      icon = Icon(
+        Icons.circle_outlined,
+        color: theme.colorScheme.outline,
+        size: 20,
+      );
     }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -577,8 +576,7 @@ class _ProgressRow extends StatelessWidget {
               color: done || active || failed
                   ? theme.colorScheme.onSurface
                   : theme.colorScheme.outline,
-              fontWeight:
-                  active ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: active ? FontWeight.w600 : FontWeight.normal,
             ),
           ),
         ],
@@ -595,35 +593,35 @@ class _DoneCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
+    return MuseBubble(
+      padding: const EdgeInsets.all(20),
       color: theme.colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.check_circle,
-                    size: 32, color: theme.colorScheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text('Paired!',
-                      style: theme.textTheme.headlineSmall),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text(
-                'Credentials verified and saved. The companion is connecting to your Muse now.'),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: onFinish,
-              child: const Text('Show my companion'),
-            ),
-          ],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.check_circle,
+                size: 32,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('Paired!', style: theme.textTheme.headlineSmall),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Credentials verified and saved. The companion is connecting to your Muse now.',
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: onFinish,
+            child: const Text('Show my companion'),
+          ),
+        ],
       ),
     );
   }
@@ -643,38 +641,41 @@ class _ErrorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
+    return MuseBubble(
+      padding: const EdgeInsets.all(20),
       color: theme.colorScheme.errorContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.error_outline,
-                    color: theme.colorScheme.onErrorContainer),
-                const SizedBox(width: 8),
-                Text('Pairing failed',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.onErrorContainer)),
-              ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.error_outline,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Pairing failed',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            detail.isEmpty ? 'Bluetooth could not start.' : detail,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onErrorContainer,
             ),
-            const SizedBox(height: 8),
-            Text(
-              detail.isEmpty ? 'Bluetooth could not start.' : detail,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onErrorContainer),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: busy ? null : onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Try again'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: busy ? null : onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try again'),
+          ),
+        ],
       ),
     );
   }
@@ -688,31 +689,26 @@ class _UnsupportedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.bluetooth_disabled,
-                    color: theme.colorScheme.outline),
-                const SizedBox(width: 8),
-                Text('Not available',
-                    style: theme.textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              detail.isEmpty
-                  ? 'BLE advertising is not available on this device.'
-                  : detail,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ],
-        ),
+    return MuseBubble(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.bluetooth_disabled, color: theme.colorScheme.outline),
+              const SizedBox(width: 8),
+              Text('Not available', style: theme.textTheme.titleMedium),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            detail.isEmpty
+                ? 'BLE advertising is not available on this device.'
+                : detail,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ],
       ),
     );
   }

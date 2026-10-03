@@ -28,6 +28,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../app/ble_peripheral.dart';
 import '../src/gadget/service.dart';
+import 'muse_theme.dart';
 import 'scope.dart';
 
 class DiagnosticsScreen extends StatefulWidget {
@@ -111,15 +112,13 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scope = AppScope.of(context);
-    return Scaffold(
+    return MusePage(
       appBar: AppBar(
         title: const Text('Diagnostics'),
-        backgroundColor: theme.colorScheme.surface,
         actions: [
           TextButton.icon(
             onPressed: _copy,
-            icon: Icon(_copied ? Icons.check : Icons.copy,
-                size: 18),
+            icon: Icon(_copied ? Icons.check : Icons.copy, size: 18),
             label: Text(_copied ? 'Copied' : 'Copy'),
           ),
         ],
@@ -159,9 +158,12 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           _Card(
             title: 'Setup log',
             child: _logs.isEmpty
-                ? Text('No setup activity yet.',
+                ? Text(
+                    'No setup activity yet.',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.outline))
+                      color: theme.colorScheme.outline,
+                    ),
+                  )
                 : SelectableText(
                     _logs.join('\n'),
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -200,14 +202,18 @@ String _stateDump(
   final buf = StringBuffer()
     ..writeln('Muse Companion diagnostics')
     ..writeln('app: $appVersion')
-    ..writeln('link: ${service.connectionState.name}'
-        '${service.statusDetail.isEmpty ? '' : ' (${service.statusDetail})'}')
+    ..writeln(
+      'link: ${service.connectionState.name}'
+      '${service.statusDetail.isEmpty ? '' : ' (${service.statusDetail})'}',
+    )
     ..writeln('agent: ${service.agentName ?? '-'}')
     ..writeln('registered: ${service.isRegistered}')
     ..writeln('ble_name: ${ble.deviceName}')
     ..writeln('node_id: ${ble.nodeId}')
-    ..writeln('ble_setup: ${ble.state.name}'
-        '${ble.detail.isEmpty ? '' : ' (${ble.detail})'}')
+    ..writeln(
+      'ble_setup: ${ble.state.name}'
+      '${ble.detail.isEmpty ? '' : ' (${ble.detail})'}',
+    )
     ..writeln('--- setup log ---');
   for (final line in logs) {
     buf.writeln(line);
@@ -225,38 +231,39 @@ class _Card extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            ?child,
-            for (final entry in rows.entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 96,
-                      child: Text(entry.key,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.outline)),
+    return MuseBubble(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          ?child,
+          for (final entry in rows.entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 96,
+                    child: Text(
+                      entry.key,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
                     ),
-                    Expanded(
-                      child: SelectableText(entry.value,
-                          style: theme.textTheme.bodyMedium),
+                  ),
+                  Expanded(
+                    child: SelectableText(
+                      entry.value,
+                      style: theme.textTheme.bodyMedium,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

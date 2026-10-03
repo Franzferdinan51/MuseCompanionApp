@@ -21,8 +21,9 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
 
 import '../app/model.dart';
-import 'pixel_stage.dart';
 import '../src/gadget/service.dart';
+import 'muse_theme.dart';
+import 'pixel_stage.dart';
 import 'scope.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -70,76 +71,104 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final name = presentation.name ?? service.agentName ?? 'Muse';
     final connection = presentation.connection ?? service.connectionState;
     final log = service.linkLog.reversed.take(12).toList();
-    return Scaffold(
+    return MusePage(
       appBar: AppBar(title: const Text('Dashboard')),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
         children: [
           Text(
             name,
-            style: theme.textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w600),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 12),
           Center(child: _Preview(presentation: presentation)),
           const SizedBox(height: 12),
-          Text(
-            presentation.statusText.isEmpty
-                ? 'No caption yet'
-                : presentation.statusText,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium,
+          MuseBubble(
+            child: Text(
+              presentation.statusText.isEmpty
+                  ? 'No caption yet'
+                  : presentation.statusText,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium,
+            ),
           ),
-          const SizedBox(height: 20),
-          _Row('Link', _connectionLabel(connection)),
-          if (presentation.statusDetail.isNotEmpty)
-            _Row('Detail', presentation.statusDetail),
-          _Row(
-            'Battery',
-            presentation.battery == null
-                ? 'Unknown'
-                : '${presentation.battery}%',
+          const SizedBox(height: 16),
+          MuseBubble(
+            child: Column(
+              children: [
+                _Row('Link', _connectionLabel(connection)),
+                if (presentation.statusDetail.isNotEmpty)
+                  _Row('Detail', presentation.statusDetail),
+                _Row(
+                  'Battery',
+                  presentation.battery == null
+                      ? 'Unknown'
+                      : '${presentation.battery}%',
+                ),
+                _Row('Pose', presentation.pose.name),
+                _Row('Speech volume', '${presentation.settings.speechVolume}'),
+              ],
+            ),
           ),
-          _Row('Pose', presentation.pose.name),
-          _Row('Speech volume', '${presentation.settings.speechVolume}'),
-          const Divider(height: 32),
-          Text('Command channel', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          _Row('Invokes seen', '${service.invokesSeen}'),
-          _Row('Results sent', '${service.resultsSent}'),
-          _Row('Last command',
-              service.lastCommand.isEmpty ? '—' : service.lastCommand),
-          _Row(
-            'Last result',
-            service.lastCommandResult.isEmpty
-                ? '—'
-                : service.lastCommandResult,
+          const SizedBox(height: 16),
+          MuseBubble(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Command channel', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                _Row('Invokes seen', '${service.invokesSeen}'),
+                _Row('Results sent', '${service.resultsSent}'),
+                _Row(
+                  'Last command',
+                  service.lastCommand.isEmpty ? '—' : service.lastCommand,
+                ),
+                _Row(
+                  'Last result',
+                  service.lastCommandResult.isEmpty
+                      ? '—'
+                      : service.lastCommandResult,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  service.invokesSeen == 0
+                      ? 'If Muse says a command timed out and invokes stay at 0, the phone is not receiving device.invoke.'
+                      : service.resultsSent < service.invokesSeen
+                      ? 'Invokes are arriving. A result that stays behind means the reply is not leaving the phone.'
+                      : 'Commands are arriving and the phone is sending link.result.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            service.invokesSeen == 0
-                ? 'If Muse says a command timed out and invokes stay at 0, the phone is not receiving device.invoke.'
-                : service.resultsSent < service.invokesSeen
-                    ? 'Invokes are arriving. A result that stays behind means the reply is not leaving the phone.'
-                    : 'Commands are arriving and the phone is sending link.result.',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.outline),
+          const SizedBox(height: 16),
+          MuseBubble(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Recent link log', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (log.isEmpty)
+                  Text(
+                    'Nothing logged yet. Connect, then ask Muse to run device.health.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  )
+                else
+                  for (final line in log)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(line, style: theme.textTheme.bodySmall),
+                    ),
+              ],
+            ),
           ),
-          const Divider(height: 32),
-          Text('Recent link log', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (log.isEmpty)
-            Text(
-              'Nothing logged yet. Connect, then ask Muse to run device.health.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
-            )
-          else
-            for (final line in log)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(line, style: theme.textTheme.bodySmall),
-              ),
         ],
       ),
     );
@@ -189,18 +218,10 @@ class _Preview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipOval(
-      child: ColoredBox(
-        color: const Color(0xFF000000),
-        child: SizedBox(
-          width: 180,
-          height: 180,
-          child: PixelStage(
-            pose: presentation.pose,
-            bytes: presentation.character,
-          ),
-        ),
-      ),
+    return SizedBox(
+      width: 180,
+      height: 180,
+      child: PixelStage(pose: presentation.pose, bytes: presentation.character),
     );
   }
 }

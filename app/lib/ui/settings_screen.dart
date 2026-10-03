@@ -29,6 +29,7 @@ import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import 'dashboard_screen.dart';
 import 'diagnostics_screen.dart';
+import 'muse_theme.dart';
 import 'pairing_screen.dart';
 import 'scope.dart';
 
@@ -59,13 +60,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) setState(() => _connection = state);
     });
     _refreshServiceState();
-    scope.sdkTokens.load().then((saved) {
-      if (mounted) {
-        setState(() => _sdkSet = saved != null && saved.isNotEmpty);
-      }
-    }).catchError((_) {
-      if (mounted) setState(() => _sdkSet = false);
-    });
+    scope.sdkTokens
+        .load()
+        .then((saved) {
+          if (mounted) {
+            setState(() => _sdkSet = saved != null && saved.isNotEmpty);
+          }
+        })
+        .catchError((_) {
+          if (mounted) setState(() => _sdkSet = false);
+        });
   }
 
   Future<void> _refreshServiceState() async {
@@ -114,8 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(controller.text.trim()),
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
             child: const Text('Save'),
           ),
         ],
@@ -147,11 +150,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (_serviceRunning == true) {
         await stopLinkService();
       } else {
-        await startLinkService(linkNotificationText(
-          scope.service.connectionState.name,
-          scope.service.statusDetail,
-          scope.service.agentName,
-        ));
+        await startLinkService(
+          linkNotificationText(
+            scope.service.connectionState.name,
+            scope.service.statusDetail,
+            scope.service.agentName,
+          ),
+        );
       }
       await _refreshServiceState();
     } finally {
@@ -211,11 +216,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Companion Settings'),
-        backgroundColor: theme.colorScheme.surface,
-      ),
+    return MusePage(
+      appBar: AppBar(title: const Text('Companion Settings')),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -229,16 +231,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'SDK token',
             child: Row(
               children: [
-                Icon(Icons.key_outlined,
-                    color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  Icons.key_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     _sdkSet == null
                         ? 'Checking…'
                         : _sdkSet == true
-                            ? 'Set — reported on token refresh.'
-                            : 'Not set — pairing works without it.',
+                        ? 'Set — reported on token refresh.'
+                        : 'Not set — pairing works without it.',
                   ),
                 ),
                 FilledButton.tonal(
@@ -256,16 +260,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.notifications_active_outlined,
-                        color: Theme.of(context).colorScheme.primary),
+                    Icon(
+                      Icons.notifications_active_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         _serviceRunning == null
                             ? 'Checking…'
                             : _serviceRunning == true
-                                ? 'Keep-alive is running — the link survives in the background.'
-                                : 'Keep-alive is off — Android may drop the link in the background.',
+                            ? 'Keep-alive is running — the link survives in the background.'
+                            : 'Keep-alive is off — Android may drop the link in the background.',
                       ),
                     ),
                   ],
@@ -274,11 +280,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Row(
                   children: [
                     FilledButton.tonal(
-                      onPressed:
-                          _serviceBusy ? null : _toggleService,
-                      child: Text(_serviceRunning == true
-                          ? 'Stop keep-alive'
-                          : 'Start keep-alive'),
+                      onPressed: _serviceBusy ? null : _toggleService,
+                      child: Text(
+                        _serviceRunning == true
+                            ? 'Stop keep-alive'
+                            : 'Start keep-alive',
+                      ),
                     ),
                     const SizedBox(width: 12),
                     OutlinedButton(
@@ -295,8 +302,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Dashboard',
             child: Row(
               children: [
-                Icon(Icons.dashboard_outlined,
-                    color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  Icons.dashboard_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
@@ -319,13 +328,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Diagnostics',
             child: Row(
               children: [
-                Icon(Icons.monitor_heart_outlined,
-                    color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  Icons.monitor_heart_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(width: 12),
                 const Expanded(
-                  child: Text(
-                    'Link state, device identity and the setup log',
-                  ),
+                  child: Text('Link state, device identity and the setup log'),
                 ),
                 FilledButton.tonal(
                   onPressed: () => Navigator.of(context).push(
@@ -343,8 +352,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Theme',
             child: Row(
               children: [
-                Icon(Icons.palette_outlined,
-                    color: theme.colorScheme.primary),
+                Icon(Icons.palette_outlined, color: theme.colorScheme.primary),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Wrap(
@@ -353,7 +361,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       for (final option in CompanionSettings.themeOptions)
                         ChoiceChip(
                           label: Text(
-                              '${option[0].toUpperCase()}${option.substring(1)}'),
+                            '${option[0].toUpperCase()}${option.substring(1)}',
+                          ),
                           selected: _settings.theme == option,
                           onSelected: (_) =>
                               _commit(_settings.copyWith(theme: option)),
@@ -392,9 +401,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Icon(Icons.record_voice_over_outlined),
                 const SizedBox(width: 12),
                 const Expanded(
-                  child: Text(
-                    'Read Muse replies aloud on this phone',
-                  ),
+                  child: Text('Read Muse replies aloud on this phone'),
                 ),
                 Switch(
                   value: _settings.speakReplies,
@@ -424,7 +431,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         divisions: 10,
                         label: '${_settings.speechVolume}',
                         onChanged: (v) => _commit(
-                            _settings.copyWith(speechVolume: v.round())),
+                          _settings.copyWith(speechVolume: v.round()),
+                        ),
                       ),
                     ),
                     SizedBox(
@@ -452,8 +460,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Allow Muse to place calls'),
                   value: _settings.allowCalls,
-                  onChanged: (v) =>
-                      _commit(_settings.copyWith(allowCalls: v)),
+                  onChanged: (v) => _commit(_settings.copyWith(allowCalls: v)),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -481,9 +488,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await AppScope.of(context).phone.openNotificationAccess();
     } on PhoneActionException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 }
@@ -503,7 +510,8 @@ class _PairingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final ble = AppScope.of(context).ble;
-    final paired = connection != ConnectionState.unpaired &&
+    final paired =
+        connection != ConnectionState.unpaired &&
         connection != ConnectionState.stopped;
     return _SettingCard(
       title: 'Pairing',
@@ -512,24 +520,27 @@ class _PairingCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.bluetooth,
-                  color: theme.colorScheme.primary),
+              Icon(Icons.bluetooth, color: theme.colorScheme.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(ble.deviceName,
-                        style: theme.textTheme.titleSmall),
-                    Text(ble.nodeId,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.outline)),
+                    Text(ble.deviceName, style: theme.textTheme.titleSmall),
+                    Text(
+                      ble.nodeId,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
                   ],
                 ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: paired
                       ? theme.colorScheme.primaryContainer
@@ -597,19 +608,15 @@ class _SettingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            child,
-          ],
-        ),
+    return MuseBubble(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          child,
+        ],
       ),
     );
   }

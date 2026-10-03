@@ -34,6 +34,7 @@ import '../src/gadget/service.dart';
 import 'chat_screen.dart';
 import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
+import 'muse_theme.dart';
 import 'pixel_stage.dart';
 import 'scope.dart';
 import 'settings_screen.dart';
@@ -62,13 +63,17 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
     _connectionSub?.cancel();
     _presentationSub?.cancel();
     final scope = AppScope.of(context);
-    scope.presentation.applyConnection(scope.service.connectionState,
-        detail: scope.service.statusDetail);
+    scope.presentation.applyConnection(
+      scope.service.connectionState,
+      detail: scope.service.statusDetail,
+    );
     scope.presentation.applyName(scope.service.agentName);
     _connectionSub = scope.service.onStateChanged.listen((state) {
       if (!mounted) return;
       scope.presentation.applyConnection(
-          state, detail: scope.service.statusDetail);
+        state,
+        detail: scope.service.statusDetail,
+      );
       scope.presentation.applyName(scope.service.agentName);
     });
     _presentationSub = scope.presentation.stream.listen((_) {
@@ -111,8 +116,7 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
 
   Future<void> _applyWakelock() async {
     final scope = AppScope.of(context);
-    final enable =
-        _routeVisible && scope.presentation.settings.keepScreenOn;
+    final enable = _routeVisible && scope.presentation.settings.keepScreenOn;
     try {
       await WakelockPlus.toggle(enable: enable);
     } on MissingPluginException {
@@ -133,7 +137,8 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
 }
 
 class _Surface extends StatelessWidget {
-  const _Surface({required this.scope}) : super(key: const ValueKey('companion_surface'));
+  const _Surface({required this.scope})
+    : super(key: const ValueKey('companion_surface'));
 
   final AppScope scope;
 
@@ -142,35 +147,40 @@ class _Surface extends StatelessWidget {
     final presentation = scope.presentation;
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _Header(
-              name: presentation.name ?? 'Muse',
-              battery: presentation.battery,
-            ),
-            const Divider(height: 24, thickness: 1),
-            Expanded(
-              child: Column(
-                children: [
-                  Expanded(child: _Character(presentation: presentation)),
-                  Text(
-                    'Hold the character to talk',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline),
-                  ),
-                  const SizedBox(height: 8),
-                ],
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: DecoratedBox(
+        decoration: museBackdrop(theme.brightness),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _Header(
+                name: presentation.name ?? 'Muse',
+                battery: presentation.battery,
               ),
-            ),
-            _StatusLines(lines: presentation.lines),
-            const SizedBox(height: 24),
-            _BottomBar(
-              state: presentation.connection ?? ConnectionState.unpaired,
-              detail: presentation.statusDetail,
-            ),
-          ],
+              Expanded(
+                child: Column(
+                  children: [
+                    Expanded(child: _Character(presentation: presentation)),
+                    Text(
+                      'Hold the character to talk',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.62,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+              _StatusLines(lines: presentation.lines),
+              const SizedBox(height: 12),
+              _BottomBar(
+                state: presentation.connection ?? ConnectionState.unpaired,
+                detail: presentation.statusDetail,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -179,7 +189,7 @@ class _Surface extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   const _Header({required this.name, required this.battery})
-      : super(key: const ValueKey('companion_header'));
+    : super(key: const ValueKey('companion_header'));
 
   final String name;
   final int? battery;
@@ -188,30 +198,39 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Dashboard',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const DashboardScreen(),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: MuseBubble(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'Dashboard',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DashboardScreen(),
+                ),
+              ),
+              icon: Icon(
+                Icons.monitor_heart_outlined,
+                color: theme.colorScheme.primary,
+                size: 22,
               ),
             ),
-            icon: Icon(Icons.monitor_heart_outlined,
-                color: theme.colorScheme.primary, size: 22),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              name,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                name,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          _BatteryIndicator(battery: battery),
-        ],
+            _BatteryIndicator(battery: battery),
+            const SizedBox(width: 8),
+          ],
+        ),
       ),
     );
   }
@@ -219,7 +238,7 @@ class _Header extends StatelessWidget {
 
 class _BatteryIndicator extends StatelessWidget {
   const _BatteryIndicator({required this.battery})
-      : super(key: const ValueKey('companion_battery'));
+    : super(key: const ValueKey('companion_battery'));
 
   final int? battery;
 
@@ -237,10 +256,7 @@ class _BatteryIndicator extends StatelessWidget {
         ),
         const SizedBox(width: 4),
         if (percent != null)
-          Text(
-            '$percent%',
-            style: theme.textTheme.bodySmall,
-          ),
+          Text('$percent%', style: theme.textTheme.bodySmall),
       ],
     );
   }
@@ -259,7 +275,7 @@ class _BatteryIndicator extends StatelessWidget {
 
 class _Character extends StatefulWidget {
   const _Character({required this.presentation})
-      : super(key: const ValueKey('companion_character'));
+    : super(key: const ValueKey('companion_character'));
 
   final PresentationState presentation;
 
@@ -269,14 +285,15 @@ class _Character extends StatefulWidget {
 
 class _CharacterState extends State<_Character> {
   bool _holding = false;
+  int _bounce = 0;
 
   Future<void> _holdStart() async {
+    setState(() => _bounce++);
     if (_holding) return;
     final scope = AppScope.of(context);
     if (!scope.service.isRegistered) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Connect to your Muse before talking.')),
+        const SnackBar(content: Text('Connect to your Muse before talking.')),
       );
       return;
     }
@@ -289,8 +306,9 @@ class _CharacterState extends State<_Character> {
       _holding = false;
       if (!mounted) return;
       scope.presentation.applyPose(AvatarPose.idle);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -317,15 +335,17 @@ class _CharacterState extends State<_Character> {
       } else {
         final error = result['error'];
         scope.chat.markFailed(
-            id,
-            error is String && error.isNotEmpty ? error : 'send failed');
+          id,
+          error is String && error.isNotEmpty ? error : 'send failed',
+        );
         scope.presentation.applyPose(AvatarPose.idle);
       }
     } on PhoneActionException catch (e) {
       if (!mounted) return;
       scope.presentation.applyPose(AvatarPose.idle);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
       scope.presentation.applyPose(AvatarPose.idle);
@@ -346,18 +366,25 @@ class _CharacterState extends State<_Character> {
       onPointerCancel: (_) => _holdEnd(),
       child: Column(
         children: [
-          Text(
-            avatarStateLabel(presentation.pose),
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: accent,
-              letterSpacing: 2,
-              fontFamily: 'monospace',
-              fontWeight: FontWeight.w600,
+          TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: accent),
+            duration: const Duration(milliseconds: 420),
+            builder: (context, color, _) => Text(
+              avatarStateLabel(presentation.pose),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: color ?? accent,
+                letterSpacing: 3,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: PixelStage(pose: presentation.pose, bytes: bytes),
+            child: PixelStage(
+              pose: presentation.pose,
+              bytes: bytes,
+              bounceGeneration: _bounce,
+            ),
           ),
           if (bytes == null)
             Padding(
@@ -367,8 +394,9 @@ class _CharacterState extends State<_Character> {
                     ? 'Asking your Muse for a character…'
                     : 'Waiting for character',
                 textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.outline),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
               ),
             ),
         ],
@@ -387,25 +415,23 @@ class _StatusLines extends StatelessWidget {
     final theme = Theme.of(context);
     if (lines.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final line in lines)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: MuseBubble(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final line in lines)
+              Text(
                 line,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: const Color(0xFF000000 | avatarCaptionRgb),
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w500,
-                  height: 1.2,
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -420,63 +446,59 @@ class _BottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final status = detail.isEmpty ? _labelFor(state) : detail;
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              _StatusDot(state: state),
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 260),
-                child: Text(
-                  detail.isEmpty ? _labelFor(state) : detail,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (state == ConnectionState.unpaired)
-                FilledButton.tonalIcon(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<bool>(
-                      builder: (_) => const PairingScreen(),
+          Expanded(
+            child: MuseBubble(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  _StatusDot(state: state),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      status,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  icon: const Icon(Icons.bluetooth, size: 18),
-                  label: const Text('Pair'),
-                ),
-              IconButton(
-                tooltip: 'Say it again',
-                onPressed: () => _repeatLast(context),
-                icon: const Icon(Icons.replay),
+                ],
               ),
-              IconButton(
-                tooltip: 'Message',
-                icon: const Icon(Icons.chat_bubble_outline),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ChatScreen(),
-                  ),
-                ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (state == ConnectionState.unpaired)
+            IconButton(
+              tooltip: 'Pair',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<bool>(builder: (_) => const PairingScreen()),
               ),
-              IconButton(
-                tooltip: 'Settings',
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const SettingsScreen(),
-                  ),
-                ),
-              ),
-            ],
+              icon: const Icon(Icons.bluetooth, size: 20),
+            ),
+          IconButton(
+            tooltip: 'Say it again',
+            onPressed: () => _repeatLast(context),
+            icon: const Icon(Icons.replay),
+          ),
+          IconButton(
+            tooltip: 'Message',
+            icon: const Icon(Icons.chat_bubble_outline),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const ChatScreen())),
+          ),
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            ),
           ),
         ],
       ),
@@ -491,9 +513,9 @@ class _BottomBar extends StatelessWidget {
         : scope.presentation.statusText;
     final spoken = speakableReply(source);
     if (spoken.isEmpty || spoken == 'Listening…') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nothing to say yet.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Nothing to say yet.')));
       return;
     }
     try {
@@ -503,9 +525,9 @@ class _BottomBar extends StatelessWidget {
       await scope.phone.speak(spoken);
     } on PhoneActionException catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 

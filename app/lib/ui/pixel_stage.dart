@@ -25,10 +25,14 @@ class PixelStage extends StatefulWidget {
     super.key,
     required this.pose,
     required this.bytes,
+    this.bounceGeneration = 0,
   });
 
   final AvatarPose pose;
   final Uint8List? bytes;
+
+  /// Increment to play a tap bounce. Hold-to-talk owns the pointer.
+  final int bounceGeneration;
 
   @override
   State<PixelStage> createState() => _PixelStageState();
@@ -67,11 +71,30 @@ class _StageClock extends ChangeNotifier {
   double seconds = 0;
   double shut = 0;
   ui.Image? image;
+  AvatarPose pose = AvatarPose.idle;
+  AvatarPose from = AvatarPose.idle;
+  double blend = 1;
+  double flourish = 0;
+  double nudge = 0;
 
-  void tick(double seconds, double shut, ui.Image? image) {
+  void tick({
+    required double seconds,
+    required double shut,
+    required ui.Image? image,
+    required AvatarPose pose,
+    required AvatarPose from,
+    required double blend,
+    required double flourish,
+    required double nudge,
+  }) {
     this.seconds = seconds;
     this.shut = shut;
     this.image = image;
+    this.pose = pose;
+    this.from = from;
+    this.blend = blend;
+    this.flourish = flourish;
+    this.nudge = nudge;
     notifyListeners();
   }
 }
@@ -85,10 +108,17 @@ class _PixelStageState extends State<PixelStage>
   _PixelFrames? _frames;
   int _generation = 0;
   String? _modelPath;
+  late AvatarPose _shown;
+  late AvatarPose _from;
+  double _blend = 1;
+  double _flourish = 0;
+  double _nudge = 0;
 
   @override
   void initState() {
     super.initState();
+    _shown = widget.pose;
+    _from = widget.pose;
     _ticker = createTicker(_onTick)..start();
     _load(widget.bytes);
   }
@@ -96,6 +126,9 @@ class _PixelStageState extends State<PixelStage>
   @override
   void didUpdateWidget(PixelStage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.bounceGeneration != oldWidget.bounceGeneration) {
+      _nudge = 1;
+    }
     if (!identical(widget.bytes, oldWidget.bytes)) {
       _load(widget.bytes);
     }
@@ -114,16 +147,37 @@ class _PixelStageState extends State<PixelStage>
   }
 
   void _onTick(Duration elapsed) {
-    final dt = (elapsed - _lastTick).inMicroseconds / 1000000;
+    final dt = ((elapsed - _lastTick).inMicroseconds / 1000000).clamp(
+      0.0,
+      0.05,
+    );
     _lastTick = elapsed;
+    if (widget.pose != _shown) {
+      _from = _shown;
+      _shown = widget.pose;
+      _blend = 0;
+      _flourish = 1;
+    }
+    if (_blend < 1) _blend = (_blend + dt / 0.42).clamp(0.0, 1.0);
+    if (_flourish > 0) _flourish = (_flourish - dt / 0.55).clamp(0.0, 1.0);
+    if (_nudge > 0) _nudge = (_nudge - dt / 0.38).clamp(0.0, 1.0);
     final frames = _frames;
     final image = frames == null
         ? null
         : frames.images[frames.indexAt(elapsed)];
+    _publish(image, _blink.advance(dt), elapsed.inMicroseconds / 1000000);
+  }
+
+  void _publish(ui.Image? image, double shut, double seconds) {
     _clock.tick(
-      elapsed.inMicroseconds / 1000000,
-      _blink.advance(dt),
-      image,
+      seconds: seconds,
+      shut: shut,
+      image: image,
+      pose: _shown,
+      from: _from,
+      blend: _blend,
+      flourish: _flourish,
+      nudge: _nudge,
     );
   }
 
@@ -133,7 +187,7 @@ class _PixelStageState extends State<PixelStage>
     _frames = null;
     _modelPath = null;
     // Drop the painted frame before its image is disposed.
-    _clock.tick(_clock.seconds, _clock.shut, null);
+    _publish(null, _clock.shut, _clock.seconds);
     previous?.dispose();
     // initState and didUpdateWidget both run before build, so clearing the
     // frames here is enough. setState in that window throws.
@@ -248,11 +302,8 @@ Future<String> _stageModel(Uint8List bytes) async {
 }
 
 class _StagePainter extends CustomPainter {
-  _StagePainter({
-    required this.clock,
-    required this.pose,
-    required this.model,
-  }) : super(repaint: clock);
+  _StagePainter({required this.clock, required this.pose, required this.model})
+    : super(repaint: clock);
 
   final _StageClock clock;
   final AvatarPose pose;
@@ -262,33 +313,77 @@ class _StagePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final seconds = clock.seconds;
     final image = clock.image;
-    final motion = avatarMotion(pose, seconds);
+    final smooth = _smooth(clock.blend);
+    final fromMotion = avatarMotion(clock.from, seconds);
+    final toMotion = avatarMotion(pose, seconds);
+    final motion = _mixMotion(fromMotion, toMotion, smooth);
     final side = math.min(size.width, size.height);
     if (side <= 0) return;
-    final origin = Offset(
-      (size.width - side) / 2,
-      (size.height - side) / 2,
-    );
+    final origin = Offset((size.width - side) / 2, (size.height - side) / 2);
     final center = origin + Offset(side / 2, side / 2);
     final cell = side / pixelGrid;
-    final accent = Color(0xFF000000 | avatarAccent(pose));
+    final accent =
+        Color.lerp(
+          Color(0xFF000000 | avatarAccent(clock.from)),
+          Color(0xFF000000 | avatarAccent(pose)),
+          smooth,
+        ) ??
+        Color(0xFF000000 | avatarAccent(pose));
 
-    canvas.drawCircle(center, side / 2, Paint()..color = const Color(0xFF000000));
+    canvas.drawCircle(
+      center,
+      side / 2 + 8,
+      Paint()
+        ..color = const Color(0x551877F2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+    );
+    canvas.drawCircle(
+      center,
+      side / 2,
+      Paint()..color = const Color(0xFF000000),
+    );
 
     final bezel = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(4, side * 0.018)
-      ..color = const Color(0xFF140F22);
+      ..strokeWidth = math.max(4, side * 0.02)
+      ..color = const Color(0xFF1877F2);
+    final bezelRect = Rect.fromCircle(
+      center: center,
+      radius: side / 2 - bezel.strokeWidth,
+    );
     canvas.drawCircle(center, side / 2 - bezel.strokeWidth, bezel);
+    canvas.drawArc(
+      bezelRect,
+      math.pi * 1.15,
+      math.pi * 0.5,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(2, side * 0.008)
+        ..strokeCap = StrokeCap.round
+        ..color = const Color(0x99FFFFFF),
+    );
 
-    if (pose == AvatarPose.thinking) {
+    if (clock.flourish > 0.02) {
+      canvas.drawCircle(
+        center,
+        side * (0.18 + 0.34 * (1 - clock.flourish)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = math.max(2, side * 0.012)
+          ..color = accent.withValues(alpha: clock.flourish.clamp(0.0, 0.9)),
+      );
+    }
+
+    final thinking = _poseWeight(AvatarPose.thinking, smooth);
+    if (thinking > 0.04) {
       final sweep = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = bezel.strokeWidth
         ..strokeCap = StrokeCap.butt
-        ..color = accent;
+        ..color = accent.withValues(alpha: thinking);
       canvas.drawArc(
-        Rect.fromCircle(center: center, radius: side / 2 - bezel.strokeWidth),
+        bezelRect,
         (seconds * 0.7) % 1 * math.pi * 2,
         1.15,
         false,
@@ -297,10 +392,18 @@ class _StagePainter extends CustomPainter {
     }
 
     canvas.save();
-    canvas.clipPath(Path()..addOval(Rect.fromCircle(center: center, radius: side / 2 - 1)));
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: center, radius: side / 2 - 1)),
+    );
     canvas.translate(center.dx, center.dy);
     canvas.translate(motion.lean * cell, motion.bob * cell);
-    canvas.scale(motion.scale);
+    final bounce = _bounceScale(clock.nudge);
+    final blink = 1 - 0.045 * clock.shut.clamp(0.0, 1.0);
+    final pop = 1 + 0.04 * math.sin(clock.flourish * math.pi);
+    canvas.scale(
+      motion.scale * bounce * pop,
+      motion.scale * bounce * pop * blink,
+    );
     canvas.translate(-side / 2, -side / 2);
 
     if (!model && image != null) {
@@ -317,25 +420,39 @@ class _StagePainter extends CustomPainter {
       _mark(canvas, cell, accent);
     }
 
-    if (pose == AvatarPose.listening || pose == AvatarPose.speaking) {
-      final speed = pose == AvatarPose.listening ? 0.9 : 0.6;
-      _rings(canvas, Offset(side / 2, side / 2), cell, speed, accent);
+    final listening = _poseWeight(AvatarPose.listening, smooth);
+    final speaking = _poseWeight(AvatarPose.speaking, smooth);
+    final ringStrength = math.max(listening, speaking);
+    if (ringStrength > 0.04) {
+      final speed = listening >= speaking ? 0.9 : 0.6;
+      _rings(
+        canvas,
+        Offset(side / 2, side / 2),
+        cell,
+        speed,
+        accent,
+        ringStrength,
+      );
     }
-    if (pose == AvatarPose.thinking) {
-      _dots(canvas, Offset(side * 0.70, side * 0.34), cell, accent);
+    if (thinking > 0.04) {
+      _dots(canvas, Offset(side * 0.70, side * 0.34), cell, accent, thinking);
     }
     canvas.restore();
 
     // The meter is an overlay on the bezel, not part of the bobbing sprite.
-    if (pose == AvatarPose.listening) {
+    if (listening > 0.04) {
       canvas.save();
       canvas.translate(origin.dx, origin.dy);
-      canvas.clipPath(
-        Path()..addOval(Rect.fromLTWH(0, 0, side, side)),
-      );
-      _meter(canvas, side, cell, accent);
+      canvas.clipPath(Path()..addOval(Rect.fromLTWH(0, 0, side, side)));
+      _meter(canvas, side, cell, accent, listening);
       canvas.restore();
     }
+  }
+
+  double _poseWeight(AvatarPose target, double smooth) {
+    final at = pose == target ? smooth : 0.0;
+    final was = clock.from == target ? 1 - smooth : 0.0;
+    return math.max(at, was);
   }
 
   void _grid(Canvas canvas, double side, double cell) {
@@ -364,7 +481,12 @@ class _StagePainter extends CustomPainter {
         final corner = (x < 2 || x >= width - 2) && (y < 2 || y >= height - 2);
         if (corner) continue;
         canvas.drawRect(
-          Rect.fromLTWH((left + x) * cell, (top + y) * cell, cell + 0.2, cell + 0.2),
+          Rect.fromLTWH(
+            (left + x) * cell,
+            (top + y) * cell,
+            cell + 0.2,
+            cell + 0.2,
+          ),
           body,
         );
       }
@@ -375,15 +497,27 @@ class _StagePainter extends CustomPainter {
     );
     if (clock.shut < 0.65) {
       final eye = Paint()..color = const Color(0xFFF2EFFF);
-      canvas.drawRect(Rect.fromLTWH(28 * cell, 26 * cell, 2 * cell, 2 * cell), eye);
-      canvas.drawRect(Rect.fromLTWH(34 * cell, 26 * cell, 2 * cell, 2 * cell), eye);
+      canvas.drawRect(
+        Rect.fromLTWH(28 * cell, 26 * cell, 2 * cell, 2 * cell),
+        eye,
+      );
+      canvas.drawRect(
+        Rect.fromLTWH(34 * cell, 26 * cell, 2 * cell, 2 * cell),
+        eye,
+      );
     }
     final mouth = Paint()..color = const Color(0xFFF2EFFF);
     switch (pose) {
       case AvatarPose.listening:
-        canvas.drawRect(Rect.fromLTWH(31 * cell, 33 * cell, 2 * cell, 2 * cell), mouth);
+        canvas.drawRect(
+          Rect.fromLTWH(31 * cell, 33 * cell, 2 * cell, 2 * cell),
+          mouth,
+        );
       case AvatarPose.thinking:
-        canvas.drawRect(Rect.fromLTWH(30 * cell, 34 * cell, 4 * cell, cell), mouth);
+        canvas.drawRect(
+          Rect.fromLTWH(30 * cell, 34 * cell, 4 * cell, cell),
+          mouth,
+        );
       case AvatarPose.speaking:
         final open = 2 + (0.5 + 0.5 * math.sin(clock.seconds * 8));
         canvas.drawRect(
@@ -391,20 +525,33 @@ class _StagePainter extends CustomPainter {
           mouth,
         );
       case AvatarPose.error:
-        canvas.drawRect(Rect.fromLTWH(29 * cell, 34 * cell, 6 * cell, cell), mouth);
+        canvas.drawRect(
+          Rect.fromLTWH(29 * cell, 34 * cell, 6 * cell, cell),
+          mouth,
+        );
       case AvatarPose.idle:
-        canvas.drawRect(Rect.fromLTWH(30 * cell, 34 * cell, 4 * cell, cell), mouth);
+        canvas.drawRect(
+          Rect.fromLTWH(30 * cell, 34 * cell, 4 * cell, cell),
+          mouth,
+        );
     }
   }
 
-  void _rings(Canvas canvas, Offset at, double cell, double speed, Color color) {
+  void _rings(
+    Canvas canvas,
+    Offset at,
+    double cell,
+    double speed,
+    Color color,
+    double strength,
+  ) {
     for (var k = 0; k < 2; k++) {
       final phase = (clock.seconds * speed + k * 0.5) % 1.0;
       final cells = 20 + phase * 11;
       final radius = cells * cell;
-      final fade = (1 - phase) * 0.75;
+      final fade = (1 - phase) * 0.75 * strength;
       final paint = Paint()
-        ..color = color.withValues(alpha: fade.clamp(0.08, 0.9));
+        ..color = color.withValues(alpha: fade.clamp(0.0, 0.9));
       // muse_pixel.c uses about 2.2 dots per cell of radius.
       final dots = math.max(12, (cells * 2.2).round());
       for (var i = 0; i < dots; i++) {
@@ -421,10 +568,18 @@ class _StagePainter extends CustomPainter {
     }
   }
 
-  void _dots(Canvas canvas, Offset at, double cell, Color accent) {
+  void _dots(
+    Canvas canvas,
+    Offset at,
+    double cell,
+    Color accent,
+    double strength,
+  ) {
     for (final dot in thoughtDots(clock.seconds)) {
       final paint = Paint()
-        ..color = dot.active ? accent : accent.withValues(alpha: 0.45);
+        ..color = accent.withValues(
+          alpha: (dot.active ? 1.0 : 0.45) * strength,
+        );
       canvas.drawRect(
         Rect.fromLTWH(
           at.dx + dot.dx * cell,
@@ -437,7 +592,13 @@ class _StagePainter extends CustomPainter {
     }
   }
 
-  void _meter(Canvas canvas, double side, double cell, Color accent) {
+  void _meter(
+    Canvas canvas,
+    double side,
+    double cell,
+    Color accent,
+    double strength,
+  ) {
     // No mic amplitude tap. A slow pulse keeps the centred meter alive
     // while the pose is listening, which is when the board shows it.
     final level = (0.35 + 0.4 * math.sin(clock.seconds * 6)).clamp(0.0, 1.0);
@@ -447,7 +608,9 @@ class _StagePainter extends CustomPainter {
     for (var i = 0; i < meterSegments; i++) {
       final on = meterSegmentOn(i, level);
       final paint = Paint()
-        ..color = on ? accent : const Color(0xFF1D1733);
+        ..color = (on ? accent : const Color(0xFF1D1733)).withValues(
+          alpha: on ? strength : 0.35 * strength,
+        );
       canvas.drawRect(
         Rect.fromLTWH(side * 0.19 + i * seg, y, seg * 0.72, math.max(3, cell)),
         paint,
@@ -461,4 +624,29 @@ class _StagePainter extends CustomPainter {
         oldDelegate.model != model ||
         oldDelegate.clock != clock;
   }
+}
+
+double _smooth(double t) {
+  final x = t.clamp(0.0, 1.0);
+  return x * x * (3 - 2 * x);
+}
+
+AvatarMotion _mixMotion(AvatarMotion from, AvatarMotion to, double t) {
+  return AvatarMotion(
+    bob: from.bob + (to.bob - from.bob) * t,
+    lean: from.lean + (to.lean - from.lean) * t,
+    scale: from.scale + (to.scale - from.scale) * t,
+    rings: t >= 0.5 ? to.rings : from.rings,
+    ringPhase: to.ringPhase,
+  );
+}
+
+/// Press scale: dip, then a small overshoot, then rest. [nudge] is 1 at
+/// the press and falls to 0.
+double _bounceScale(double nudge) {
+  final t = (1 - nudge).clamp(0.0, 1.0);
+  if (nudge <= 0) return 1;
+  if (t < 0.35) return 1 - 0.07 * (t / 0.35);
+  if (t < 0.7) return 0.93 + 0.1 * ((t - 0.35) / 0.35);
+  return 1.03 - 0.03 * ((t - 0.7) / 0.3);
 }

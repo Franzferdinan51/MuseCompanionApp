@@ -27,6 +27,7 @@ import 'package:muse_companion/src/gadget/phone_actions.dart';
 import '../app/avatar_motion.dart';
 import '../app/chat.dart';
 import '../src/gadget/service.dart';
+import 'muse_theme.dart';
 import 'scope.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -74,14 +75,16 @@ class _ChatScreenState extends State<ChatScreen> {
     await _post(text);
   }
 
-  Future<void> _post(String text,
-      [List<ChatAttachment> attachments = const []]) async {
+  Future<void> _post(
+    String text, [
+    List<ChatAttachment> attachments = const [],
+  ]) async {
     final scope = AppScope.of(context);
     _controller.clear();
     final shown = text.isEmpty
         ? (attachments.any((item) => item.mimeType.startsWith('audio/'))
-            ? 'Voice note'
-            : 'Photo')
+              ? 'Voice note'
+              : 'Photo')
         : text;
     final id = scope.chat.addSending(shown);
     _scrollToEnd();
@@ -92,7 +95,9 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       final error = result['error'];
       scope.chat.markFailed(
-          id, error is String && error.isNotEmpty ? error : 'send failed');
+        id,
+        error is String && error.isNotEmpty ? error : 'send failed',
+      );
     }
     _scrollToEnd();
   }
@@ -152,16 +157,13 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final jpeg = await scope.phone.captureJpeg();
       final note = _controller.text.trim();
-      await _post(
-        note.isEmpty ? 'What do you see?' : note,
-        [
-          ChatAttachment(
-            mimeType: 'image/jpeg',
-            filename: 'camera.jpg',
-            bytes: jpeg,
-          ),
-        ],
-      );
+      await _post(note.isEmpty ? 'What do you see?' : note, [
+        ChatAttachment(
+          mimeType: 'image/jpeg',
+          filename: 'camera.jpg',
+          bytes: jpeg,
+        ),
+      ]);
     } on PhoneActionException catch (e) {
       if (mounted) _showError(e.message);
     } finally {
@@ -170,7 +172,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _scrollToEnd() {
@@ -187,56 +191,53 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final scope = AppScope.of(context);
     final agent = scope.service.agentName;
-    return Scaffold(
+    return MusePage(
       appBar: AppBar(
         title: Text(agent == null ? 'Message Muse' : 'Message $agent'),
-        backgroundColor: theme.colorScheme.surface,
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            if (!_ready) _OfflineBanner(connection: _connection),
-            if (_listening || scope.chat.activity.isNotEmpty)
-              _ActivityBanner(
-                text: _listening
-                    ? 'Listening… release to send'
-                    : scope.chat.activity,
-              ),
-            Expanded(
-              child: StreamBuilder<void>(
-                stream: scope.chat.stream,
-                builder: (context, _) {
-                  final messages = scope.chat.messages;
-                  if (messages.isEmpty) {
-                    return _EmptyHint(ready: _ready);
-                  }
-                  return ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    itemCount: messages.length,
-                    itemBuilder: (context, i) =>
-                        _Bubble(message: messages[i]),
-                  );
-                },
-              ),
+      body: Column(
+        children: [
+          if (!_ready) _OfflineBanner(connection: _connection),
+          if (_listening || scope.chat.activity.isNotEmpty)
+            _ActivityBanner(
+              text: _listening
+                  ? 'Listening… release to send'
+                  : scope.chat.activity,
             ),
-            _Composer(
-              controller: _controller,
-              ready: _ready,
-              listening: _listening,
-              capturing: _capturing,
-              connection: _connection,
-              onSend: _send,
-              onListenStart: _startVoice,
-              onListenEnd: _stopVoice,
-              onCapture: _capture,
+          Expanded(
+            child: StreamBuilder<void>(
+              stream: scope.chat.stream,
+              builder: (context, _) {
+                final messages = scope.chat.messages;
+                if (messages.isEmpty) {
+                  return _EmptyHint(ready: _ready);
+                }
+                return ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  itemCount: messages.length,
+                  itemBuilder: (context, i) => _Bubble(message: messages[i]),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+          _Composer(
+            controller: _controller,
+            ready: _ready,
+            listening: _listening,
+            capturing: _capturing,
+            connection: _connection,
+            onSend: _send,
+            onListenStart: _startVoice,
+            onListenEnd: _stopVoice,
+            onCapture: _capture,
+          ),
+        ],
       ),
     );
   }
@@ -251,9 +252,12 @@ class _OfflineBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final text = switch (connection) {
-      ConnectionState.unpaired => 'Not paired — messages will fail until you pair.',
-      ConnectionState.connecting => 'Connecting — messages send once registered.',
-      ConnectionState.waiting => 'Link down — messages send when it reconnects.',
+      ConnectionState.unpaired =>
+        'Not paired — messages will fail until you pair.',
+      ConnectionState.connecting =>
+        'Connecting — messages send once registered.',
+      ConnectionState.waiting =>
+        'Link down — messages send when it reconnects.',
       ConnectionState.stopped => 'Stopped — messages cannot send.',
       ConnectionState.connected => 'Registering — one moment…',
     };
@@ -263,8 +267,9 @@ class _OfflineBanner extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHighest,
       child: Text(
         text,
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.outline),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.outline,
+        ),
       ),
     );
   }
@@ -284,16 +289,20 @@ class _EmptyHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.chat_bubble_outline,
-                size: 64, color: theme.colorScheme.outline),
+            Icon(
+              Icons.chat_bubble_outline,
+              size: 64,
+              color: theme.colorScheme.outline,
+            ),
             const SizedBox(height: 12),
             Text(
               ready
                   ? 'Say hello, hold the mic, or show the camera. Replies show up here.'
                   : 'Messages you send appear here with their delivery state.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.outline),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
             ),
           ],
         ),
@@ -313,42 +322,71 @@ class _Bubble extends StatelessWidget {
     final time =
         '${message.sentAt.hour.toString().padLeft(2, '0')}:${message.sentAt.minute.toString().padLeft(2, '0')}';
     final mine = message.role == ChatRole.user;
+    final failed = message.status == ChatStatus.failed;
+    final ink = failed
+        ? theme.colorScheme.onErrorContainer
+        : mine
+        ? Colors.white
+        : theme.colorScheme.onSurface;
+    final meta = mine && !failed
+        ? Colors.white.withValues(alpha: 0.78)
+        : failed
+        ? theme.colorScheme.onErrorContainer
+        : theme.colorScheme.outline;
+    final fill = failed
+        ? theme.colorScheme.errorContainer
+        : mine
+        ? theme.colorScheme.primary
+        : (theme.brightness == Brightness.dark
+              ? const Color(0xFF14305A)
+              : Colors.white);
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.78,
         ),
         decoration: BoxDecoration(
-          color: message.status == ChatStatus.failed
-              ? theme.colorScheme.errorContainer
-              : mine
-                  ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.lerp(fill, Colors.white, mine ? 0.22 : 0.08)!,
+              fill,
+              Color.lerp(fill, museBlueDeep, 0.28)!,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: mine ? 0.34 : 0.18),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: museBlue.withValues(alpha: 0.18),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         child: Column(
-          crossAxisAlignment:
-              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: mine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               message.text.isEmpty && message.streaming ? '…' : message.text,
-              style: theme.textTheme.bodyMedium,
+              style: theme.textTheme.bodyMedium?.copyWith(color: ink),
             ),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  message.error.isNotEmpty
-                      ? '${message.error} · $time'
-                      : time,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.outline),
+                  message.error.isNotEmpty ? '${message.error} · $time' : time,
+                  style: theme.textTheme.labelSmall?.copyWith(color: meta),
                 ),
                 const SizedBox(width: 4),
                 _StatusIcon(status: message.status),
@@ -370,16 +408,24 @@ class _StatusIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return switch (status) {
-      ChatStatus.sent => Icon(Icons.done_all,
-          size: 14, color: theme.colorScheme.primary),
-      ChatStatus.failed => Icon(Icons.error_outline,
-          size: 14, color: theme.colorScheme.error),
+      ChatStatus.sent => Icon(
+        Icons.done_all,
+        size: 14,
+        color: theme.colorScheme.primary,
+      ),
+      ChatStatus.failed => Icon(
+        Icons.error_outline,
+        size: 14,
+        color: theme.colorScheme.error,
+      ),
       ChatStatus.sending => SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(
-              strokeWidth: 2, color: theme.colorScheme.outline),
+        width: 12,
+        height: 12,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: theme.colorScheme.outline,
         ),
+      ),
     };
   }
 }
@@ -432,8 +478,7 @@ class _Composer extends StatelessWidget {
         : switch (connection) {
             ConnectionState.unpaired => 'Pair first to message…',
             ConnectionState.connecting ||
-            ConnectionState.waiting =>
-              'Waiting for the link…',
+            ConnectionState.waiting => 'Waiting for the link…',
             _ => 'Unavailable right now…',
           };
     return Padding(
@@ -478,7 +523,9 @@ class _Composer extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
             ),
           ),
@@ -490,8 +537,7 @@ class _Composer extends StatelessWidget {
             ),
             child: IconButton(
               tooltip: 'Send',
-              icon: Icon(Icons.send,
-                  color: theme.colorScheme.onPrimary),
+              icon: Icon(Icons.send, color: theme.colorScheme.onPrimary),
               onPressed: onSend,
             ),
           ),
