@@ -21,6 +21,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
 
 import '../app/model.dart';
+import 'pixel_stage.dart';
 import '../src/gadget/service.dart';
 import 'scope.dart';
 
@@ -188,25 +189,17 @@ class _Preview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bytes = presentation.character;
-    final theme = Theme.of(context);
-    Widget child;
-    if (bytes == null) {
-      child = Icon(Icons.image_outlined,
-          size: 72, color: theme.colorScheme.outline);
-    } else if (presentation.characterIsModel) {
-      child = Icon(Icons.view_in_ar_outlined,
-          size: 72, color: theme.colorScheme.primary);
-    } else {
-      child = Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true);
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: 180,
-        height: 180,
-        color: theme.colorScheme.surfaceContainerHighest,
-        child: child,
+    return ClipOval(
+      child: ColoredBox(
+        color: const Color(0xFF000000),
+        child: SizedBox(
+          width: 180,
+          height: 180,
+          child: PixelStage(
+            pose: presentation.pose,
+            bytes: presentation.character,
+          ),
+        ),
       ),
     );
   }

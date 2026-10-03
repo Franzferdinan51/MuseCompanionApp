@@ -12,32 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// The primary companion surface: name + battery header, a centered
-// full-color character image, status lines below it, and a bottom bar
-// showing connection state with a settings affordance. Layout mirrors
-// muse-pocket's defined display (see muse-pocket README "What appears on
-// the screen"), rendered at the phone's resolution in full color.
+// The primary companion surface: name + battery header, the pixel avatar
+// on a black round stage, captions below it, and a bottom bar showing
+// connection state. The stage follows the Waveshare screen: a 64x64
+// portrait, state word, and the idle / listening / thinking / speaking
+// motion from muse_pixel.c.
 
 import 'dart:async';
-import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide ConnectionState;
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:model_viewer_plus/model_viewer_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app/avatar_motion.dart';
 import '../app/captions.dart';
 import '../app/model.dart';
+import '../app/pixel_avatar.dart';
 import '../src/gadget/chat_events.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import 'chat_screen.dart';
 import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
+import 'pixel_stage.dart';
 import 'scope.dart';
 import 'settings_screen.dart';
 
@@ -270,25 +267,8 @@ class _Character extends StatefulWidget {
   State<_Character> createState() => _CharacterState();
 }
 
-class _CharacterState extends State<_Character>
-    with SingleTickerProviderStateMixin {
-  late final Ticker _ticker;
-  Duration _elapsed = Duration.zero;
+class _CharacterState extends State<_Character> {
   bool _holding = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = createTicker((elapsed) {
-      if (mounted) setState(() => _elapsed = elapsed);
-    })..start();
-  }
-
-  @override
-  void dispose() {
-    _ticker.dispose();
-    super.dispose();
-  }
 
   Future<void> _holdStart() async {
     if (_holding) return;
@@ -357,236 +337,44 @@ class _CharacterState extends State<_Character>
     final theme = Theme.of(context);
     final presentation = widget.presentation;
     final bytes = presentation.character;
-    final motion = avatarMotion(
-      presentation.pose,
-      _elapsed.inMicroseconds / 1000000,
-    );
-    // A square canvas sized to the available space: phones vary, so the
-    // character fills whatever the layout offers rather than a fixed
-    // 480x480 box. The portrait itself moves; the rings sit behind it.
-    return Center(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          var side = constraints.maxWidth;
-          if (constraints.maxHeight < side) side = constraints.maxHeight;
-          if (side <= 0 || side == double.infinity) side = 320;
-          final portrait = ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Container(
-              color: theme.colorScheme.surfaceContainerHighest,
-              child: bytes == null
-                  ? _Placeholder(
-                      connected: presentation.connection ==
-                          ConnectionState.connected)
-                  : _CharacterImage(bytes: bytes),
-            ),
-          );
-          return Listener(
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: (_) => _holdStart(),
-            onPointerUp: (_) => _holdEnd(),
-            onPointerCancel: (_) => _holdEnd(),
-            child: SizedBox(
-              width: side,
-              height: side,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (motion.rings ||
-                      presentation.pose == AvatarPose.thinking)
-                    CustomPaint(
-                      size: Size.square(side),
-                      painter: _RingPainter(
-                        phase: presentation.pose == AvatarPose.thinking
-                            ? (_elapsed.inMicroseconds / 1000000 * 0.7) % 1
-                            : motion.ringPhase,
-                        color: theme.colorScheme.primary,
-                        arc: presentation.pose == AvatarPose.thinking,
-                      ),
-                    ),
-                  Transform.translate(
-                    offset: Offset(motion.lean * 8, motion.bob * 8),
-                    child: Transform.scale(
-                      scale: motion.scale,
-                      child: SizedBox(
-                        width: side,
-                        height: side,
-                        child: portrait,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _RingPainter extends CustomPainter {
-  const _RingPainter({
-    required this.phase,
-    required this.color,
-    required this.arc,
-  });
-
-  final double phase;
-  final Color color;
-  final bool arc;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.shortestSide * 0.46;
-    if (arc) {
-      // Thinking on the Waveshare screen is a ring that travels as a segment.
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..color = color.withValues(alpha: 0.8);
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius * 0.92),
-        phase * 6.283185307179586,
-        1.15,
-        false,
-        paint,
-      );
-      return;
-    }
-    // Listening and speaking: dotted rings that expand and fade.
-    for (var i = 0; i < 2; i++) {
-      final t = (phase + i * 0.5) % 1;
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = color.withValues(alpha: (1 - t) * 0.55);
-      final ring = radius * (0.72 + t * 0.28);
-      const dots = 18;
-      for (var d = 0; d < dots; d++) {
-        final angle = (d / dots) * 6.283185307179586;
-        canvas.drawCircle(
-          Offset(center.dx + ring * math.cos(angle),
-              center.dy + ring * math.sin(angle)),
-          2.2,
-          paint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RingPainter oldDelegate) =>
-      oldDelegate.phase != phase ||
-      oldDelegate.color != color ||
-      oldDelegate.arc != arc;
-}
-
-class _Placeholder extends StatelessWidget {
-  const _Placeholder({required this.connected});
-
-  final bool connected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
+    final connected = presentation.connection == ConnectionState.connected;
+    final accent = Color(0xFF000000 | avatarAccent(presentation.pose));
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => _holdStart(),
+      onPointerUp: (_) => _holdEnd(),
+      onPointerCancel: (_) => _holdEnd(),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.image_outlined,
-              size: 96, color: theme.colorScheme.outline),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              connected
-                  ? 'Asking your Muse for a character…'
-                  : 'Waiting for character',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.outline),
+          Text(
+            avatarStateLabel(presentation.pose),
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: accent,
+              letterSpacing: 2,
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.w600,
             ),
           ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: PixelStage(pose: presentation.pose, bytes: bytes),
+          ),
+          if (bytes == null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+              child: Text(
+                connected
+                    ? 'Asking your Muse for a character…'
+                    : 'Waiting for character',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ),
         ],
       ),
     );
   }
-}
-
-class _CharacterImage extends StatefulWidget {
-  const _CharacterImage({required this.bytes}) : super();
-
-  final Uint8List bytes;
-
-  @override
-  State<_CharacterImage> createState() => _CharacterImageState();
-}
-
-class _CharacterImageState extends State<_CharacterImage> {
-  /// Staging future for the GLB branch; null when showing a 2D image.
-  Future<String>? _modelPath;
-
-  @override
-  void initState() {
-    super.initState();
-    _maybeStageModel();
-  }
-
-  @override
-  void didUpdateWidget(_CharacterImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(widget.bytes, oldWidget.bytes)) {
-      _maybeStageModel();
-    }
-  }
-
-  void _maybeStageModel() {
-    _modelPath =
-        isGlbModel(widget.bytes) ? _stageModel(widget.bytes) : null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final modelPath = _modelPath;
-    // The 2D path is byte-for-byte the historical behavior.
-    if (modelPath == null) {
-      return Image.memory(
-        widget.bytes,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        gaplessPlayback: true,
-      );
-    }
-    return FutureBuilder<String>(
-      future: modelPath,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return ModelViewer(
-          src: 'file://${snapshot.data}',
-          autoRotate: true,
-          disableZoom: true,
-          backgroundColor: Colors.transparent,
-        );
-      },
-    );
-  }
-}
-
-/// Write GLB [bytes] to a temp file for the embedded 3D viewer.
-///
-/// A fixed name is fine: one avatar is shown at a time, and overwriting
-/// keeps the temp directory from filling with stale models.
-Future<String> _stageModel(Uint8List bytes) async {
-  final dir = await getTemporaryDirectory();
-  final file = File('${dir.path}/muse_avatar.glb');
-  await file.writeAsBytes(bytes);
-  return file.path;
 }
 
 class _StatusLines extends StatelessWidget {
@@ -609,8 +397,12 @@ class _StatusLines extends StatelessWidget {
               child: Text(
                 line,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge
-                    ?.copyWith(fontWeight: FontWeight.w500),
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: const Color(0xFF000000 | avatarCaptionRgb),
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w500,
+                  height: 1.2,
+                ),
               ),
             ),
         ],

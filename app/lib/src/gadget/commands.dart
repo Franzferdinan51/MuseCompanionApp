@@ -55,16 +55,17 @@ Map<String, Object?> companionCommandSpecs({
 
   final drawUrlDescription =
       'Download a full-color image and draw it on the ${screenWidth}x$screenHeight '
-      'companion display. Takes an http:// or https:// URL of a baseline '
-      '(not progressive) JPEG, PNG, WebP or GIF; any resolution works and '
-      'the device scales and crops it to fill the character canvas while '
-      'keeping the subject centered, and a JPEG as large as the screen '
-      'looks best. Plain http:// uses the least device memory. Replies '
-      'when the image is drawn and cached on the device. The character '
-      'stays visible until replaced or cleared with '
-      'display.show_animation, and survives app restarts. Prefer a square '
-      'portrait of the character on a clean background; photographic '
-      'detail and color are fully supported.';
+      'companion display as a 64 by 64 pixel avatar, the way the Waveshare '
+      'screen scales its pixel character. Takes an http:// or https:// URL '
+      'of a baseline (not progressive) JPEG, PNG, WebP or GIF. Any '
+      'resolution works: the phone cover-crops a square around the subject '
+      'and draws it with hard pixels on a black round stage, then animates '
+      'idle, listening, thinking and speaking. Prefer your own Muse redrawn '
+      'as square pixel art on a black background, about 64 pixels wide. '
+      'Plain http:// uses the least device memory. Replies when the image '
+      'is drawn and cached on the device. The character stays visible until '
+      'replaced or cleared with display.show_animation, and survives app '
+      'restarts.';
 
   final statusDescription =
       'Update the caption below the character. The character remains '
@@ -635,11 +636,13 @@ class CompanionExecutor {
 // `esp32/main/noise_control.cpp`), adapted to the full-color display.
 String companionIntroMessage() {
   return 'Initialize Muse Companion as my companion display and phone. '
-      'Send your own character image using display.draw_url, as a full-color '
-      'JPEG, PNG or WebP at any resolution, or an animated GIF or animated '
-      'WebP idle loop; photographic detail is fully supported. A GLB URL is '
-      'shown as a 3D avatar. The phone moves that portrait through idle, '
-      'listening, thinking and speaking, the way the Waveshare screen does. '
+      'Redraw your own Muse avatar as pixel art and send it with '
+      'display.draw_url: a full-color PNG, JPEG, WebP or GIF on a black '
+      'background, about 64 pixels wide. The phone draws that picture on '
+      'a 64 by 64 grid and moves it through idle, listening, thinking and '
+      'speaking, the way the Waveshare pixel avatar does. Do not send the '
+      'default gadget character. A GLB URL still displays, but the pixel '
+      'portrait is the one to send. '
       'Keep the character visible and set the caption with companion.set_status '
       'to your current activity. Use short plain text with Unicode and emoji '
       'where they help. Holding the character on the phone sends you a voice '

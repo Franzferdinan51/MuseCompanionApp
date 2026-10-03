@@ -39,7 +39,7 @@ import 'package:muse_companion/src/gadget/service.dart';
 import 'ui/companion_screen.dart';
 import 'ui/scope.dart';
 
-const String _appVersion = '0.2.2';
+const String _appVersion = '0.2.3';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

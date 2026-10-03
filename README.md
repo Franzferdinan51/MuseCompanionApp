@@ -16,10 +16,12 @@ same session code is what a later iOS or desktop port would use.
   gadget). Pairing is encrypted (protocol v5). After that the app keeps a
   Noise session with your Muse and can hold it in a foreground service.
 - **Shows your Muse's character.** `display.draw_url` accepts a full-color
-  JPEG, PNG, or WebP, an animated GIF or animated WebP, or a GLB. The last
-  image is cached on the phone. The portrait moves through idle, listening,
-  thinking, and speaking with the same timing as the Waveshare gadget
-  screen. The art is yours; the app does not substitute a stock character.
+  JPEG, PNG, or WebP, an animated GIF or animated WebP, or a GLB. The phone
+  cover-crops the picture onto a 64×64 grid and draws it with hard pixels
+  on a black round stage, the way the Waveshare screen scales its pixel
+  avatar. Idle, listening, thinking, and speaking use that screen's timing:
+  bob, rings, thought dots, and a listening meter. Captions sit under the
+  stage. The art is yours; the app does not substitute the stock character.
 - **Hold the character to talk.** Press and hold the portrait to record a
   voice note, then release to post it. The chat screen's mic does the same
   thing. This is a voice note in the Muse chat, not a phone call.
@@ -39,10 +41,11 @@ same session code is what a later iOS or desktop port would use.
 
 ## Status
 
-Version 0.2.2. The app pairs, keeps the link up, answers `link.invoke` and
+Version 0.2.3. The app pairs, keeps the link up, answers `link.invoke` and
 Hatch `device.invoke` (including a command that arrives on another stream or
-as bare JSON) with `link.result`, streams chat replies, draws and moves the
-character, and exposes voice, vision, and phone commands.
+as bare JSON) with `link.result`, streams chat replies, draws the Muse as a
+64×64 pixel avatar with Waveshare motion, and exposes voice, vision, and
+phone commands.
 
 ## Getting started
 

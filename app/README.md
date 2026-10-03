@@ -15,8 +15,9 @@ or desktop port would reuse.
 - **Pair and connect** over Bluetooth LE (pairing v5), then keep a Noise
   session to your Muse. The pairing screen is in the app.
 - **Show your Muse's character** from `display.draw_url` (JPEG, PNG, WebP,
-  animated GIF, animated WebP, or a GLB). The portrait bobs, leans, and
-  pulses through idle, listening, thinking, and speaking.
+  animated GIF, animated WebP, or a GLB). The picture is cover-cropped to
+  a 64×64 pixel sprite on a black round stage and moves through idle,
+  listening, thinking, and speaking the way the Waveshare avatar does.
 - **Hold the character to talk.** That posts a voice note. It does not place
   a phone call.
 - **Captions and speech.** Replies show under the character and are spoken.
