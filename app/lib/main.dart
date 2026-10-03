@@ -78,6 +78,15 @@ Future<void> main() async {
     if (!settings.loadIntroSent()) {
       await settings.saveIntroSent(true);
     }
+  } else {
+    // Fresh install: load the bundled Juno avatar as the default character.
+    try {
+      final data = await rootBundle.load('assets/juno-avatar.jpg');
+      presentation.applyCharacter(data.buffer.asUint8List());
+      debugPrint('[muse] loaded bundled Juno avatar as default');
+    } catch (e) {
+      debugPrint('[muse] could not load bundled avatar: $e');
+    }
   }
 
   final health = AppCompanionHealth(appVersion: _appVersion);
