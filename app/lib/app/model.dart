@@ -218,7 +218,7 @@ class CompanionSettings {
       value == 'front' ? 'front' : 'back';
 
   static int _captureInterval(Object? value) {
-    const allowed = [15, 30, 60, 120, 240];
+    const allowed = [60, 360, 720, 1440];
     if (value is int && allowed.contains(value)) return value;
     return 60;
   }

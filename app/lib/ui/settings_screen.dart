@@ -733,11 +733,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const SizedBox(height: 8),
                   SegmentedButton<int>(
                     segments: const [
-                      ButtonSegment(value: 15, label: Text('15m')),
-                      ButtonSegment(value: 30, label: Text('30m')),
-                      ButtonSegment(value: 60, label: Text('1h')),
-                      ButtonSegment(value: 120, label: Text('2h')),
-                      ButtonSegment(value: 240, label: Text('4h')),
+                      ButtonSegment(value: 60, label: Text('Hourly')),
+                      ButtonSegment(value: 360, label: Text('6 hr')),
+                      ButtonSegment(value: 720, label: Text('12 hr')),
+                      ButtonSegment(value: 1440, label: Text('Daily')),
                     ],
                     selected: {_settings.autoCaptureIntervalMinutes},
                     onSelectionChanged: (next) => _commit(
