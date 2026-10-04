@@ -659,27 +659,25 @@ class _BottomBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Row(
         children: [
-          Expanded(
-            child: MuseBubble(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  _StatusDot(state: state),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      status,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+          MuseBubble(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StatusDot(state: state),
+                const SizedBox(width: 8),
+                Text(
+                  status,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
-              ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
+          const Spacer(),
           const SizedBox(width: 8),
           if (state == ConnectionState.unpaired)
             IconButton(
