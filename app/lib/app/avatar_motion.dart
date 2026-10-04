@@ -65,27 +65,31 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
   final t = seconds;
   switch (pose) {
     case AvatarPose.listening:
+      // Lean in attentively, bob with anticipation
       return AvatarMotion(
-        bob: math.sin(t * 3) * 0.6,
-        lean: 0,
-        scale: 1,
+        bob: math.sin(t * 3.5) * 1.2,
+        lean: math.sin(t * 2) * 0.8,
+        scale: 1 + 0.03 * math.sin(t * 2.5),
         rings: true,
         ringPhase: (t * 0.9) % 1,
       );
     case AvatarPose.thinking:
+      // Sway side to side, deep in thought
       return AvatarMotion(
-        bob: math.sin(t * 2.4) * 0.8,
-        lean: math.sin(t * 1.3) * 1.2,
-        scale: 1,
+        bob: math.sin(t * 2.4) * 1.5,
+        lean: math.sin(t * 1.3) * 2.5,
+        scale: 1 + 0.02 * math.sin(t * 1.8),
         rings: false,
         ringPhase: 0,
       );
     case AvatarPose.speaking:
+      // Bounce energetically while talking
       final pulse = 0.5 + 0.5 * math.sin(t * 8);
+      final bounce = math.sin(t * 6) * 1.0;
       return AvatarMotion(
-        bob: math.sin(t * 5) * 0.6 - level * 1.5,
-        lean: 0,
-        scale: 1 + 0.045 * pulse,
+        bob: bounce - level * 1.5,
+        lean: math.sin(t * 3) * 1.0,
+        scale: 1 + 0.06 * pulse,
         rings: true,
         ringPhase: (t * 0.6) % 1,
       );
@@ -109,10 +113,11 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
         ringPhase: 0,
       );
     case AvatarPose.idle:
+      // Gentle sway, alive but relaxed
       return AvatarMotion(
-        bob: math.sin(t * 1.8) * 1.0,
-        lean: 0,
-        scale: 1 + 0.015 * math.sin(t * 1.2),
+        bob: math.sin(t * 1.8) * 1.5,
+        lean: math.sin(t * 0.9) * 1.0,
+        scale: 1 + 0.025 * math.sin(t * 1.2),
         rings: false,
         ringPhase: 0,
       );

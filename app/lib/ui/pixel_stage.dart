@@ -586,20 +586,22 @@ class _StagePainter extends CustomPainter {
         canvas.drawCircle(Offset(side / 2, side / 2), radius, wavePaint);
       }
     }
-    // Speaking: animated waveform bars with glow.
+    // Speaking: animated waveform bars centered at the bottom.
     if (speaking > 0.04) {
       const barCount = 9;
-      final barWidth = side * 0.055;
-      final baseY = side * 0.88;
+      final totalWidth = side * 0.5;
+      final barWidth = totalWidth / barCount;
+      final baseY = side * 0.82;
+      final startX = (side - totalWidth) / 2;
       for (var i = 0; i < barCount; i++) {
         final t = seconds * 8 + i * 0.7;
         final t2 = seconds * 5 - i * 0.5;
         final height = ((math.sin(t) * 0.5 + 0.5) * 0.7 +
                 (math.sin(t2) * 0.5 + 0.5) * 0.3) *
             side *
-            0.12 +
+            0.10 +
             side * 0.015;
-        final x = side / 2 + (i - barCount / 2 + 0.5) * barWidth * 1.4;
+        final x = startX + (i + 0.5) * barWidth;
         // Glow behind bar
         final glowPaint = Paint()
           ..color = accent.withValues(alpha: speaking * 0.3)
