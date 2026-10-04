@@ -143,6 +143,10 @@ class SettingsStore {
           _prefs.getString('${_settingsPrefix}lm_studio_url'),
       'lm_studio_model':
           _prefs.getString('${_settingsPrefix}lm_studio_model'),
+      'lm_studio_chat_model':
+          _prefs.getString('${_settingsPrefix}lm_studio_chat_model'),
+      'lm_studio_agent_model':
+          _prefs.getString('${_settingsPrefix}lm_studio_agent_model'),
       'system_one_enabled':
           _prefs.getBool('${_settingsPrefix}system_one_enabled') ?? false,
       'system_one_url':
@@ -208,6 +212,14 @@ class SettingsStore {
     await _prefs.setString(
       '${_settingsPrefix}lm_studio_model',
       settings.lmStudioModel,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_chat_model',
+      settings.lmStudioChatModel,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_agent_model',
+      settings.lmStudioAgentModel,
     );
     await _prefs.setBool(
       '${_settingsPrefix}system_one_enabled',

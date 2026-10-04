@@ -97,7 +97,7 @@ class _ChatScreenState extends State<ChatScreen> {
     scope.presentation.applyStatus('Asking local AI...');
     final service = LocalAiService(
       baseUrl: settings.lmStudioUrl,
-      model: settings.lmStudioModel,
+      model: settings.lmStudioAgentModel,
       phone: scope.phone,
       usbStorageEnabled: settings.usbStorageEnabled,
       usbSerialEnabled: settings.usbSerialEnabled,

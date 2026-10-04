@@ -867,7 +867,7 @@ class CompanionExecutor {
     this.usbSerialEnabled,
     this.lmStudioEnabled,
     this.lmStudioUrl,
-    this.lmStudioModel,
+    this.lmStudioAgentModel,
     this.systemOneEnabled,
     this.systemOneUrl,
   });
@@ -890,7 +890,7 @@ class CompanionExecutor {
   /// [lmStudioEnabled] returns false.
   final bool Function()? lmStudioEnabled;
   final String Function()? lmStudioUrl;
-  final String Function()? lmStudioModel;
+  final String Function()? lmStudioAgentModel;
 
   /// SystemOne tool routing. When [systemOneEnabled] returns true, the
   /// phone tool list is narrowed per task via [systemOneUrl] before
@@ -1174,7 +1174,7 @@ class CompanionExecutor {
     if (phoneResult is Map<String, Object?>) return phoneResult;
     final service = LocalAiService(
       baseUrl: lmStudioUrl?.call() ?? '',
-      model: lmStudioModel?.call() ?? '',
+      model: lmStudioAgentModel?.call() ?? '',
       phone: phoneResult as PhoneActions,
       usbStorageEnabled: usbStorageEnabled?.call() == true,
       usbSerialEnabled: usbSerialEnabled?.call() == true,

@@ -844,9 +844,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const SizedBox(height: 8),
                 _ModelSelector(
                   serverUrl: _settings.lmStudioUrl,
-                  selectedModel: _settings.lmStudioModel,
+                  label: 'Chat model',
+                  selectedModel: _settings.lmStudioChatModel,
                   onChanged: (v) => _commit(
-                    _settings.copyWith(lmStudioModel: v),
+                    _settings.copyWith(lmStudioChatModel: v),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _ModelSelector(
+                  serverUrl: _settings.lmStudioUrl,
+                  label: 'Agent model',
+                  selectedModel: _settings.lmStudioAgentModel,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioAgentModel: v),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1285,7 +1295,7 @@ class _TestLmStudioButtonState extends State<_TestLmStudioButton> {
     });
     final service = LocalAiService(
       baseUrl: widget.settings.lmStudioUrl,
-      model: widget.settings.lmStudioModel,
+      model: widget.settings.lmStudioAgentModel,
       phone: const PhoneBridge(),
       usbStorageEnabled: widget.settings.usbStorageEnabled,
       usbSerialEnabled: widget.settings.usbSerialEnabled,
@@ -1345,11 +1355,13 @@ class _ModelSelector extends StatefulWidget {
     required this.serverUrl,
     required this.selectedModel,
     required this.onChanged,
+    this.label = 'Model',
   });
 
   final String serverUrl;
   final String selectedModel;
   final ValueChanged<String> onChanged;
+  final String label;
 
   @override
   State<_ModelSelector> createState() => _ModelSelectorState();
@@ -1452,10 +1464,10 @@ class _ModelSelectorState extends State<_ModelSelector> {
     if (_textMode) {
       return TextFormField(
         controller: _textController,
-        decoration: const InputDecoration(
-          labelText: 'Model (optional)',
+        decoration: InputDecoration(
+          labelText: '${widget.label} (optional)',
           hintText: 'Server unreachable — type the model id manually',
-          border: OutlineInputBorder(),
+          border: const OutlineInputBorder(),
         ),
         onChanged: (v) => widget.onChanged(v.trim()),
       );
@@ -1491,9 +1503,9 @@ class _ModelSelectorState extends State<_ModelSelector> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 value: saved,
-                decoration: const InputDecoration(
-                  labelText: 'Model',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: widget.label,
+                  border: const OutlineInputBorder(),
                 ),
                 items: items,
                 onChanged: _loading

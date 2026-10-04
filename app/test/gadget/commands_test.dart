@@ -280,7 +280,7 @@ void main() {
         phone: phone,
         lmStudioEnabled: () => enabled,
         lmStudioUrl: () => 'http://127.0.0.1:1234',
-        lmStudioModel: () => '',
+        lmStudioAgentModel: () => '',
       );
       final blocked = await gated.run(
         'local_ai.run_task',

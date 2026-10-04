@@ -147,7 +147,7 @@ Future<void> main() async {
     usbSerialEnabled: () => presentation.settings.usbSerialEnabled,
     lmStudioEnabled: () => presentation.settings.lmStudioEnabled,
     lmStudioUrl: () => presentation.settings.lmStudioUrl,
-    lmStudioModel: () => presentation.settings.lmStudioModel,
+    lmStudioAgentModel: () => presentation.settings.lmStudioAgentModel,
     systemOneEnabled: () => presentation.settings.systemOneEnabled,
     systemOneUrl: () => presentation.settings.systemOneUrl,
   );
