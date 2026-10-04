@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:muse_companion/app/lmstudio_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('LocalAiService.pickForRole', () {
@@ -65,6 +69,63 @@ void main() {
         LocalAiService.pickForRole(ids, 'chat'),
         LocalAiService.pickForRole(ids, 'chat'),
       );
+    });
+  });
+
+  group('LocalAiService.resolveModel', () {
+    setUpAll(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    test('explicit id is used verbatim even when not in the loaded list',
+        () async {
+      // Unreachable URL: the explicit path must return before any fetch.
+      final result = await LocalAiService.resolveModel(
+        baseUrl: 'http://127.0.0.1:9',
+        explicit: 'some-unloaded-model-id',
+        role: 'agent',
+      );
+      expect(result, 'some-unloaded-model-id');
+    });
+
+    test('explicit id is trimmed', () async {
+      final result = await LocalAiService.resolveModel(
+        baseUrl: 'http://127.0.0.1:9',
+        explicit: '  my-model  ',
+        role: 'chat',
+      );
+      expect(result, 'my-model');
+    });
+
+    test('empty explicit auto-picks from the server list', () async {
+      final server = await HttpServer.bind('127.0.0.1', 0);
+      server.listen((req) {
+        req.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode({
+            'data': [
+              {'id': 'mimo-v2.6-distill-qwen-9b@q4_k_m'},
+              {'id': 'cloudflare_clef-flash'},
+            ],
+          }))
+          ..close();
+      });
+      try {
+        final baseUrl = 'http://127.0.0.1:${server.port}';
+        expect(
+          await LocalAiService.resolveModel(
+              baseUrl: baseUrl, explicit: '', role: 'agent'),
+          'cloudflare_clef-flash',
+        );
+        expect(
+          await LocalAiService.resolveModel(
+              baseUrl: baseUrl, explicit: '', role: 'chat'),
+          'mimo-v2.6-distill-qwen-9b@q4_k_m',
+        );
+      } finally {
+        await server.close();
+      }
     });
   });
 }
