@@ -36,7 +36,7 @@ import 'chat_screen.dart';
 import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
 import 'muse_theme.dart';
-import 'pixel_stage.dart';
+import 'avatar_video_stage.dart';
 import 'scope.dart';
 import 'settings_screen.dart';
 
@@ -567,7 +567,7 @@ class _CharacterState extends State<_Character> {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                PixelStage(
+                AvatarVideoStage(
                   pose: presentation.pose,
                   bytes: bytes,
                   bounceGeneration: _bounce,

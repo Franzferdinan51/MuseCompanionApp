@@ -35,6 +35,8 @@ dependencies:
   flutter_foreground_task: ^10.0.0
   # 3D avatar rendering (GLB models from the Muse).
   model_viewer_plus: ^1.10.0
+  # Video-clip avatar animation.
+  video_player: ^2.9.0
 
 dev_dependencies:
   flutter_test:
@@ -47,3 +49,5 @@ flutter:
   assets:
     - assets/brand/juno-logo-glossy.png
     - assets/brand/juno-bg-glossy.png
+    - assets/avatar/juno_typing.mp4
+    - assets/avatar/juno_orb.mp4
