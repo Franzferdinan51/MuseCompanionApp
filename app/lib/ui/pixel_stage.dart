@@ -519,67 +519,123 @@ class _StagePainter extends CustomPainter {
         ..strokeCap = StrokeCap.butt
         ..color = accent.withValues(alpha: thinking);
       canvas.drawArc(bezelRect, arc.start, arc.sweep, false, sweep);
-      // Orbiting ball like Muse's thinking indicator.
-      // A glowing ball circles the avatar while thinking.
-      final orbitRadius = side * 0.42;
-      final ballAngle = seconds * 2.5; // ~143 deg/s
-      final cx = side / 2 + math.cos(ballAngle) * orbitRadius;
-      final cy = side / 2 + math.sin(ballAngle) * orbitRadius;
-      final ballPaint = Paint()
-        ..color = accent.withValues(alpha: thinking)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-      canvas.drawCircle(Offset(cx, cy), cell * 1.2, ballPaint);
-      // Solid core
-      final corePaint = Paint()
-        ..color = accent.withValues(alpha: thinking);
-      canvas.drawCircle(Offset(cx, cy), cell * 0.6, corePaint);
+      // Orbiting balls like Muse's thinking indicator.
+      // Three glowing balls circle the avatar at different speeds/phases.
+      for (var b = 0; b < 3; b++) {
+        final orbitRadius = side * (0.38 + b * 0.04);
+        final ballAngle = seconds * (2.2 + b * 0.4) + b * 2.1;
+        final cx = side / 2 + math.cos(ballAngle) * orbitRadius;
+        final cy = side / 2 + math.sin(ballAngle) * orbitRadius;
+        // Trail
+        for (var t = 1; t <= 3; t++) {
+          final trailAngle = ballAngle - t * 0.15;
+          final tx = side / 2 + math.cos(trailAngle) * orbitRadius;
+          final ty = side / 2 + math.sin(trailAngle) * orbitRadius;
+          final trailPaint = Paint()
+            ..color = accent.withValues(alpha: thinking * (0.3 - t * 0.08));
+          canvas.drawCircle(Offset(tx, ty), cell * (0.8 - t * 0.15), trailPaint);
+        }
+        // Glow
+        final ballPaint = Paint()
+          ..color = accent.withValues(alpha: thinking)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+        canvas.drawCircle(Offset(cx, cy), cell * 1.4, ballPaint);
+        // Solid core
+        final corePaint = Paint()
+          ..color = Colors.white.withValues(alpha: thinking * 0.9);
+        canvas.drawCircle(Offset(cx, cy), cell * 0.5, corePaint);
+      }
     }
-    // Idle: gentle breathing pulse.
+    // Idle: breathing pulse with glow and subtle ring.
     final idleW = _poseWeight(AvatarPose.idle, smooth);
     if (idleW > 0.04) {
-      final breath = (math.sin(seconds * 1.5) + 1) / 2; // 0..1
-      final glowAlpha = idleW * (0.15 + breath * 0.15);
+      final breath = (math.sin(seconds * 1.8) + 1) / 2; // 0..1
+      final glowAlpha = idleW * (0.2 + breath * 0.25);
       final glowPaint = Paint()
         ..color = accent.withValues(alpha: glowAlpha)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+      final glowRadius = side * (0.32 + breath * 0.06);
       canvas.drawCircle(
-          Offset(side / 2, side / 2), side * 0.35, glowPaint);
+          Offset(side / 2, side / 2), glowRadius, glowPaint);
+      // Breathing ring
+      final ringPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = accent.withValues(alpha: idleW * (0.3 + breath * 0.3));
+      canvas.drawCircle(
+          Offset(side / 2, side / 2), side * (0.38 + breath * 0.02), ringPaint);
     }
-    // Listening: expanding sound-wave rings.
+    // Listening: expanding sound-wave rings with pulsing core.
     if (listening > 0.04) {
-      for (var i = 0; i < 3; i++) {
-        final phase = (seconds * 0.8 + i / 3) % 1.0;
-        final radius = side * (0.25 + phase * 0.25);
-        final alpha = listening * (1 - phase) * 0.5;
+      // Pulsing core
+      final pulse = (math.sin(seconds * 4) + 1) / 2;
+      final coreGlow = Paint()
+        ..color = accent.withValues(alpha: listening * (0.3 + pulse * 0.3))
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      canvas.drawCircle(
+          Offset(side / 2, side / 2), side * 0.28, coreGlow);
+      // Expanding waves
+      for (var i = 0; i < 4; i++) {
+        final phase = (seconds * 1.0 + i / 4) % 1.0;
+        final radius = side * (0.22 + phase * 0.3);
+        final alpha = listening * (1 - phase) * 0.7;
         final wavePaint = Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2
+          ..strokeWidth = 2.5 - phase * 1.5
           ..color = accent.withValues(alpha: alpha);
         canvas.drawCircle(Offset(side / 2, side / 2), radius, wavePaint);
       }
     }
-    // Speaking: animated waveform bars at the bottom.
+    // Speaking: animated waveform bars with glow.
     if (speaking > 0.04) {
-      const barCount = 7;
-      final barWidth = side * 0.06;
-      final baseY = side * 0.85;
+      const barCount = 9;
+      final barWidth = side * 0.055;
+      final baseY = side * 0.88;
       for (var i = 0; i < barCount; i++) {
-        final t = seconds * 6 + i * 0.8;
-        final height = (math.sin(t) * 0.5 + 0.5) * side * 0.08 + side * 0.02;
-        final x = side / 2 + (i - barCount / 2 + 0.5) * barWidth * 1.5;
-        final barPaint = Paint()
-          ..color = accent.withValues(alpha: speaking * 0.8);
+        final t = seconds * 8 + i * 0.7;
+        final t2 = seconds * 5 - i * 0.5;
+        final height = ((math.sin(t) * 0.5 + 0.5) * 0.7 +
+                (math.sin(t2) * 0.5 + 0.5) * 0.3) *
+            side *
+            0.12 +
+            side * 0.015;
+        final x = side / 2 + (i - barCount / 2 + 0.5) * barWidth * 1.4;
+        // Glow behind bar
+        final glowPaint = Paint()
+          ..color = accent.withValues(alpha: speaking * 0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
         canvas.drawRRect(
           RRect.fromRectAndRadius(
             Rect.fromCenter(
                 center: Offset(x, baseY - height / 2),
-                width: barWidth * 0.6,
+                width: barWidth * 0.7,
+                height: height),
+            const Radius.circular(3),
+          ),
+          glowPaint,
+        );
+        // Solid bar
+        final barPaint = Paint()
+          ..color = accent.withValues(alpha: speaking * 0.95);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(x, baseY - height / 2),
+                width: barWidth * 0.45,
                 height: height),
             const Radius.circular(2),
           ),
           barPaint,
         );
       }
+      // Speaking halo
+      final haloPulse = (math.sin(seconds * 6) + 1) / 2;
+      final haloPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = accent.withValues(alpha: speaking * (0.2 + haloPulse * 0.2));
+      canvas.drawCircle(Offset(side / 2, side / 2),
+          side * (0.36 + haloPulse * 0.02), haloPaint);
     } else if (listening > 0.04 && clock.listenProgress > 0.004) {
       final arc = listenBezelArc(clock.listenProgress);
       final ring = Paint()
