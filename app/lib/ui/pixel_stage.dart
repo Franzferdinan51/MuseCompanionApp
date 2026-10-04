@@ -533,6 +533,53 @@ class _StagePainter extends CustomPainter {
       final corePaint = Paint()
         ..color = accent.withValues(alpha: thinking);
       canvas.drawCircle(Offset(cx, cy), cell * 0.6, corePaint);
+    }
+    // Idle: gentle breathing pulse.
+    final idleW = _poseWeight(AvatarPose.idle, smooth);
+    if (idleW > 0.04) {
+      final breath = (math.sin(seconds * 1.5) + 1) / 2; // 0..1
+      final glowAlpha = idleW * (0.15 + breath * 0.15);
+      final glowPaint = Paint()
+        ..color = accent.withValues(alpha: glowAlpha)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      canvas.drawCircle(
+          Offset(side / 2, side / 2), side * 0.35, glowPaint);
+    }
+    // Listening: expanding sound-wave rings.
+    if (listening > 0.04) {
+      for (var i = 0; i < 3; i++) {
+        final phase = (seconds * 0.8 + i / 3) % 1.0;
+        final radius = side * (0.25 + phase * 0.25);
+        final alpha = listening * (1 - phase) * 0.5;
+        final wavePaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = accent.withValues(alpha: alpha);
+        canvas.drawCircle(Offset(side / 2, side / 2), radius, wavePaint);
+      }
+    }
+    // Speaking: animated waveform bars at the bottom.
+    if (speaking > 0.04) {
+      const barCount = 7;
+      final barWidth = side * 0.06;
+      final baseY = side * 0.85;
+      for (var i = 0; i < barCount; i++) {
+        final t = seconds * 6 + i * 0.8;
+        final height = (math.sin(t) * 0.5 + 0.5) * side * 0.08 + side * 0.02;
+        final x = side / 2 + (i - barCount / 2 + 0.5) * barWidth * 1.5;
+        final barPaint = Paint()
+          ..color = accent.withValues(alpha: speaking * 0.8);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(x, baseY - height / 2),
+                width: barWidth * 0.6,
+                height: height),
+            const Radius.circular(2),
+          ),
+          barPaint,
+        );
+      }
     } else if (listening > 0.04 && clock.listenProgress > 0.004) {
       final arc = listenBezelArc(clock.listenProgress);
       final ring = Paint()
