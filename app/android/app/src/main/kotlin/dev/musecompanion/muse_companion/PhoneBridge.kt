@@ -86,6 +86,7 @@ class PhoneBridge(private val activity: MainActivity) {
     private var reader: Thread? = null
     @Volatile private var recording = false
     private val usbOtg = UsbOtgManager(context).apply { start() }
+    private val usbSerial = UsbSerialManager(context)
     private val capturing = AtomicBoolean(false)
     private val speakLock = Any()
     private var speakGeneration = 0
@@ -939,6 +940,34 @@ class PhoneBridge(private val activity: MainActivity) {
             "usb.list_volumes" -> mapOf("volumes" to usbOtg.listVolumes())
             "usb.list_files" -> usbOtg.listFiles(params.string("path"))
             "usb.read_file" -> usbOtg.readFile(params.string("path"))
+            "usb.serial_list" -> mapOf("ports" to usbSerial.listPorts())
+            "usb.serial_open" -> usbSerial.open(
+                params.string("device"), params.int("port"), params.int("baud_rate"),
+            )
+            "usb.serial_write" -> usbSerial.write(
+                params.string("session"), params.string("data"), params.string("encoding"),
+            )
+            "usb.serial_write_line" -> usbSerial.writeLine(
+                params.string("session"), params.string("data"), params.string("encoding"),
+            )
+            "usb.serial_read" -> usbSerial.read(
+                params.string("session"), params.int("timeout_ms"),
+            )
+            "usb.serial_read_lines" -> usbSerial.readLines(
+                params.string("session"), params.int("max_lines"), params.int("timeout_ms"),
+            )
+            "usb.serial_drain" -> usbSerial.drain(params.string("session"))
+            "usb.serial_set_baud" -> usbSerial.setBaud(
+                params.string("session"), params.int("baud_rate"),
+            )
+            "usb.serial_set_dtr_rts" -> usbSerial.setDtrRts(
+                params.string("session"), params.bool("dtr"), params.bool("rts"),
+            )
+            "usb.serial_port_info" -> usbSerial.portInfo(params.string("session"))
+            "usb.serial_purge" -> usbSerial.purge(
+                params.string("session"), params.string("direction"),
+            )
+            "usb.serial_close" -> usbSerial.close(params.string("session"))
             else -> throw IllegalArgumentException("unsupported command: $command")
         }
     }
@@ -1672,6 +1701,8 @@ class PhoneBridge(private val activity: MainActivity) {
     }
 
     private fun Map<String, Any?>.string(key: String): String = this[key] as? String ?: ""
+
+    private fun Map<String, Any?>.bool(key: String): Boolean = this[key] as? Boolean ?: false
 
     private fun Map<String, Any?>.int(key: String): Int = when (val value = this[key]) {
         is Int -> value

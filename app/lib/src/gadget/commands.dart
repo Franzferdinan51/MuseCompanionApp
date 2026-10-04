@@ -199,6 +199,162 @@ Map<String, Object?> companionCommandSpecs({
       },
       'optional': <String, Object?>{},
     },
+    'usb.serial_list': {
+      'description':
+          'List USB serial devices plugged into the phone over OTG (dev '
+          'boards, routers, 3D printers, ham radios, GPS units, industrial '
+          'gear, ...): device name, driver/chip (CDC-ACM, FTDI, CP210x, '
+          'CH340, PL2303), port number, vendor/product id, and whether the '
+          'app already has permission to open each one. Take a device name '
+          'from here for usb.serial_open.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'usb.serial_open': {
+      'description':
+          'Open a USB serial port and get a session id for talking to it. '
+          'Defaults to 115200 baud, 8 data bits, 1 stop bit, no parity. '
+          'Needs USB permission first: if the result says so, call '
+          'usb.request_permission with the device name, then try again.',
+      'required': {
+        'device': stringParam('Device name from usb.serial_list.'),
+      },
+      'optional': {
+        'baud_rate': intParam('Baud rate, e.g. 9600 or 115200. Default 115200.'),
+        'port': intParam(
+          'Port index for multi-port adapters. Default 0.',
+        ),
+      },
+    },
+    'usb.serial_write': {
+      'description':
+          'Write bytes to an open serial port. Data is plain text by '
+          'default; pass encoding base64 for binary payloads.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+        'data': stringParam('Text to write, or base64 when encoding is set.'),
+      },
+      'optional': {
+        'encoding': stringParam('"utf8" (default) or "base64".'),
+      },
+    },
+    'usb.serial_write_line': {
+      'description':
+          'Write a line to an open serial port with a trailing newline '
+          'appended. Most firmware consoles expect newline-terminated '
+          'commands, so prefer this over usb.serial_write for them.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+        'data': stringParam('Line to write, without the newline.'),
+      },
+      'optional': {
+        'encoding': stringParam('"utf8" (default) or "base64".'),
+      },
+    },
+    'usb.serial_read': {
+      'description':
+          'Read available bytes from an open serial port, waiting up to '
+          'timeout_ms. Returns the byte count plus the data as base64 and '
+          'as a UTF-8 text decode.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+      },
+      'optional': {
+        'timeout_ms': intParam(
+          'How long to wait, in ms. Default 2000, max 30000.',
+          minimum: 100,
+          maximum: 30000,
+        ),
+      },
+    },
+    'usb.serial_read_lines': {
+      'description':
+          'Read up to max_lines newline-terminated lines from an open '
+          'serial port, waiting until they arrive or the timeout elapses. '
+          'Returns the lines as a list, plus any partial (unterminated) '
+          'line still buffered.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+      },
+      'optional': {
+        'max_lines': intParam('Max lines to collect. Default 50.', minimum: 1),
+        'timeout_ms': intParam(
+          'How long to wait, in ms. Default 2000, max 30000.',
+          minimum: 100,
+          maximum: 30000,
+        ),
+      },
+    },
+    'usb.serial_drain': {
+      'description':
+          'Discard all buffered input on an open serial port and report '
+          'how many bytes were dropped. Useful before sending a fresh '
+          'command so the reply is not polluted by stale output.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'usb.serial_set_baud': {
+      'description':
+          'Change the baud rate on an already-open serial port (keeps 8 '
+          'data bits, 1 stop bit, no parity).',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+        'baud_rate': intParam('New baud rate, e.g. 9600 or 115200.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'usb.serial_set_dtr_rts': {
+      'description':
+          'Drive the DTR and RTS control lines on an open serial port. '
+          'This is generic serial line control: toggling these sequences '
+          'is how many devices are reset or put into firmware-download '
+          'mode.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+      },
+      'optional': {
+        'dtr': {
+          'type': 'boolean',
+          'description': 'DTR line state. Default false.',
+        },
+        'rts': {
+          'type': 'boolean',
+          'description': 'RTS line state. Default false.',
+        },
+      },
+    },
+    'usb.serial_port_info': {
+      'description':
+          'Report an open serial port: driver/chip, baud rate, data bits, '
+          'stop bits, parity, and the CTS/DSR line state where the driver '
+          'supports it.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'usb.serial_purge': {
+      'description':
+          'Purge the hardware buffers of an open serial port.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+      },
+      'optional': {
+        'direction': stringParam(
+          '"rx", "tx", or "both" (default).',
+        ),
+      },
+    },
+    'usb.serial_close': {
+      'description':
+          'Close an open serial port and release its session id.',
+      'required': {
+        'session': stringParam('Session id from usb.serial_open.'),
+      },
+      'optional': <String, Object?>{},
+    },
     'vision.capture': {
       'description':
           'Take one photo with the phone camera and show it to you in this '
@@ -728,6 +884,18 @@ class CompanionExecutor {
         case 'usb.list_volumes':
         case 'usb.list_files':
         case 'usb.read_file':
+        case 'usb.serial_list':
+        case 'usb.serial_open':
+        case 'usb.serial_write':
+        case 'usb.serial_write_line':
+        case 'usb.serial_read':
+        case 'usb.serial_read_lines':
+        case 'usb.serial_drain':
+        case 'usb.serial_set_baud':
+        case 'usb.serial_set_dtr_rts':
+        case 'usb.serial_port_info':
+        case 'usb.serial_purge':
+        case 'usb.serial_close':
           return await _phone(command, params);
         case 'vision.capture':
           return await _capture(params);
@@ -1024,6 +1192,9 @@ String companionIntroMessage() {
       'ringer, brightness, rotation, vibration, and spoken replies). '
       'A USB drive plugged in over OTG shows up in usb.list_volumes; '
       'browse it with usb.list_files and read files with usb.read_file. '
+      'USB serial devices (dev boards, routers, 3D printers, radios, ...) '
+      'show up in usb.serial_list; open one with usb.serial_open and talk '
+      'to it with usb.serial_write_line and usb.serial_read_lines. '
       'Once Screen control is on, phone.screenshot shows you the screen, '
       'phone.ui reads it, and phone.tap, phone.swipe, phone.type, and '
       'phone.press use it. '

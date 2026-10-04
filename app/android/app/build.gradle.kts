@@ -43,3 +43,13 @@ android {
 flutter {
     source = "../.."
 }
+
+repositories {
+    // JitPack hosts usb-serial-for-android (not on Maven Central).
+    maven { url = uri("https://jitpack.io") }
+}
+
+dependencies {
+    // USB serial drivers: CDC-ACM, FTDI, CP210x, CH340, PL2303.
+    implementation("com.github.mik3y:usb-serial-for-android:3.7.0")
+}
