@@ -107,6 +107,11 @@ class PhoneBridge implements PhoneActions {
   static final ValueNotifier<bool> speaking = ValueNotifier<bool>(false);
   static int _speakGeneration = 0;
 
+  /// Master voice killswitch (2026-10-04): when false, [speak] is a no-op.
+  /// Set from the "Speak replies" setting; blocks ALL TTS paths at the
+  /// lowest level, so no code path can bypass the user's choice.
+  static bool speakEnabled = true;
+
   @override
   Future<Uint8List> captureJpeg({String facing = 'back'}) async {
     await _ensure(Permission.camera, 'Camera');
@@ -155,6 +160,7 @@ class PhoneBridge implements PhoneActions {
 
   @override
   Future<void> speak(String text) async {
+    if (!speakEnabled) return;
     final generation = ++_speakGeneration;
     speaking.value = true;
     try {

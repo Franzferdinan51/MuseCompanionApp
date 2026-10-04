@@ -136,6 +136,14 @@ Future<void> main() async {
     // ignore: unawaited_futures
     syncUsbToggles();
   });
+  // Master voice killswitch: no TTS anywhere when Speak replies is off.
+  // (2026-10-04: bulletproof fix for voice bypassing the setting)
+  void syncSpeakEnabled() {
+    PhoneBridge.speakEnabled = presentation.settings.speakReplies;
+  }
+
+  syncSpeakEnabled();
+  settings.addListener(syncSpeakEnabled);
   final executor = CompanionExecutor(
     display: display,
     health: health,
