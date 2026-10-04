@@ -31,6 +31,7 @@ import '../app/pixel_avatar.dart';
 import '../src/gadget/chat_events.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
+import '../main.dart';
 import 'chat_screen.dart';
 import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
@@ -406,6 +407,12 @@ class _CharacterState extends State<_Character> {
 
   void _holdStart() {
     if (widget.asleep) return;
+    final scope = AppScope.of(context);
+    if (scope.presentation.pose == AvatarPose.speaking) {
+      // The user is jumping in with more relevant info: stop the speech
+      // first, then proceed with the normal hold-to-talk flow.
+      unawaited(stopSpeaking(scope.phone, scope.presentation));
+    }
     _pointerDown = true;
     setState(() => _bounce++);
     if (_holding || _arm != null) return;
@@ -418,8 +425,14 @@ class _CharacterState extends State<_Character> {
 
   void _pet() {
     if (!mounted) return;
+    final scope = AppScope.of(context);
+    if (scope.presentation.pose == AvatarPose.speaking) {
+      // A tap while talking is barge-in, not a pet.
+      unawaited(stopSpeaking(scope.phone, scope.presentation));
+      return;
+    }
     setState(() => _pets++);
-    if (!AppScope.of(context).service.isRegistered) _needMuse();
+    if (!scope.service.isRegistered) _needMuse();
   }
 
   Future<void> _beginRecording() async {
@@ -551,12 +564,34 @@ class _CharacterState extends State<_Character> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: PixelStage(
-              pose: presentation.pose,
-              bytes: bytes,
-              bounceGeneration: _bounce,
-              petGeneration: _pets,
-              listenStarted: _listenStarted,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PixelStage(
+                  pose: presentation.pose,
+                  bytes: bytes,
+                  bounceGeneration: _bounce,
+                  petGeneration: _pets,
+                  listenStarted: _listenStarted,
+                ),
+                if (presentation.pose == AvatarPose.speaking)
+                  Positioned(
+                    right: 4,
+                    bottom: 4,
+                    child: IconButton(
+                      tooltip: 'Stop speaking',
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      iconSize: 34,
+                      color: accent,
+                      onPressed: () {
+                        final scope = AppScope.of(context);
+                        unawaited(
+                          stopSpeaking(scope.phone, scope.presentation),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
           ),
           if (bytes == null)

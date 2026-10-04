@@ -38,6 +38,9 @@ abstract class PhoneActions {
   /// Speak [text] on the phone speaker.
   Future<void> speak(String text);
 
+  /// Stop any in-progress speech immediately. Safe to call when idle.
+  Future<void> stopSpeak();
+
   /// Open the system screen where notification access is granted.
   Future<void> openNotificationAccess();
 

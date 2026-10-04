@@ -372,6 +372,12 @@ Map<String, Object?> companionCommandSpecs({
       },
       'timeout_ms': drawImageTimeoutMs,
     },
+    'voice.stop': {
+      'description': 'Stop any in-progress speech immediately.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+      'timeout_ms': drawImageTimeoutMs,
+    },
     'voice.listen': {
       'description':
           'Record the phone microphone and send the clip to you as a voice '
@@ -909,6 +915,8 @@ class CompanionExecutor {
           return await _capture(params);
         case 'phone.screenshot':
           return await _screenshot(params);
+        case 'voice.stop':
+          return await _stopSpeak();
         case 'voice.listen':
           return await _listen(params);
         case 'phone.speak':
@@ -1090,6 +1098,13 @@ class CompanionExecutor {
       ),
       'voice note',
     );
+  }
+
+  Future<Map<String, Object?>> _stopSpeak() async {
+    final phone = _requirePhone();
+    if (phone is Map<String, Object?>) return phone;
+    await (phone as PhoneActions).stopSpeak();
+    return okResult({'status': 'stopped'});
   }
 
   Future<Map<String, Object?>> _speak(Map<String, Object?> params) async {

@@ -144,6 +144,13 @@ class PhoneBridge implements PhoneActions {
     await _call<void>('speak', {'text': text});
   }
 
+  /// Stop any in-progress speech immediately. The native side completes
+  /// the pending `speak` result, so callers awaiting it do not hang.
+  @override
+  Future<void> stopSpeak() async {
+    await _call<void>('stopSpeak');
+  }
+
   /// Remember [name] for every later speak, including Muse `phone.speak`.
   /// Empty selects the clearest voice. Failures are ignored so a desktop
   /// test or a cold engine still starts.

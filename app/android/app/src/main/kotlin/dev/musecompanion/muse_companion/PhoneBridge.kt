@@ -128,6 +128,10 @@ class PhoneBridge(private val activity: MainActivity) {
                         }
                     }
                     "speak" -> speakAwait(call.argument<String>("text") ?: "", result)
+                    "stopSpeak" -> {
+                        stopSpeak()
+                        result.success(null)
+                    }
                     "setSpeechVoice" -> {
                         requestedVoice = sanitizeVoice(call.argument<String>("name") ?: "")
                         val engine = tts
@@ -624,6 +628,23 @@ class PhoneBridge(private val activity: MainActivity) {
         engine.setOnUtteranceProgressListener(utteranceListener(generation))
         prepareEngine(engine)
         if (utter(engine, text) == TextToSpeech.ERROR) finishPendingSpeak()
+    }
+
+    /// Interrupts any in-progress speech. Safe to call when idle:
+    /// `tts.stop()` is idempotent, the generation bump makes in-flight
+    /// utterance-listener callbacks no-ops, [finishPendingSpeak] unblocks
+    /// any awaiting `speak` call, and the queues are cleared so nothing
+    /// fires after init.
+    private fun stopSpeak() {
+        try {
+            tts?.stop()
+        } catch (_: Exception) {
+            // The engine may be mid-shutdown; the rest still applies.
+        }
+        speakGeneration++
+        finishPendingSpeak()
+        queuedSpeak = null
+        queuedAwait = null
     }
 
     private fun startTts() {

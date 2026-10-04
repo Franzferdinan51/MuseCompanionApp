@@ -250,6 +250,11 @@ Future<void> _drawChatCharacter(AppCompanionDisplay display, String url) async {
   }
 }
 
+/// Generation counter for [_speakReply]: an interrupt (or a newer reply)
+/// must not let an older finally block reset the pose of speech that is
+/// still running.
+int _speakReplyGeneration = 0;
+
 /// Set the speaker, then read [spoken]. The speaking pose lasts until the
 /// utterance finishes. A new hold that moved the pose is left alone.
 Future<void> _speakReply(
@@ -257,6 +262,7 @@ Future<void> _speakReply(
   PresentationState presentation,
   String spoken,
 ) async {
+  final generation = ++_speakReplyGeneration;
   presentation.applyPose(AvatarPose.speaking);
   try {
     await phone.run('phone.volume', {
@@ -266,9 +272,28 @@ Future<void> _speakReply(
   } on PhoneActionException {
     // The caption under the character is the fallback.
   } finally {
-    if (presentation.pose == AvatarPose.speaking) {
+    if (generation == _speakReplyGeneration &&
+        presentation.pose == AvatarPose.speaking) {
       presentation.applyPose(AvatarPose.idle);
     }
+  }
+}
+
+/// Stop any in-progress speech immediately and return the avatar to idle.
+/// Safe to call when nothing is speaking (effectively a no-op). The
+/// caption is untouched — it was set separately.
+Future<void> stopSpeaking(
+  PhoneBridge phone,
+  PresentationState presentation,
+) async {
+  _speakReplyGeneration++;
+  try {
+    await phone.stopSpeak();
+  } on PhoneActionException {
+    // Engine not ready or the call failed; the pose reset below applies.
+  }
+  if (presentation.pose == AvatarPose.speaking) {
+    presentation.applyPose(AvatarPose.idle);
   }
 }
 

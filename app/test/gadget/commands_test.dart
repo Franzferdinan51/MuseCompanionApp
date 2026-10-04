@@ -81,6 +81,9 @@ class _FakePhone implements PhoneActions {
   Future<void> speak(String text) async {}
 
   @override
+  Future<void> stopSpeak() async {}
+
+  @override
   Future<void> openNotificationAccess() async {}
 
   @override
