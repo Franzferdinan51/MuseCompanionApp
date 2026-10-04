@@ -25,6 +25,10 @@ dependencies:
   permission_handler: 11.4.0
   # Battery level for the device.health command.
   battery_plus: ^6.2.1
+  # Pre-built agent framework: tool-calling agent loop for the
+  # on-device agent, backed by LM Studio OpenAI-compatible API.
+  langchain: ^0.9.0
+  langchain_openai: ^0.9.0
 
   cupertino_icons: ^1.0.8
   crypto: ^3.0.7

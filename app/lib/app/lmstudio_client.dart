@@ -1,10 +1,12 @@
 // LM Studio client: lets a local model control the phone through the
 // same command path as the Muse gadget protocol, bypassing the broken
 // device.invoke channel.
-// Flow: instruction -> POST /v1/chat/completions with tools ->
-//   execute tool calls via PhoneBridge -> feed results back ->
-//   repeat until the model answers (max 10 rounds).
 //
+// The on-device agent runs on the pre-built langchain_dart framework
+// (ToolsAgent + AgentExecutor), backed by LM Studio's OpenAI-compatible
+// API via ChatOpenAI with a custom baseUrl. Everything is baked into the
+// APK: no separate installs, no side-loaded components.
+
 // Endpoint compatibility: this client speaks plain OpenAI-compatible
 // /v1/chat/completions, so it works against raw LM Studio AND a LiteLLM
 // proxy in front of it (e.g. ANTHROPIC_BASE_URL=http://localhost:4000
@@ -20,8 +22,12 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:langchain/langchain.dart';
+import 'package:langchain_openai/langchain_openai.dart';
+
 import 'approval_service.dart';
 import 'lmstudio_tools.dart';
+import 'phone_tool_adapter.dart';
 import 'systemone_client.dart';
 import 'systemone_toolmap.dart';
 import '../src/gadget/phone_actions.dart';
@@ -100,9 +106,6 @@ class LocalAiService {
 
   /// SystemOne router base URL, e.g. http://100.68.208.113:8765.
   final String systemOneUrl;
-
-  Uri get _completions =>
-      Uri.parse('${baseUrl.replaceAll(RegExp(r'/+$'), '')}/v1/chat/completions');
 
   Uri get _models =>
       Uri.parse('${baseUrl.replaceAll(RegExp(r'/+$'), '')}/v1/models');
@@ -251,71 +254,72 @@ class LocalAiService {
   /// The effective model is resolved deterministically: an explicit
   /// selection wins, otherwise the app picks the best loaded model
   /// itself (see [resolveModel]) — no configuration required.
+  /// Run [instruction] through the local model with phone tools.
+  /// Returns the model's final text.
+  ///
+  /// The effective model is resolved deterministically: an explicit
+  /// selection wins, otherwise the app picks the best loaded model
+  /// itself (see [resolveModel]) -- no configuration required.
+  ///
+  /// The agent loop itself is the pre-built langchain_dart ToolsAgent +
+  /// AgentExecutor; the phone's tool registry is adapted to LangChain
+  /// tools (see [phoneToolsToLangChain]). Approval-gated tools pop the
+  /// user's approval dialog before each execution.
   Future<LocalAiResult> runTask(String instruction) async {
     final effectiveModel = await resolveModel(
       baseUrl: baseUrl,
       explicit: model,
       role: modelRole,
     );
-    var tools = lmToolsFor(
+    var tools = lmToolsListFor(
       usbStorageEnabled: usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled,
     );
     if (systemOneEnabled) {
-      tools = await _filterToolsViaSystemOne(instruction, tools);
+      tools = await _filterLmToolsViaSystemOne(instruction, tools);
     }
-    final messages = <Map<String, Object?>>[
-      {
-        'role': 'system',
-        'content':
-            'You are a helpful assistant running on the user\'s phone. '
-            'You can control the phone by calling the provided functions. '
-            'Call functions when the user asks you to do something on the '
-            'phone; otherwise just answer. Keep spoken-style answers short.\n'
-            '${_capabilityGuide()}',
-      },
-      {'role': 'user', 'content': instruction},
-    ];
 
     var toolCalls = 0;
+    final ctx = LmToolContext(phone: phone, cameraFacing: cameraFacing);
+    final lcTools = phoneToolsToLangChain(
+      tools: tools,
+      ctx: ctx,
+      approver: approver ??
+          ((title, body) => ApprovalService.instance
+              .requestApproval(title: title, body: body)),
+      onToolCall: () => toolCalls++,
+    );
+
+    // ChatOpenAI speaks plain OpenAI-compatible /v1/chat/completions, so
+    // it works against raw LM Studio AND a LiteLLM proxy in front of it
+    // (e.g. ANTHROPIC_BASE_URL=http://localhost:4000 forwarding to local
+    // Ollama, per the NanoClaw pattern). A LiteLLM proxy additionally
+    // buys Anthropic-style tool calling, prompt caching, and model
+    // routing for free -- just point the Server URL at the proxy.
+    final llm = ChatOpenAI(
+      apiKey: 'not-needed',
+      baseUrl: '$baseUrl/v1',
+      defaultOptions: ChatOpenAIOptions(model: effectiveModel),
+    );
+    final agent = ToolsAgent.fromLLMAndTools(
+      llm: llm,
+      tools: lcTools,
+      systemChatMessage: SystemChatMessagePromptTemplate(
+        prompt: PromptTemplate(
+          inputVariables: {},
+          template:
+              "You are a helpful assistant running on the user's phone. "
+              'You can control the phone by calling the provided functions. '
+              'Call functions when the user asks you to do something on the '
+              'phone; otherwise just answer. Keep spoken-style answers short.\n'
+              '${_capabilityGuide()}',
+        ),
+      ),
+    );
+    final executor = AgentExecutor(agent: agent, maxIterations: _maxRounds);
     try {
-      for (var round = 0; round < _maxRounds; round++) {
-        final reply = await _chat(messages, tools, effectiveModel);
-        final message = reply['message'];
-        if (message is! Map) {
-          return const LocalAiResult(
-            text: '',
-            error: 'Bad response from LM Studio (no message).',
-          );
-        }
-        final calls = message['tool_calls'];
-        if (calls is! List || calls.isEmpty) {
-          final text = message['content'];
-          return LocalAiResult(
-            text: text is String ? text.trim() : '',
-            toolCalls: toolCalls,
-          );
-        }
-        messages.add({
-          'role': 'assistant',
-          'content': message['content'],
-          'tool_calls': calls,
-        });
-        for (final call in calls.whereType<Map>()) {
-          toolCalls++;
-          final result = await _executeToolCall(call);
-          messages.add({
-            'role': 'tool',
-            'tool_call_id': call['id']?.toString() ?? '',
-            'content': result,
-          });
-        }
-      }
-      return LocalAiResult(
-        text: '',
-        toolCalls: toolCalls,
-        error: 'Stopped after $_maxRounds tool rounds without a final answer.',
-      );
+      final text = (await executor.run(instruction)).trim();
+      return LocalAiResult(text: text, toolCalls: toolCalls);
     } catch (e) {
       return LocalAiResult(
         text: '',
@@ -325,108 +329,13 @@ class LocalAiService {
     }
   }
 
-  Future<Map<String, Object?>> _chat(
-    List<Map<String, Object?>> messages,
-    List<Map<String, Object?>> tools,
-    String effectiveModel,
-  ) async {
-    final body = <String, Object?>{
-      'messages': messages,
-      'tools': tools,
-      'tool_choice': 'auto',
-    };
-    if (effectiveModel.trim().isNotEmpty) body['model'] = effectiveModel.trim();
-    final res = await http
-        .post(
-          _completions,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(body),
-        )
-        .timeout(_requestTimeout);
-    if (res.statusCode != 200) {
-      throw StateError(
-        'LM Studio HTTP ${res.statusCode}: ${res.body.trim()}'.trim(),
-      );
-    }
-    final decoded = jsonDecode(res.body);
-    if (decoded is! Map) throw StateError('Bad JSON from LM Studio.');
-    final choices = decoded['choices'];
-    if (choices is! List || choices.isEmpty) {
-      throw StateError('LM Studio returned no choices.');
-    }
-    final first = choices.first;
-    if (first is! Map) throw StateError('Bad choice shape from LM Studio.');
-    return first.map((k, v) => MapEntry(k.toString(), v as Object?));
-  }
-
-  /// Execute one tool call via the registry handler, return the string
-  /// to feed back to the model.
-  Future<String> _executeToolCall(Map call) async {
-    final fn = call['function'];
-    if (fn is! Map) return 'error: malformed tool call';
-    final name = fn['name']?.toString() ?? '';
-    final tool = lmToolNamed(name);
-    if (tool == null) return 'error: unknown tool "$name"';
-    Map<String, Object?> args;
-    try {
-      final rawArgs = fn['arguments'];
-      if (rawArgs is String && rawArgs.trim().isNotEmpty) {
-        final decoded = jsonDecode(rawArgs);
-        args = decoded is Map
-            ? decoded.map((k, v) => MapEntry(k.toString(), v))
-            : <String, Object?>{};
-      } else if (rawArgs is Map) {
-        args = rawArgs.map((k, v) => MapEntry(k.toString(), v));
-      } else {
-        args = <String, Object?>{};
-      }
-    } catch (_) {
-      return 'error: could not parse arguments for "$name"';
-    }
-
-    if (tool.requiresApproval) {
-      final approve = approver ?? ApprovalService.instance.requestApproval;
-      final approved = await approve(
-        'Allow "${tool.name}"?',
-        _describeToolCall(tool, args),
-      );
-      if (!approved) {
-        return 'denied: the user did not approve the "${tool.name}" action';
-      }
-    }
-    try {
-      final ctx = LmToolContext(phone: phone, cameraFacing: cameraFacing);
-      return await tool.handler(args, ctx);
-    } catch (e) {
-      return 'error: ${_friendlyError(e)}';
-    }
-  }
-
-  /// One-line human summary of a tool call for the approval popup:
-  /// the tool's description plus its key arguments.
-  String _describeToolCall(LmTool tool, Map<String, Object?> args) {
-    final desc = tool.description.trim();
-    if (args.isEmpty) return desc;
-    final parts = args.entries
-        .map((e) => '${e.key}: ${e.value}')
-        .join(', ');
-    return '$desc\n\nArguments: $parts';
-  }
-
   /// Ask SystemOne which tools matter for [instruction] and narrow
   /// [allTools] down. Fail-open: any problem returns [allTools] unchanged.
-  Future<List<Map<String, Object?>>> _filterToolsViaSystemOne(
+  Future<List<LmTool>> _filterLmToolsViaSystemOne(
     String instruction,
-    List<Map<String, Object?>> allTools,
+    List<LmTool> allTools,
   ) async {
-    final names = <String>[];
-    for (final t in allTools) {
-      final fn = t['function'];
-      if (fn is Map) {
-        final name = fn['name']?.toString() ?? '';
-        if (name.isNotEmpty) names.add(name);
-      }
-    }
+    final names = [for (final t in allTools) t.name];
     if (names.isEmpty) return allTools;
     final ranked =
         await SystemOneClient(baseUrl: systemOneUrl).rankTools(instruction);
@@ -436,10 +345,7 @@ class LocalAiService {
       'selected: ${picked.join(', ')}',
     );
     if (picked.length >= names.length) return allTools;
-    return [
-      for (final t in allTools)
-        if (picked.contains((t['function'] as Map)['name']?.toString())) t,
-    ];
+    return [for (final t in allTools) if (picked.contains(t.name)) t];
   }
 
   /// Natural-language capability summary, appended to the system prompt

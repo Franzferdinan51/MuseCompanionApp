@@ -311,19 +311,32 @@ Map<String, LmTool> get _registry => {
   ),
 };
 
+/// Phone tools as [LmTool] objects, filtered by the USB settings gates.
+List<LmTool> lmToolsListFor({
+  required bool usbStorageEnabled,
+  required bool usbSerialEnabled,
+}) {
+  return [
+    for (final tool in _registry.values)
+      if (!(tool.requiresUsbStorage && !usbStorageEnabled) &&
+          !(tool.requiresUsbSerial && !usbSerialEnabled))
+        tool,
+  ];
+}
+
 /// Tools to send to the model, filtered by the USB settings gates.
 /// Returns clean OpenAI tool JSON.
 List<Map<String, Object?>> lmToolsFor({
   required bool usbStorageEnabled,
   required bool usbSerialEnabled,
 }) {
-  final out = <Map<String, Object?>>[];
-  for (final tool in _registry.values) {
-    if (tool.requiresUsbStorage && !usbStorageEnabled) continue;
-    if (tool.requiresUsbSerial && !usbSerialEnabled) continue;
-    out.add(tool.toJson());
-  }
-  return out;
+  return [
+    for (final tool in lmToolsListFor(
+      usbStorageEnabled: usbStorageEnabled,
+      usbSerialEnabled: usbSerialEnabled,
+    ))
+      tool.toJson(),
+  ];
 }
 
 /// Look up a tool handler by name. Null when unknown.
