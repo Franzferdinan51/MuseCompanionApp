@@ -99,7 +99,8 @@ class _AvatarVideoStageState extends State<AvatarVideoStage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Battery: pause video when backgrounded or screen off.
-    final shouldPause = state == AppLifecycleState.paused ||
+    final shouldPause =
+        state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive;
     if (shouldPause == _paused) return;
     _paused = shouldPause;
@@ -206,30 +207,39 @@ class _AvatarVideoStageState extends State<AvatarVideoStage>
       return _pixelFallback();
     }
 
-    return ClipOval(
-      child: Stack(
-        alignment: Alignment.center,
-        fit: StackFit.expand,
-        children: [
-          // Crossfade between clips on pose change.
-          AnimatedOpacity(
-            opacity: _activeClip == _AvatarClip.orb ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 400),
-            child: VideoPlayer(_orb!),
+    // Force a square of min(width, height), centered -- matching the old
+    // PixelStage painter geometry (circle inscribed in the smaller
+    // dimension). Without this, ClipOval on a non-square box stretches
+    // the 1:1 video into an ellipse.
+    return Center(
+      child: AspectRatio(
+        aspectRatio: 1.0,
+        child: ClipOval(
+          child: Stack(
+            alignment: Alignment.center,
+            fit: StackFit.expand,
+            children: [
+              // Crossfade between clips on pose change.
+              AnimatedOpacity(
+                opacity: _activeClip == _AvatarClip.orb ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 400),
+                child: VideoPlayer(_orb!),
+              ),
+              AnimatedOpacity(
+                opacity: _activeClip == _AvatarClip.typing ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 400),
+                child: VideoPlayer(_typing!),
+              ),
+              AnimatedOpacity(
+                opacity: _activeClip == _AvatarClip.talking ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 400),
+                child: VideoPlayer(_talking!),
+              ),
+              // Listening glow, matching the stage language.
+              if (widget.pose == AvatarPose.listening) const _ListenGlow(),
+            ],
           ),
-          AnimatedOpacity(
-            opacity: _activeClip == _AvatarClip.typing ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 400),
-            child: VideoPlayer(_typing!),
-          ),
-          AnimatedOpacity(
-            opacity: _activeClip == _AvatarClip.talking ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 400),
-            child: VideoPlayer(_talking!),
-          ),
-          // Listening glow, matching the stage language.
-          if (widget.pose == AvatarPose.listening) const _ListenGlow(),
-        ],
+        ),
       ),
     );
   }
@@ -271,9 +281,9 @@ class _ListenGlowState extends State<_ListenGlow>
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF9a6bff).withValues(
-                alpha: 0.25 + 0.2 * _ac.value,
-              ),
+              color: const Color(
+                0xFF9a6bff,
+              ).withValues(alpha: 0.25 + 0.2 * _ac.value),
               blurRadius: 40 + 20 * _ac.value,
               spreadRadius: 4,
             ),
