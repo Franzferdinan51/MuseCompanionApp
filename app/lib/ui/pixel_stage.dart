@@ -519,6 +519,20 @@ class _StagePainter extends CustomPainter {
         ..strokeCap = StrokeCap.butt
         ..color = accent.withValues(alpha: thinking);
       canvas.drawArc(bezelRect, arc.start, arc.sweep, false, sweep);
+      // Orbiting ball like Muse's thinking indicator.
+      // A glowing ball circles the avatar while thinking.
+      final orbitRadius = side * 0.42;
+      final ballAngle = seconds * 2.5; // ~143 deg/s
+      final cx = side / 2 + math.cos(ballAngle) * orbitRadius;
+      final cy = side / 2 + math.sin(ballAngle) * orbitRadius;
+      final ballPaint = Paint()
+        ..color = accent.withValues(alpha: thinking)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      canvas.drawCircle(Offset(cx, cy), cell * 1.2, ballPaint);
+      // Solid core
+      final corePaint = Paint()
+        ..color = accent.withValues(alpha: thinking);
+      canvas.drawCircle(Offset(cx, cy), cell * 0.6, corePaint);
     } else if (listening > 0.04 && clock.listenProgress > 0.004) {
       final arc = listenBezelArc(clock.listenProgress);
       final ring = Paint()
