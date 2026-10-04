@@ -82,7 +82,30 @@ class LocalAiService {
   Uri get _models =>
       Uri.parse('${baseUrl.replaceAll(RegExp(r'/+$'), '')}/v1/models');
 
-  /// Quick connectivity check. Returns '' on success, else an error.
+  /// Fetch available model ids from GET {baseUrl}/v1/models.
+  /// Returns the ids, or an empty list on any failure.
+  static Future<List<String>> fetchModelIds(String baseUrl) async {
+    try {
+      final uri = Uri.parse('${baseUrl.replaceAll(RegExp(r'/+$'), '')}/v1/models');
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return const [];
+      final body = jsonDecode(res.body);
+      if (body is! Map || body['data'] is! List) return const [];
+      final ids = (body['data'] as List)
+          .whereType<Map>()
+          .map((m) => m['id'])
+          .whereType<String>()
+          .where((id) => id.trim().isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      return ids;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Quick connectivity check. Returns empty string on success, else an error.
   Future<String> testConnection() async {
     try {
       final res = await http.get(_models).timeout(const Duration(seconds: 10));

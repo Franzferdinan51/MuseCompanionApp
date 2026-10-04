@@ -22,10 +22,12 @@
 // system Accessibility page it opens, can change those.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app/foreground.dart';
 import '../app/lmstudio_client.dart';
@@ -840,15 +842,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextFormField(
-                  initialValue: _settings.lmStudioModel,
-                  decoration: const InputDecoration(
-                    labelText: 'Model (optional)',
-                    hintText: 'Leave empty for server default',
-                    border: OutlineInputBorder(),
-                  ),
+                _ModelSelector(
+                  serverUrl: _settings.lmStudioUrl,
+                  selectedModel: _settings.lmStudioModel,
                   onChanged: (v) => _commit(
-                    _settings.copyWith(lmStudioModel: v.trim()),
+                    _settings.copyWith(lmStudioModel: v),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1326,6 +1324,211 @@ class _TestLmStudioButtonState extends State<_TestLmStudioButton> {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+
+/// Dropdown selector for the LM Studio model, auto-fetched from the server.
+///
+/// - Fetches GET {serverUrl}/v1/models when the settings screen opens and
+///   whenever [serverUrl] changes (debounced).
+/// - "Auto (server default)" (value '') sends no model id; the server picks.
+/// - Manual refresh button is a backup; auto-fetch is the primary path.
+/// - On fetch failure the last known list is shown with a stale badge;
+///   with no cached list it falls back to a free-text field.
+/// - A previously saved id missing from the fresh list is kept as a
+///   "(custom)" entry rather than silently dropped.
+class _ModelSelector extends StatefulWidget {
+  const _ModelSelector({
+    required this.serverUrl,
+    required this.selectedModel,
+    required this.onChanged,
+  });
+
+  final String serverUrl;
+  final String selectedModel;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_ModelSelector> createState() => _ModelSelectorState();
+}
+
+class _ModelSelectorState extends State<_ModelSelector> {
+  static const _cacheKey = 'lm_studio_model_list_cache';
+
+  List<String> _models = const [];
+  bool _loading = true;
+  bool _stale = false;
+  bool _textMode = false;
+  int _generation = 0;
+  Timer? _urlDebounce;
+  late TextEditingController _textController;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController = TextEditingController(text: widget.selectedModel);
+    _loadCached().then((_) {
+      if (mounted) _fetch();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _ModelSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.serverUrl != widget.serverUrl) {
+      // Debounce: the URL field commits on every keystroke.
+      _urlDebounce?.cancel();
+      _urlDebounce = Timer(const Duration(seconds: 1), () {
+        if (mounted) _fetch();
+      });
+    }
+    if (oldWidget.selectedModel != widget.selectedModel &&
+        _textController.text != widget.selectedModel) {
+      _textController.text = widget.selectedModel;
+    }
+  }
+
+  @override
+  void dispose() {
+    _urlDebounce?.cancel();
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCached() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cacheKey);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      final ids = decoded.whereType<String>().toList();
+      if (ids.isEmpty || !mounted) return;
+      setState(() => _models = ids);
+    } catch (_) {
+      // Cache is best-effort; a corrupt entry just means a fresh fetch.
+    }
+  }
+
+  Future<void> _fetch() async {
+    final gen = ++_generation;
+    setState(() {
+      _loading = true;
+      _stale = false;
+    });
+    final ids = await LocalAiService.fetchModelIds(widget.serverUrl);
+    if (!mounted || gen != _generation) return;
+    if (ids.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_cacheKey, jsonEncode(ids));
+      } catch (_) {
+        // Cache write failure is non-fatal.
+      }
+      setState(() {
+        _models = ids;
+        _loading = false;
+        _stale = false;
+        _textMode = false;
+      });
+    } else {
+      // Fetch failed: keep the last known list (stale) or fall back to text.
+      setState(() {
+        _loading = false;
+        if (_models.isEmpty) {
+          _textMode = true;
+        } else {
+          _stale = true;
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_textMode) {
+      return TextFormField(
+        controller: _textController,
+        decoration: const InputDecoration(
+          labelText: 'Model (optional)',
+          hintText: 'Server unreachable — type the model id manually',
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (v) => widget.onChanged(v.trim()),
+      );
+    }
+
+    final saved = widget.selectedModel;
+    final items = <DropdownMenuItem<String>>[
+      const DropdownMenuItem(
+        value: '',
+        child: Text('Auto (server default)'),
+      ),
+    ];
+    final known = <String>{''};
+    for (final id in _models) {
+      if (known.add(id)) {
+        items.add(DropdownMenuItem(value: id, child: Text(id)));
+      }
+    }
+    // Keep a previously saved id that isn't in the fresh list.
+    if (saved.isNotEmpty && !known.contains(saved)) {
+      items.add(DropdownMenuItem(
+        value: saved,
+        child: Text('$saved (custom)'),
+      ));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: saved,
+                decoration: const InputDecoration(
+                  labelText: 'Model',
+                  border: OutlineInputBorder(),
+                ),
+                items: items,
+                onChanged: _loading
+                    ? null
+                    : (v) => widget.onChanged((v ?? '').trim()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: IconButton(
+                tooltip: 'Refresh model list',
+                onPressed: _loading ? null : _fetch,
+                icon: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+              ),
+            ),
+          ],
+        ),
+        if (_stale)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Server unreachable — showing last known list (may be stale).',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.orange),
+            ),
+          ),
       ],
     );
   }
