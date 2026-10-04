@@ -104,6 +104,8 @@ class CompanionSettings {
     this.autoCaptureEnabled = false,
     this.autoCaptureIntervalMinutes = 60,
     this.adbInfoSharingEnabled = false,
+    this.usbStorageEnabled = true,
+    this.usbSerialEnabled = true,
   });
 
   /// One of `light`, `dark` or `system`.
@@ -145,6 +147,15 @@ class CompanionSettings {
   /// troubleshooting is possible. Includes pairing status and port.
   final bool adbInfoSharingEnabled;
 
+  /// Let Muse use USB mass-storage commands (usb.list_devices,
+  /// usb.list_volumes, usb.list_files, usb.read_file). On until the user
+  /// opts out.
+  final bool usbStorageEnabled;
+
+  /// Let Muse use USB serial commands (all usb.serial_*). On until the
+  /// user opts out.
+  final bool usbSerialEnabled;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -157,6 +168,8 @@ class CompanionSettings {
     bool? autoCaptureEnabled,
     int? autoCaptureIntervalMinutes,
     bool? adbInfoSharingEnabled,
+    bool? usbStorageEnabled,
+    bool? usbSerialEnabled,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -172,6 +185,8 @@ class CompanionSettings {
           autoCaptureIntervalMinutes ?? this.autoCaptureIntervalMinutes,
       adbInfoSharingEnabled:
           adbInfoSharingEnabled ?? this.adbInfoSharingEnabled,
+      usbStorageEnabled: usbStorageEnabled ?? this.usbStorageEnabled,
+      usbSerialEnabled: usbSerialEnabled ?? this.usbSerialEnabled,
     );
   }
 
@@ -211,6 +226,12 @@ class CompanionSettings {
       autoCaptureIntervalMinutes:
           _captureInterval(map['auto_capture_interval_minutes']),
       adbInfoSharingEnabled: map['adb_info_sharing_enabled'] == true,
+      usbStorageEnabled: map['usb_storage_enabled'] is bool
+          ? map['usb_storage_enabled']! as bool
+          : true,
+      usbSerialEnabled: map['usb_serial_enabled'] is bool
+          ? map['usb_serial_enabled']! as bool
+          : true,
     );
   }
 

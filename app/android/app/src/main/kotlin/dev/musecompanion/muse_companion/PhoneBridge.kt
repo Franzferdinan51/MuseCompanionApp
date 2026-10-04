@@ -86,6 +86,8 @@ class PhoneBridge(private val activity: MainActivity) {
     private var reader: Thread? = null
     @Volatile private var recording = false
     private val usbOtg = UsbOtgManager(context).apply { start() }
+    private var usbStorageEnabled = true
+    private var usbSerialEnabled = true
     private val usbSerial = UsbSerialManager(context)
     private val capturing = AtomicBoolean(false)
     private val speakLock = Any()
@@ -925,6 +927,11 @@ class PhoneBridge(private val activity: MainActivity) {
                 mapOf("status" to "speaking")
             }
             "phone.media" -> media(params.string("action"))
+            "setUsbToggles" -> {
+                usbStorageEnabled = params["storage_enabled"] as? Boolean ?: true
+                usbSerialEnabled = params["serial_enabled"] as? Boolean ?: true
+                mapOf("status" to "ok")
+            }
             "phone.capabilities" -> capabilities()
             "phone.ringer" -> ringer(params.string("action"), params.string("mode"))
             "phone.vibrate" -> vibrate(params.int("ms"))
@@ -1672,7 +1679,9 @@ class PhoneBridge(private val activity: MainActivity) {
                 MuseAccessibilityService.instance != null || ScreenControl.enabled(context)
                 ),
             "flashlight" to context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH),
-            "usb_host" to usbOtg.hasUsbHost(),
+            "usb_host" to (usbOtg.hasUsbHost() && (usbStorageEnabled || usbSerialEnabled)),
+            "usb_storage_enabled" to usbStorageEnabled,
+            "usb_serial_enabled" to usbSerialEnabled,
             "usb_devices" to usbOtg.listDevices().size,
             "usb_volumes" to usbOtg.listVolumes().size,
             "write_settings" to Settings.System.canWrite(context),

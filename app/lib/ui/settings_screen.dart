@@ -767,6 +767,43 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 16),
           _SettingCard(
+            title: 'USB',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'USB devices plugged in over OTG. Muse can browse flash '
+                  'drives and talk to serial devices. Turn either off to '
+                  'block those commands.',
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('USB storage (OTG)'),
+                  subtitle: const Text(
+                    'Flash drives: list, browse, and read files',
+                  ),
+                  value: _settings.usbStorageEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(usbStorageEnabled: v),
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('USB serial'),
+                  subtitle: const Text(
+                    'Serial devices: open ports, send and receive data',
+                  ),
+                  value: _settings.usbSerialEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(usbSerialEnabled: v),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
             title: 'Auto-capture',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

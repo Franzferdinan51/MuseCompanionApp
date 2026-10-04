@@ -107,6 +107,20 @@ Future<void> main() async {
   autoCapture.sync();
   // Re-sync when settings change (presentation notifies via settings).
   settings.addListener(autoCapture.sync);
+  // Push USB toggles to native so phone.capabilities reflects them.
+  Future<void> syncUsbToggles() async {
+    final s = presentation.settings;
+    await phone.applyUsbToggles(
+      storageEnabled: s.usbStorageEnabled,
+      serialEnabled: s.usbSerialEnabled,
+    );
+  }
+
+  await syncUsbToggles();
+  settings.addListener(() {
+    // ignore: unawaited_futures
+    syncUsbToggles();
+  });
   final executor = CompanionExecutor(
     display: display,
     health: health,
@@ -115,6 +129,8 @@ Future<void> main() async {
     allowCalls: () => presentation.settings.allowCalls,
     allowSendSms: () => presentation.settings.allowSendSms,
     cameraFacing: () => presentation.settings.cameraFacing,
+    usbStorageEnabled: () => presentation.settings.usbStorageEnabled,
+    usbSerialEnabled: () => presentation.settings.usbSerialEnabled,
   );
 
   final screen = _screenSize();

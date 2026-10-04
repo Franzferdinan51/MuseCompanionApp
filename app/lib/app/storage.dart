@@ -133,6 +133,10 @@ class SettingsStore {
           _prefs.getInt('${_settingsPrefix}auto_capture_interval_minutes') ?? 60,
       'adb_info_sharing_enabled':
           _prefs.getBool('${_settingsPrefix}adb_info_sharing_enabled') ?? false,
+      'usb_storage_enabled':
+          _prefs.getBool('${_settingsPrefix}usb_storage_enabled') ?? true,
+      'usb_serial_enabled':
+          _prefs.getBool('${_settingsPrefix}usb_serial_enabled') ?? true,
     });
   }
 
@@ -174,6 +178,14 @@ class SettingsStore {
     await _prefs.setBool(
       '${_settingsPrefix}adb_info_sharing_enabled',
       settings.adbInfoSharingEnabled,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}usb_storage_enabled',
+      settings.usbStorageEnabled,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}usb_serial_enabled',
+      settings.usbSerialEnabled,
     );
     _notifyListeners();
   }

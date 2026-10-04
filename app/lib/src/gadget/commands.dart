@@ -846,6 +846,8 @@ class CompanionExecutor {
     this.allowCalls,
     this.allowSendSms,
     this.cameraFacing,
+    this.usbStorageEnabled,
+    this.usbSerialEnabled,
   });
 
   final CompanionDisplay display;
@@ -856,6 +858,11 @@ class CompanionExecutor {
   /// User toggles. Calls and direct texts stay off until these return true.
   final bool Function()? allowCalls;
   final bool Function()? allowSendSms;
+
+  /// User toggles. USB storage and USB serial commands are refused while
+  /// these return false.
+  final bool Function()? usbStorageEnabled;
+  final bool Function()? usbSerialEnabled;
 
   /// Camera chosen in Companion Settings when vision.capture omits facing.
   final String Function()? cameraFacing;
@@ -884,6 +891,7 @@ class CompanionExecutor {
         case 'usb.list_volumes':
         case 'usb.list_files':
         case 'usb.read_file':
+          return await _usbStorage(command, params);
         case 'usb.serial_list':
         case 'usb.serial_open':
         case 'usb.serial_write':
@@ -896,7 +904,7 @@ class CompanionExecutor {
         case 'usb.serial_port_info':
         case 'usb.serial_purge':
         case 'usb.serial_close':
-          return await _phone(command, params);
+          return await _usbSerial(command, params);
         case 'vision.capture':
           return await _capture(params);
         case 'phone.screenshot':
@@ -1105,6 +1113,26 @@ class CompanionExecutor {
   Future<Map<String, Object?>> _sms(Map<String, Object?> params) async {
     final send = params['send'] == true && allowSendSms?.call() == true;
     return _phone('phone.sms', {...params, 'send': send});
+  }
+
+  Future<Map<String, Object?>> _usbStorage(
+    String command,
+    Map<String, Object?> params,
+  ) async {
+    if (usbStorageEnabled?.call() != true) {
+      return errorResult('USB storage is disabled in Companion Settings');
+    }
+    return _phone(command, params);
+  }
+
+  Future<Map<String, Object?>> _usbSerial(
+    String command,
+    Map<String, Object?> params,
+  ) async {
+    if (usbSerialEnabled?.call() != true) {
+      return errorResult('USB serial is disabled in Companion Settings');
+    }
+    return _phone(command, params);
   }
 
   Future<Map<String, Object?>> _phone(

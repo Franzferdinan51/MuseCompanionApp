@@ -155,6 +155,22 @@ class PhoneBridge implements PhoneActions {
     }
   }
 
+  /// Push the USB toggles to native so `phone.capabilities` reports them.
+  /// Failures are ignored; the Dart-side executor still gates the commands.
+  Future<void> applyUsbToggles({
+    required bool storageEnabled,
+    required bool serialEnabled,
+  }) async {
+    try {
+      await _call<void>('setUsbToggles', {
+        'storage_enabled': storageEnabled,
+        'serial_enabled': serialEnabled,
+      });
+    } on PhoneActionException {
+      // Native keeps its defaults; Dart gating still applies.
+    }
+  }
+
   /// Installed voices. Completes when the speech engine is ready.
   Future<SpeechCatalog> listVoices() async {
     final raw = await _call<Map>('listVoices');
