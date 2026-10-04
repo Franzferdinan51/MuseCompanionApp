@@ -962,6 +962,7 @@ class PhoneBridge(private val activity: MainActivity) {
             "phone.settings" -> settingsPage(params.string("page"), params.string("package"))
             "phone.timer" -> timer(params.int("seconds"), params.string("message"))
             "phone.device" -> deviceSnapshot()
+            "device.health" -> deviceSnapshot()
             "phone.screen" -> screen(params.string("action"))
             "usb.list_devices" -> mapOf("devices" to usbOtg.listDevices())
             "usb.request_permission" -> usbOtg.requestPermission(params.string("device"))
