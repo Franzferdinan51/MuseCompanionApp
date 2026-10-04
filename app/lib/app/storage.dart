@@ -137,6 +137,12 @@ class SettingsStore {
           _prefs.getBool('${_settingsPrefix}usb_storage_enabled') ?? true,
       'usb_serial_enabled':
           _prefs.getBool('${_settingsPrefix}usb_serial_enabled') ?? true,
+      'lm_studio_enabled':
+          _prefs.getBool('${_settingsPrefix}lm_studio_enabled') ?? false,
+      'lm_studio_url':
+          _prefs.getString('${_settingsPrefix}lm_studio_url'),
+      'lm_studio_model':
+          _prefs.getString('${_settingsPrefix}lm_studio_model'),
     });
   }
 
@@ -186,6 +192,18 @@ class SettingsStore {
     await _prefs.setBool(
       '${_settingsPrefix}usb_serial_enabled',
       settings.usbSerialEnabled,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}lm_studio_enabled',
+      settings.lmStudioEnabled,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_url',
+      settings.lmStudioUrl,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_model',
+      settings.lmStudioModel,
     );
     _notifyListeners();
   }

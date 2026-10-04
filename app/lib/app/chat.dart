@@ -104,6 +104,27 @@ class ChatHistory {
     return message.id;
   }
 
+  /// Post a finished local-AI reply as an assistant message. Used by
+  /// the on-device LM Studio flow, which has no server turn to fold in.
+  void addLocalAssistant(String text) {
+    _messages.add(
+      ChatMessage(
+        id: _nextId++,
+        text: text,
+        sentAt: DateTime.now(),
+        status: ChatStatus.sent,
+        role: ChatRole.assistant,
+      ),
+    );
+    _trim();
+    _emit();
+    if (text.trim().isNotEmpty) {
+      _lastReply = text;
+      onCaption?.call(text);
+      onAssistantDone?.call(text);
+    }
+  }
+
   /// Mark [id] delivered.
   void markSent(int id) {
     final message = _find(id);

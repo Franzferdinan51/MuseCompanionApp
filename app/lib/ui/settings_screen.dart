@@ -28,6 +28,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../app/foreground.dart';
+import '../app/lmstudio_client.dart';
 import '../app/model.dart';
 import '../app/phone_bridge.dart';
 import '../src/gadget/phone_actions.dart';
@@ -804,6 +805,62 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 16),
           _SettingCard(
+            title: 'Local AI (LM Studio)',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Let a local model control the phone through LM Studio, '
+                  'bypassing the Muse link. The model gets phone tools and '
+                  'runs tasks on-device.',
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable local AI'),
+                  subtitle: const Text(
+                    'Allow local models to run phone tasks',
+                  ),
+                  value: _settings.lmStudioEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioEnabled: v),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  initialValue: _settings.lmStudioUrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Server URL',
+                    hintText: 'http://100.68.208.113:1234',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.url,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioUrl: v.trim()),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  initialValue: _settings.lmStudioModel,
+                  decoration: const InputDecoration(
+                    labelText: 'Model (optional)',
+                    hintText: 'Leave empty for server default',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioModel: v.trim()),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _TestLmStudioButton(settings: _settings),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
             title: 'Auto-capture',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1178,6 +1235,71 @@ class _SettingCard extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+/// Test button for the LM Studio connection: hits /v1/models and reports.
+class _TestLmStudioButton extends StatefulWidget {
+  const _TestLmStudioButton({required this.settings});
+
+  final CompanionSettings settings;
+
+  @override
+  State<_TestLmStudioButton> createState() => _TestLmStudioButtonState();
+}
+
+class _TestLmStudioButtonState extends State<_TestLmStudioButton> {
+  String? _result;
+  bool _testing = false;
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _result = null;
+    });
+    final service = LocalAiService(
+      baseUrl: widget.settings.lmStudioUrl,
+      model: widget.settings.lmStudioModel,
+      phone: const PhoneBridge(),
+      usbStorageEnabled: widget.settings.usbStorageEnabled,
+      usbSerialEnabled: widget.settings.usbSerialEnabled,
+    );
+    final error = await service.testConnection();
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _result = error.isEmpty ? 'Connected.' : error;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ElevatedButton(
+          onPressed: _testing ? null : _test,
+          child: _testing
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Test connection'),
+        ),
+        if (_result != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _result!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: _result == 'Connected.'
+                  ? Colors.green
+                  : Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -26,6 +26,7 @@ import 'package:muse_companion/src/gadget/phone_actions.dart';
 
 import '../app/avatar_motion.dart';
 import '../app/chat.dart';
+import '../app/lmstudio_client.dart';
 import '../src/gadget/service.dart';
 import 'muse_theme.dart';
 import 'scope.dart';
@@ -73,6 +74,82 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     await _post(text);
+  }
+
+  /// Run the composer's text (or a prompted instruction) through the local
+  /// AI model via LM Studio. The model can use phone tools to act.
+  Future<void> _askLocalAi() async {
+    final scope = AppScope.of(context);
+    final settings = scope.presentation.settings;
+    if (!settings.lmStudioEnabled) {
+      _showError('Local AI is disabled. Turn it on in Settings.');
+      return;
+    }
+    var instruction = _controller.text.trim();
+    if (instruction.isEmpty) {
+      instruction = await _promptInstruction() ?? '';
+      if (instruction.trim().isEmpty) return;
+      instruction = instruction.trim();
+    }
+    _controller.clear();
+    final id = scope.chat.addSending('Local AI: $instruction');
+    _scrollToEnd();
+    scope.presentation.applyStatus('Asking local AI...');
+    final service = LocalAiService(
+      baseUrl: settings.lmStudioUrl,
+      model: settings.lmStudioModel,
+      phone: scope.phone,
+      usbStorageEnabled: settings.usbStorageEnabled,
+      usbSerialEnabled: settings.usbSerialEnabled,
+      cameraFacing: settings.cameraFacing,
+    );
+    final result = await service.runTask(instruction);
+    if (!mounted) return;
+    scope.chat.markSent(id);
+    scope.presentation.applyStatus('');
+    if (result.ok) {
+      final answer = result.text.isEmpty
+          ? '(local AI finished with no text)'
+          : result.text;
+      scope.chat.addLocalAssistant(answer);
+    } else {
+      scope.chat.addLocalAssistant('Local AI error: ${result.error}');
+    }
+    _scrollToEnd();
+  }
+
+  /// Prompt for a task instruction when the composer is empty.
+  Future<String?> _promptInstruction() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ask local AI'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          minLines: 2,
+          decoration: const InputDecoration(
+            hintText: 'What should the local model do?',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Ask'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
   }
 
   Future<void> _post(
@@ -239,6 +316,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onListenStart: _startVoice,
             onListenEnd: _stopVoice,
             onCapture: _capture,
+            onLocalAi: _askLocalAi,
           ),
         ],
       ),
@@ -457,6 +535,7 @@ class _Composer extends StatelessWidget {
     required this.onListenStart,
     required this.onListenEnd,
     required this.onCapture,
+    required this.onLocalAi,
   });
 
   final TextEditingController controller;
@@ -468,6 +547,7 @@ class _Composer extends StatelessWidget {
   final VoidCallback onListenStart;
   final VoidCallback onListenEnd;
   final VoidCallback onCapture;
+  final Future<void> Function() onLocalAi;
 
   @override
   Widget build(BuildContext context) {
@@ -485,6 +565,11 @@ class _Composer extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          IconButton(
+            tooltip: 'Ask local AI (LM Studio)',
+            onPressed: ready ? onLocalAi : null,
+            icon: const Icon(Icons.smart_toy_outlined),
+          ),
           IconButton(
             tooltip: 'Show the camera',
             onPressed: ready && !capturing ? onCapture : null,

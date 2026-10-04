@@ -106,6 +106,9 @@ class CompanionSettings {
     this.adbInfoSharingEnabled = false,
     this.usbStorageEnabled = true,
     this.usbSerialEnabled = true,
+    this.lmStudioEnabled = false,
+    this.lmStudioUrl = 'http://100.68.208.113:1234',
+    this.lmStudioModel = '',
   });
 
   /// One of `light`, `dark` or `system`.
@@ -156,6 +159,17 @@ class CompanionSettings {
   /// user opts out.
   final bool usbSerialEnabled;
 
+  /// Let a local AI model (via LM Studio) control the phone. Off until the
+  /// user opts in.
+  final bool lmStudioEnabled;
+
+  /// Base URL of the LM Studio server, e.g. http://100.68.208.113:1234.
+  final String lmStudioUrl;
+
+  /// Model id to request, or '' to use the server default. Never
+  /// hard-code a model id here; the user picks it in Settings.
+  final String lmStudioModel;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -170,6 +184,9 @@ class CompanionSettings {
     bool? adbInfoSharingEnabled,
     bool? usbStorageEnabled,
     bool? usbSerialEnabled,
+    bool? lmStudioEnabled,
+    String? lmStudioUrl,
+    String? lmStudioModel,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -187,6 +204,9 @@ class CompanionSettings {
           adbInfoSharingEnabled ?? this.adbInfoSharingEnabled,
       usbStorageEnabled: usbStorageEnabled ?? this.usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled ?? this.usbSerialEnabled,
+      lmStudioEnabled: lmStudioEnabled ?? this.lmStudioEnabled,
+      lmStudioUrl: lmStudioUrl ?? this.lmStudioUrl,
+      lmStudioModel: lmStudioModel ?? this.lmStudioModel,
     );
   }
 
@@ -232,6 +252,9 @@ class CompanionSettings {
       usbSerialEnabled: map['usb_serial_enabled'] is bool
           ? map['usb_serial_enabled']! as bool
           : true,
+      lmStudioEnabled: map['lm_studio_enabled'] == true,
+      lmStudioUrl: _lmStudioUrl(map['lm_studio_url']),
+      lmStudioModel: _lmStudioModel(map['lm_studio_model']),
     );
   }
 
@@ -264,6 +287,27 @@ class CompanionSettings {
     if (number < 0) return 0;
     if (number > 100) return 100;
     return number;
+  }
+
+  /// LM Studio URL: must be http(s). Falls back to the Mac mini default.
+  static String _lmStudioUrl(Object? value) {
+    if (value is String) {
+      final url = value.trim();
+      if ((url.startsWith('http://') || url.startsWith('https://')) &&
+          url.length <= 256) {
+        return url;
+      }
+    }
+    return 'http://100.68.208.113:1234';
+  }
+
+  /// Model id: free text, empty means server default. Capped in length so
+  /// a bad stored value cannot blow up requests.
+  static String _lmStudioModel(Object? value) {
+    if (value is! String) return '';
+    final name = value.trim();
+    if (name.length > 160) return '';
+    return name;
   }
 }
 
