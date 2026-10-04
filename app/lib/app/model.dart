@@ -109,6 +109,8 @@ class CompanionSettings {
     this.lmStudioEnabled = false,
     this.lmStudioUrl = 'http://100.68.208.113:1234',
     this.lmStudioModel = '',
+    this.systemOneEnabled = false,
+    this.systemOneUrl = 'http://100.68.208.113:8765',
   });
 
   /// One of `light`, `dark` or `system`.
@@ -170,6 +172,13 @@ class CompanionSettings {
   /// hard-code a model id here; the user picks it in Settings.
   final String lmStudioModel;
 
+  /// Ask SystemOne to narrow the phone tool list per task before sending
+  /// it to the local model. Opt-in; off by default.
+  final bool systemOneEnabled;
+
+  /// Base URL of the SystemOne router, e.g. http://100.68.208.113:8765.
+  final String systemOneUrl;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -187,6 +196,8 @@ class CompanionSettings {
     bool? lmStudioEnabled,
     String? lmStudioUrl,
     String? lmStudioModel,
+    bool? systemOneEnabled,
+    String? systemOneUrl,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -207,6 +218,8 @@ class CompanionSettings {
       lmStudioEnabled: lmStudioEnabled ?? this.lmStudioEnabled,
       lmStudioUrl: lmStudioUrl ?? this.lmStudioUrl,
       lmStudioModel: lmStudioModel ?? this.lmStudioModel,
+      systemOneEnabled: systemOneEnabled ?? this.systemOneEnabled,
+      systemOneUrl: systemOneUrl ?? this.systemOneUrl,
     );
   }
 
@@ -255,6 +268,8 @@ class CompanionSettings {
       lmStudioEnabled: map['lm_studio_enabled'] == true,
       lmStudioUrl: _lmStudioUrl(map['lm_studio_url']),
       lmStudioModel: _lmStudioModel(map['lm_studio_model']),
+      systemOneEnabled: map['system_one_enabled'] == true,
+      systemOneUrl: _systemOneUrl(map['system_one_url']),
     );
   }
 
@@ -308,6 +323,18 @@ class CompanionSettings {
     final name = value.trim();
     if (name.length > 160) return '';
     return name;
+  }
+
+  /// SystemOne URL: must be http(s). Falls back to the Mac mini default.
+  static String _systemOneUrl(Object? value) {
+    if (value is String) {
+      final url = value.trim();
+      if ((url.startsWith('http://') || url.startsWith('https://')) &&
+          url.length <= 256) {
+        return url;
+      }
+    }
+    return 'http://100.68.208.113:8765';
   }
 }
 

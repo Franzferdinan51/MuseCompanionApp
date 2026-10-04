@@ -852,6 +852,33 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ),
                 const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Use SystemOne tool routing'),
+                  subtitle: const Text(
+                    'Narrow the phone tool list per task via SystemOne',
+                  ),
+                  value: _settings.systemOneEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(systemOneEnabled: v),
+                  ),
+                ),
+                if (_settings.systemOneEnabled) ...[
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    initialValue: _settings.systemOneUrl,
+                    decoration: const InputDecoration(
+                      labelText: 'SystemOne URL',
+                      hintText: 'http://100.68.208.113:8765',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.url,
+                    onChanged: (v) => _commit(
+                      _settings.copyWith(systemOneUrl: v.trim()),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
                   child: _TestLmStudioButton(settings: _settings),

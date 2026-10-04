@@ -16,9 +16,12 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'lmstudio_tools.dart';
+import 'systemone_client.dart';
+import 'systemone_toolmap.dart';
 import '../src/gadget/phone_actions.dart';
 
 /// Per-request timeout for LM Studio chat completions.
@@ -53,6 +56,8 @@ class LocalAiService {
     required this.usbStorageEnabled,
     required this.usbSerialEnabled,
     this.cameraFacing = 'back',
+    this.systemOneEnabled = false,
+    this.systemOneUrl = 'http://100.68.208.113:8765',
   });
 
   /// e.g. http://100.68.208.113:1234 (no trailing slash).
@@ -64,6 +69,12 @@ class LocalAiService {
   final bool usbStorageEnabled;
   final bool usbSerialEnabled;
   final String cameraFacing;
+
+  /// When true, ask SystemOne to narrow the tool list per task.
+  final bool systemOneEnabled;
+
+  /// SystemOne router base URL, e.g. http://100.68.208.113:8765.
+  final String systemOneUrl;
 
   Uri get _completions =>
       Uri.parse('${baseUrl.replaceAll(RegExp(r'/+$'), '')}/v1/chat/completions');
@@ -98,10 +109,13 @@ class LocalAiService {
   /// Run [instruction] through the local model with phone tools.
   /// Returns the model's final text.
   Future<LocalAiResult> runTask(String instruction) async {
-    final tools = lmToolsFor(
+    var tools = lmToolsFor(
       usbStorageEnabled: usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled,
     );
+    if (systemOneEnabled) {
+      tools = await _filterToolsViaSystemOne(instruction, tools);
+    }
     final messages = <Map<String, Object?>>[
       {
         'role': 'system',
@@ -227,6 +241,35 @@ class LocalAiService {
     } catch (e) {
       return 'error: ${_friendlyError(e)}';
     }
+  }
+
+  /// Ask SystemOne which tools matter for [instruction] and narrow
+  /// [allTools] down. Fail-open: any problem returns [allTools] unchanged.
+  Future<List<Map<String, Object?>>> _filterToolsViaSystemOne(
+    String instruction,
+    List<Map<String, Object?>> allTools,
+  ) async {
+    final names = <String>[];
+    for (final t in allTools) {
+      final fn = t['function'];
+      if (fn is Map) {
+        final name = fn['name']?.toString() ?? '';
+        if (name.isNotEmpty) names.add(name);
+      }
+    }
+    if (names.isEmpty) return allTools;
+    final ranked =
+        await SystemOneClient(baseUrl: systemOneUrl).rankTools(instruction);
+    final picked = filterToolsByRanking(names, ranked).toSet();
+    debugPrint(
+      'SystemOne tool routing: ${picked.length}/${names.length} tools '
+      'selected: ${picked.join(', ')}',
+    );
+    if (picked.length >= names.length) return allTools;
+    return [
+      for (final t in allTools)
+        if (picked.contains((t['function'] as Map)['name']?.toString())) t,
+    ];
   }
 
   /// Natural-language capability summary, appended to the system prompt

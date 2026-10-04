@@ -134,6 +134,8 @@ Future<void> main() async {
     lmStudioEnabled: () => presentation.settings.lmStudioEnabled,
     lmStudioUrl: () => presentation.settings.lmStudioUrl,
     lmStudioModel: () => presentation.settings.lmStudioModel,
+    systemOneEnabled: () => presentation.settings.systemOneEnabled,
+    systemOneUrl: () => presentation.settings.systemOneUrl,
   );
 
   final screen = _screenSize();

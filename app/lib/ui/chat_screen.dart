@@ -102,6 +102,8 @@ class _ChatScreenState extends State<ChatScreen> {
       usbStorageEnabled: settings.usbStorageEnabled,
       usbSerialEnabled: settings.usbSerialEnabled,
       cameraFacing: settings.cameraFacing,
+      systemOneEnabled: settings.systemOneEnabled,
+      systemOneUrl: settings.systemOneUrl,
     );
     final result = await service.runTask(instruction);
     if (!mounted) return;

@@ -868,6 +868,8 @@ class CompanionExecutor {
     this.lmStudioEnabled,
     this.lmStudioUrl,
     this.lmStudioModel,
+    this.systemOneEnabled,
+    this.systemOneUrl,
   });
 
   final CompanionDisplay display;
@@ -889,6 +891,12 @@ class CompanionExecutor {
   final bool Function()? lmStudioEnabled;
   final String Function()? lmStudioUrl;
   final String Function()? lmStudioModel;
+
+  /// SystemOne tool routing. When [systemOneEnabled] returns true, the
+  /// phone tool list is narrowed per task via [systemOneUrl] before
+  /// sending it to the local model.
+  final bool Function()? systemOneEnabled;
+  final String Function()? systemOneUrl;
 
   /// Camera chosen in Companion Settings when vision.capture omits facing.
   final String Function()? cameraFacing;
@@ -1171,6 +1179,8 @@ class CompanionExecutor {
       usbStorageEnabled: usbStorageEnabled?.call() == true,
       usbSerialEnabled: usbSerialEnabled?.call() == true,
       cameraFacing: cameraFacing?.call() ?? 'back',
+      systemOneEnabled: systemOneEnabled?.call() == true,
+      systemOneUrl: systemOneUrl?.call() ?? 'http://100.68.208.113:8765',
     );
     final result = await service.runTask(instruction.trim());
     if (!result.ok) return errorResult(result.error);

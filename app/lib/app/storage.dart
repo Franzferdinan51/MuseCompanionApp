@@ -143,6 +143,10 @@ class SettingsStore {
           _prefs.getString('${_settingsPrefix}lm_studio_url'),
       'lm_studio_model':
           _prefs.getString('${_settingsPrefix}lm_studio_model'),
+      'system_one_enabled':
+          _prefs.getBool('${_settingsPrefix}system_one_enabled') ?? false,
+      'system_one_url':
+          _prefs.getString('${_settingsPrefix}system_one_url'),
     });
   }
 
@@ -204,6 +208,14 @@ class SettingsStore {
     await _prefs.setString(
       '${_settingsPrefix}lm_studio_model',
       settings.lmStudioModel,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}system_one_enabled',
+      settings.systemOneEnabled,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}system_one_url',
+      settings.systemOneUrl,
     );
     _notifyListeners();
   }
