@@ -1344,7 +1344,10 @@ class _TestLmStudioButtonState extends State<_TestLmStudioButton> {
 ///
 /// - Fetches GET {serverUrl}/v1/models when the settings screen opens and
 ///   whenever [serverUrl] changes (debounced).
-/// - "Auto (server default)" (value '') sends no model id; the server picks.
+/// - "Auto (app picks the best model)" (value '') lets the app resolve the
+///   model deterministically at task time: an agent task prefers a clef
+///   decision model, a chat task prefers a conversational model, else the
+///   first loaded model. No configuration needed.
 /// - Manual refresh button is a backup; auto-fetch is the primary path.
 /// - On fetch failure the last known list is shown with a stale badge;
 ///   with no cached list it falls back to a free-text field.
@@ -1368,8 +1371,6 @@ class _ModelSelector extends StatefulWidget {
 }
 
 class _ModelSelectorState extends State<_ModelSelector> {
-  static const _cacheKey = 'lm_studio_model_list_cache';
-
   List<String> _models = const [];
   bool _loading = true;
   bool _stale = false;
@@ -1413,7 +1414,7 @@ class _ModelSelectorState extends State<_ModelSelector> {
   Future<void> _loadCached() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_cacheKey);
+      final raw = prefs.getString(lmStudioModelListCacheKey);
       if (raw == null || raw.isEmpty) return;
       final decoded = jsonDecode(raw);
       if (decoded is! List) return;
@@ -1436,7 +1437,7 @@ class _ModelSelectorState extends State<_ModelSelector> {
     if (ids.isNotEmpty) {
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_cacheKey, jsonEncode(ids));
+        await prefs.setString(lmStudioModelListCacheKey, jsonEncode(ids));
       } catch (_) {
         // Cache write failure is non-fatal.
       }
@@ -1466,7 +1467,7 @@ class _ModelSelectorState extends State<_ModelSelector> {
         controller: _textController,
         decoration: InputDecoration(
           labelText: '${widget.label} (optional)',
-          hintText: 'Server unreachable — type the model id manually',
+          hintText: 'Server unreachable — leave blank, the app auto-picks',
           border: const OutlineInputBorder(),
         ),
         onChanged: (v) => widget.onChanged(v.trim()),
@@ -1477,7 +1478,7 @@ class _ModelSelectorState extends State<_ModelSelector> {
     final items = <DropdownMenuItem<String>>[
       const DropdownMenuItem(
         value: '',
-        child: Text('Auto (server default)'),
+        child: Text('Auto (app picks the best model)'),
       ),
     ];
     final known = <String>{''};

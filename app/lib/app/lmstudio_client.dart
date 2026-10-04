@@ -18,6 +18,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lmstudio_tools.dart';
 import 'systemone_client.dart';
@@ -29,6 +30,18 @@ const Duration _requestTimeout = Duration(seconds: 60);
 
 /// Max tool-call rounds before giving up.
 const int _maxRounds = 10;
+
+/// SharedPreferences key for the cached GET /v1/models id list.
+/// Shared with the settings UI's model selector so task-time resolution
+/// can fall back to the last known list when the server is unreachable.
+const String lmStudioModelListCacheKey = 'lm_studio_model_list_cache';
+
+/// SharedPreferences keys for the last auto-resolved model per role.
+/// Kept separate from the user's explicit selection so an explicit pick
+/// always wins and a derived default can be re-resolved when the loaded
+/// models change.
+const String _resolvedAgentKey = 'lm_studio_agent_model_resolved';
+const String _resolvedChatKey = 'lm_studio_chat_model_resolved';
 
 /// Result of a local-AI task run.
 class LocalAiResult {
@@ -58,6 +71,7 @@ class LocalAiService {
     this.cameraFacing = 'back',
     this.systemOneEnabled = false,
     this.systemOneUrl = 'http://100.68.208.113:8765',
+    this.modelRole = 'agent',
   });
 
   /// e.g. http://100.68.208.113:1234 (no trailing slash).
@@ -65,6 +79,11 @@ class LocalAiService {
 
   /// Model id, or '' to use the server default.
   final String model;
+
+  /// Which role this task runs as: 'agent' (decision/tool-calling) or
+  /// 'chat' (conversational). Only used when [model] is empty and a
+  /// deterministic default must be picked.
+  final String modelRole;
   final PhoneActions phone;
   final bool usbStorageEnabled;
   final bool usbSerialEnabled;
@@ -105,9 +124,100 @@ class LocalAiService {
     }
   }
 
-  /// Quick connectivity check. Returns empty string on success, else an error.
-  Future<String> testConnection() async {
+  /// Pick a deterministic default model id from [ids] for [role].
+  ///
+  /// - 'agent': prefer a decision/tool-calling model (id contains 'clef'),
+  ///   else the first loaded model.
+  /// - 'chat': prefer a conversational model (first id NOT containing
+  ///   'clef'), else the first loaded model.
+  ///
+  /// [ids] is expected sorted (as [fetchModelIds] returns), so the pick is
+  /// stable for the same server state. Returns '' when [ids] is empty.
+  static String pickForRole(List<String> ids, String role) {
+    if (ids.isEmpty) return '';
+    final lower = ids.map((id) => id.toLowerCase()).toList();
+    if (role == 'chat') {
+      for (var i = 0; i < ids.length; i++) {
+        if (!lower[i].contains('clef')) return ids[i];
+      }
+      return ids.first;
+    }
+    // 'agent' and any unknown role: prefer a clef decision model.
+    for (var i = 0; i < ids.length; i++) {
+      if (lower[i].contains('clef')) return ids[i];
+    }
+    return ids.first;
+  }
+
+  /// Resolve the effective model id for a task.
+  ///
+  /// Priority: explicit user selection > smart default > server default.
+  ///
+  /// 1. [explicit] non-empty: the user picked it, use it as-is.
+  /// 2. Otherwise query GET {baseUrl}/v1/models and pick deterministically
+  ///    via [pickForRole]; the pick is persisted per role so it stays
+  ///    stable across tasks.
+  /// 3. If the server is unreachable, fall back to the cached model list
+  ///    (shared with the settings UI) and pick from that.
+  /// 4. If there is no list at all, reuse the last persisted pick.
+  /// 5. Last resort: return '' so the request omits the model field and
+  ///    the server picks — never send an ambiguous request when a
+  ///    deterministic choice exists.
+  static Future<String> resolveModel({
+    required String baseUrl,
+    required String explicit,
+    required String role,
+  }) async {
+    if (explicit.trim().isNotEmpty) return explicit.trim();
+    final resolvedKey = role == 'chat' ? _resolvedChatKey : _resolvedAgentKey;
+
+    List<String> ids = await fetchModelIds(baseUrl);
+    if (ids.isEmpty) {
+      ids = await _cachedModelIds();
+    }
+    if (ids.isNotEmpty) {
+      final pick = pickForRole(ids, role);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(resolvedKey, pick);
+      } catch (_) {
+        // Persisting the pick is best-effort; the pick itself stands.
+      }
+      debugPrint('LocalAiService: auto-resolved $role model -> $pick');
+      return pick;
+    }
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final last = prefs.getString(resolvedKey) ?? '';
+      if (last.trim().isNotEmpty) {
+        debugPrint('LocalAiService: reusing last resolved $role model -> $last');
+        return last.trim();
+      }
+    } catch (_) {
+      // Best-effort.
+    }
+    debugPrint('LocalAiService: no model list available, using server default');
+    return '';
+  }
+
+  /// Read the cached /v1/models id list (written by the settings UI and
+  /// by [resolveModel]'s fresh fetches). Empty list when absent/corrupt.
+  static Future<List<String>> _cachedModelIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(lmStudioModelListCacheKey);
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final ids = decoded.whereType<String>().toList()..sort();
+      return ids;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Quick connectivity check. Returns empty string on success, else an error.
+  Future<String> testConnection() async {    try {
       final res = await http.get(_models).timeout(const Duration(seconds: 10));
       if (res.statusCode != 200) {
         return 'HTTP ${res.statusCode}: ${res.body.trim()}'.trim();
@@ -131,7 +241,16 @@ class LocalAiService {
 
   /// Run [instruction] through the local model with phone tools.
   /// Returns the model's final text.
+  ///
+  /// The effective model is resolved deterministically: an explicit
+  /// selection wins, otherwise the app picks the best loaded model
+  /// itself (see [resolveModel]) — no configuration required.
   Future<LocalAiResult> runTask(String instruction) async {
+    final effectiveModel = await resolveModel(
+      baseUrl: baseUrl,
+      explicit: model,
+      role: modelRole,
+    );
     var tools = lmToolsFor(
       usbStorageEnabled: usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled,
@@ -155,7 +274,7 @@ class LocalAiService {
     var toolCalls = 0;
     try {
       for (var round = 0; round < _maxRounds; round++) {
-        final reply = await _chat(messages, tools);
+        final reply = await _chat(messages, tools, effectiveModel);
         final message = reply['message'];
         if (message is! Map) {
           return const LocalAiResult(
@@ -203,13 +322,14 @@ class LocalAiService {
   Future<Map<String, Object?>> _chat(
     List<Map<String, Object?>> messages,
     List<Map<String, Object?>> tools,
+    String effectiveModel,
   ) async {
     final body = <String, Object?>{
       'messages': messages,
       'tools': tools,
       'tool_choice': 'auto',
     };
-    if (model.trim().isNotEmpty) body['model'] = model.trim();
+    if (effectiveModel.trim().isNotEmpty) body['model'] = effectiveModel.trim();
     final res = await http
         .post(
           _completions,
