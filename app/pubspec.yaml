@@ -2,7 +2,7 @@ name: muse_companion
 description: "Muse Companion - a full-color Muse gadget companion app for Android (iOS, macOS and Windows to follow)."
 publish_to: 'none'
 
-version: 0.2.9+11
+version: 0.3.0+12
 
 environment:
   sdk: ^3.11.1
