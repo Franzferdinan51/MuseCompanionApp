@@ -196,6 +196,11 @@ Future<void> main() async {
   chat.onActivity = (code) {
     final line = activityCaption(code);
     if (line != null) presentation.applyStatus(line);
+    // The TTS engine is the authority on speaking: an activity code that
+    // arrives after the turn ends (e.g. "idle") must not clear the speaking
+    // pose while audio is still playing, or the stop button disappears and
+    // barge-in stops working mid-utterance.
+    if (PhoneBridge.speaking.value) return;
     if (activitySetsPose(code, streaming: chat.assistantStreaming)) {
       presentation.applyPose(poseForActivity(code));
     }
