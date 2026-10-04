@@ -19,7 +19,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'lmstudio_tools.dart';
-import 'phone_bridge.dart';
+import '../src/gadget/phone_actions.dart';
 
 /// Per-request timeout for LM Studio chat completions.
 const Duration _requestTimeout = Duration(seconds: 60);
@@ -60,7 +60,7 @@ class LocalAiService {
 
   /// Model id, or '' to use the server default.
   final String model;
-  final PhoneBridge phone;
+  final PhoneActions phone;
   final bool usbStorageEnabled;
   final bool usbSerialEnabled;
   final String cameraFacing;

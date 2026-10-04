@@ -10,7 +10,7 @@
 // local model gets the same capabilities Muse would have if
 // device.invoke worked.
 
-import 'phone_bridge.dart';
+import '../src/gadget/phone_actions.dart';
 
 /// Context passed to every tool handler.
 class LmToolContext {
@@ -19,7 +19,7 @@ class LmToolContext {
     required this.cameraFacing,
   });
 
-  final PhoneBridge phone;
+  final PhoneActions phone;
 
   /// 'back' or 'front' — default camera for take_photo.
   final String cameraFacing;

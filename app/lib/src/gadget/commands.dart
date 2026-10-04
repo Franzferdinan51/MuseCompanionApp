@@ -24,6 +24,7 @@ import 'dart:typed_data';
 
 import 'chat_events.dart';
 import 'phone_actions.dart';
+import '../../app/lmstudio_client.dart';
 
 /// Longest status caption the app accepts (UTF-16 code units).
 const int maxStatusChars = 4000;
@@ -377,6 +378,16 @@ Map<String, Object?> companionCommandSpecs({
       'required': <String, Object?>{},
       'optional': <String, Object?>{},
       'timeout_ms': drawImageTimeoutMs,
+    },
+    'local_ai.run_task': {
+      'description':
+          'Run a task through the on-phone local AI (LM Studio). The local '
+          'model receives phone tools and acts on the device. Works only when '
+          '"Enable local AI" is on in Companion Settings.',
+      'required': {
+        'instruction': stringParam('What the local model should do.'),
+      },
+      'optional': <String, Object?>{},
     },
     'voice.listen': {
       'description':
@@ -854,6 +865,9 @@ class CompanionExecutor {
     this.cameraFacing,
     this.usbStorageEnabled,
     this.usbSerialEnabled,
+    this.lmStudioEnabled,
+    this.lmStudioUrl,
+    this.lmStudioModel,
   });
 
   final CompanionDisplay display;
@@ -869,6 +883,12 @@ class CompanionExecutor {
   /// these return false.
   final bool Function()? usbStorageEnabled;
   final bool Function()? usbSerialEnabled;
+
+  /// Local AI (LM Studio) settings. local_ai.run_task is refused while
+  /// [lmStudioEnabled] returns false.
+  final bool Function()? lmStudioEnabled;
+  final String Function()? lmStudioUrl;
+  final String Function()? lmStudioModel;
 
   /// Camera chosen in Companion Settings when vision.capture omits facing.
   final String Function()? cameraFacing;
@@ -917,6 +937,8 @@ class CompanionExecutor {
           return await _screenshot(params);
         case 'voice.stop':
           return await _stopSpeak();
+        case 'local_ai.run_task':
+          return await _localAiRunTask(params);
         case 'voice.listen':
           return await _listen(params);
         case 'phone.speak':
@@ -1128,6 +1150,34 @@ class CompanionExecutor {
   Future<Map<String, Object?>> _sms(Map<String, Object?> params) async {
     final send = params['send'] == true && allowSendSms?.call() == true;
     return _phone('phone.sms', {...params, 'send': send});
+  }
+
+  Future<Map<String, Object?>> _localAiRunTask(
+    Map<String, Object?> params,
+  ) async {
+    if (lmStudioEnabled?.call() != true) {
+      return errorResult('Local AI is disabled in Companion Settings');
+    }
+    final instruction = params['instruction'];
+    if (instruction is! String || instruction.trim().isEmpty) {
+      return errorResult('instruction is required');
+    }
+    final phoneResult = _requirePhone();
+    if (phoneResult is Map<String, Object?>) return phoneResult;
+    final service = LocalAiService(
+      baseUrl: lmStudioUrl?.call() ?? '',
+      model: lmStudioModel?.call() ?? '',
+      phone: phoneResult as PhoneActions,
+      usbStorageEnabled: usbStorageEnabled?.call() == true,
+      usbSerialEnabled: usbSerialEnabled?.call() == true,
+      cameraFacing: cameraFacing?.call() ?? 'back',
+    );
+    final result = await service.runTask(instruction.trim());
+    if (!result.ok) return errorResult(result.error);
+    return okResult({
+      'text': result.text,
+      'tool_calls': result.toolCalls,
+    });
   }
 
   Future<Map<String, Object?>> _usbStorage(

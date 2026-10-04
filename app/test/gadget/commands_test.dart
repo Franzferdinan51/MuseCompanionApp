@@ -271,6 +271,38 @@ void main() {
       expect((sent['payload'] as Map)['send'], isTrue);
     });
 
+    test('local_ai.run_task is refused while local AI is disabled', () async {
+      final phone = _FakePhone();
+      var enabled = false;
+      final gated = CompanionExecutor(
+        display: display,
+        health: _FakeHealth(),
+        phone: phone,
+        lmStudioEnabled: () => enabled,
+        lmStudioUrl: () => 'http://127.0.0.1:1234',
+        lmStudioModel: () => '',
+      );
+      final blocked = await gated.run(
+        'local_ai.run_task',
+        {'instruction': 'take a photo'},
+        null,
+      );
+      expect(blocked['ok'], isFalse);
+      expect(blocked['error'], contains('disabled'));
+
+      enabled = true;
+      final missing = await gated.run('local_ai.run_task', {}, null);
+      expect(missing['ok'], isFalse);
+      expect(missing['error'], contains('instruction'));
+    });
+
+    test('local_ai.run_task is registered in the command specs', () {
+      final specs = companionCommandSpecs(screenWidth: 1080, screenHeight: 2400);
+      final spec = specs['local_ai.run_task'] as Map<String, Object?>;
+      final required = spec['required'] as Map<String, Object?>;
+      expect(required.containsKey('instruction'), isTrue);
+    });
+
     test('vision posts the camera bytes into chat', () async {
       final phone = _FakePhone();
       String? posted;

@@ -131,6 +131,9 @@ Future<void> main() async {
     cameraFacing: () => presentation.settings.cameraFacing,
     usbStorageEnabled: () => presentation.settings.usbStorageEnabled,
     usbSerialEnabled: () => presentation.settings.usbSerialEnabled,
+    lmStudioEnabled: () => presentation.settings.lmStudioEnabled,
+    lmStudioUrl: () => presentation.settings.lmStudioUrl,
+    lmStudioModel: () => presentation.settings.lmStudioModel,
   );
 
   final screen = _screenSize();
