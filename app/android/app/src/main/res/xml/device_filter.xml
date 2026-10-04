@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB mass storage (flash drives): class 8, subclass 6 (SCSI transparent),
+         protocol 80 (bulk-only). Lets the app handle USB drives on attach. -->
+    <usb-device class="8" subclass="6" protocol="80" />
+</resources>

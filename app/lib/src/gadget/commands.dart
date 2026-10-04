@@ -151,6 +151,54 @@ Map<String, Object?> companionCommandSpecs({
       'required': <String, Object?>{},
       'optional': <String, Object?>{},
     },
+    'usb.list_devices': {
+      'description':
+          'List USB devices plugged into the phone over OTG (flash drives, '
+          'etc.): device name, vendor/product id, class, and whether the '
+          'app already has permission to open each one.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'usb.request_permission': {
+      'description':
+          'Show the system USB permission dialog on the phone for one '
+          'device, so the app may open it. The user answers on the phone; '
+          'call usb.list_devices afterwards to see has_permission.',
+      'required': {
+        'device': stringParam('Device name from usb.list_devices.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'usb.list_volumes': {
+      'description':
+          'List mounted removable storage volumes (USB OTG drives, SD '
+          'cards): mount path, label, total and free space. Take a path '
+          'from here for usb.list_files.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'usb.list_files': {
+      'description':
+          'List files and folders inside a mounted removable volume. Up '
+          'to 500 entries, folders first. Refuses paths outside mounted '
+          'removable volumes.',
+      'required': {
+        'path': stringParam(
+          'Directory path from usb.list_volumes, e.g. /storage/1A2B-3C4D.',
+        ),
+      },
+      'optional': <String, Object?>{},
+    },
+    'usb.read_file': {
+      'description':
+          'Read a file from a mounted removable volume. Returns the '
+          'content base64-encoded, capped at 10MB. Refuses paths outside '
+          'mounted removable volumes.',
+      'required': {
+        'path': stringParam('File path inside a mounted removable volume.'),
+      },
+      'optional': <String, Object?>{},
+    },
     'vision.capture': {
       'description':
           'Take one photo with the phone camera and show it to you in this '
@@ -675,6 +723,12 @@ class CompanionExecutor {
           return await _setDisplay(params);
         case 'device.health':
           return okResult(await health.health());
+        case 'usb.list_devices':
+        case 'usb.request_permission':
+        case 'usb.list_volumes':
+        case 'usb.list_files':
+        case 'usb.read_file':
+          return await _phone(command, params);
         case 'vision.capture':
           return await _capture(params);
         case 'phone.screenshot':
@@ -968,6 +1022,8 @@ String companionIntroMessage() {
       'device (open links, launch apps, notifications, messages, contacts, '
       'calendar, location, alarms, timers, clipboard, flashlight, volume, '
       'ringer, brightness, rotation, vibration, and spoken replies). '
+      'A USB drive plugged in over OTG shows up in usb.list_volumes; '
+      'browse it with usb.list_files and read files with usb.read_file. '
       'Once Screen control is on, phone.screenshot shows you the screen, '
       'phone.ui reads it, and phone.tap, phone.swipe, phone.type, and '
       'phone.press use it. '

@@ -85,6 +85,7 @@ class PhoneBridge(private val activity: MainActivity) {
     private var pcm: ByteArrayOutputStream? = null
     private var reader: Thread? = null
     @Volatile private var recording = false
+    private val usbOtg = UsbOtgManager(context).apply { start() }
     private val capturing = AtomicBoolean(false)
     private val speakLock = Any()
     private var speakGeneration = 0
@@ -933,6 +934,11 @@ class PhoneBridge(private val activity: MainActivity) {
             "phone.timer" -> timer(params.int("seconds"), params.string("message"))
             "phone.device" -> deviceSnapshot()
             "phone.screen" -> screen(params.string("action"))
+            "usb.list_devices" -> mapOf("devices" to usbOtg.listDevices())
+            "usb.request_permission" -> usbOtg.requestPermission(params.string("device"))
+            "usb.list_volumes" -> mapOf("volumes" to usbOtg.listVolumes())
+            "usb.list_files" -> usbOtg.listFiles(params.string("path"))
+            "usb.read_file" -> usbOtg.readFile(params.string("path"))
             else -> throw IllegalArgumentException("unsupported command: $command")
         }
     }
@@ -1637,6 +1643,9 @@ class PhoneBridge(private val activity: MainActivity) {
                 MuseAccessibilityService.instance != null || ScreenControl.enabled(context)
                 ),
             "flashlight" to context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH),
+            "usb_host" to usbOtg.hasUsbHost(),
+            "usb_devices" to usbOtg.listDevices().size,
+            "usb_volumes" to usbOtg.listVolumes().size,
             "write_settings" to Settings.System.canWrite(context),
             "dnd" to dndGranted(),
             "model" to Build.MODEL,

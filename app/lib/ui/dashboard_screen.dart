@@ -21,6 +21,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
 
 import '../app/model.dart';
+import '../app/phone_bridge.dart';
 import '../app/pixel_avatar.dart';
 import '../src/gadget/service.dart';
 import 'muse_theme.dart';
@@ -61,6 +62,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _linkSub?.cancel();
     _connectionSub?.cancel();
     super.dispose();
+  }
+
+  /// One-line USB summary for the dashboard. Never throws: on desktop
+  /// (or without the bridge) it reports unavailable.
+  Future<String> _usbSummary() async {
+    try {
+      final devices =
+          await const PhoneBridge().run('usb.list_devices', const {});
+      final volumes =
+          await const PhoneBridge().run('usb.list_volumes', const {});
+      final deviceList = devices['devices'];
+      final volumeList = volumes['volumes'];
+      final deviceCount = deviceList is List ? deviceList.length : 0;
+      final vols = volumeList is List
+          ? volumeList.whereType<Map>()
+          : const <Map>[];
+      if (deviceCount == 0 && vols.isEmpty) return 'Nothing attached';
+      final names = vols
+          .map((v) => '${v['description'] ?? 'USB'} (${v['path'] ?? '?'})')
+          .join(', ');
+      final tail = names.isEmpty ? '' : ': $names';
+      return '$deviceCount device(s), ${vols.length} volume(s)$tail';
+    } catch (_) {
+      return 'Unavailable';
+    }
   }
 
   @override
@@ -112,6 +138,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 _Row('Pose', avatarStateLabel(presentation.pose)),
                 _Row('Speech volume', '${presentation.settings.speechVolume}'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          MuseBubble(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('USB storage', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                FutureBuilder<String>(
+                  future: _usbSummary(),
+                  builder: (context, snapshot) => _Row(
+                    'Devices',
+                    snapshot.data ?? 'Checking...',
+                  ),
+                ),
+                Text(
+                  'Plug in a USB drive over OTG and ask Muse to run usb.list_volumes.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
               ],
             ),
           ),
