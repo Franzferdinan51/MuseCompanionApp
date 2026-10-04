@@ -17,6 +17,7 @@
 // of a crash. Permissions are requested here so both the chat screen
 // and a Muse `link.invoke` ask the user the same way.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -93,6 +94,19 @@ class PhoneBridge implements PhoneActions {
 
   final MethodChannel _channel;
 
+  /// Whether the native TTS engine is currently speaking. This is the
+  /// single source of truth for the stop button, avatar-tap barge-in, and
+  /// hold-to-talk interruption: EVERY speech path (Muse replies, local-AI
+  /// `speak_text`, the `phone.speak` command, the voice preview, and
+  /// say-it-again) funnels through [speak]/[stopSpeak] here. Static because
+  /// the native engine is a process singleton.
+  ///
+  /// The generation counter keeps overlapping speaks honest: a newer speak
+  /// (or [stopSpeak]) supersedes an older one, so only the latest generation
+  /// may clear the flag. This mirrors the native `speakGeneration`.
+  static final ValueNotifier<bool> speaking = ValueNotifier<bool>(false);
+  static int _speakGeneration = 0;
+
   @override
   Future<Uint8List> captureJpeg({String facing = 'back'}) async {
     await _ensure(Permission.camera, 'Camera');
@@ -141,13 +155,25 @@ class PhoneBridge implements PhoneActions {
 
   @override
   Future<void> speak(String text) async {
-    await _call<void>('speak', {'text': text});
+    final generation = ++_speakGeneration;
+    speaking.value = true;
+    try {
+      await _call<void>('speak', {'text': text});
+    } finally {
+      // Only the latest generation clears the flag: an older speak whose
+      // native call was flushed by a newer one must not mark us idle.
+      if (generation == _speakGeneration) {
+        speaking.value = false;
+      }
+    }
   }
 
   /// Stop any in-progress speech immediately. The native side completes
   /// the pending `speak` result, so callers awaiting it do not hang.
   @override
   Future<void> stopSpeak() async {
+    _speakGeneration++;
+    speaking.value = false;
     await _call<void>('stopSpeak');
   }
 

@@ -98,6 +98,20 @@ Future<void> main() async {
   );
   final phone = const PhoneBridge();
   await phone.applySpeechVoice(presentation.settings.speechVoice);
+  // The stop button, avatar-tap barge-in, and hold-to-talk interruption all
+  // key off `presentation.pose == AvatarPose.speaking`. Drive the pose from
+  // the TTS engine's actual state (PhoneBridge.speaking) instead of only
+  // the Muse reply pipeline, so local-AI `speak_text`, the `phone.speak`
+  // command, the voice preview, and say-it-again all show the stop button
+  // and respond to barge-in. Only transitions into/out of the speaking
+  // pose; never clobbers listening/thinking/etc.
+  PhoneBridge.speaking.addListener(() {
+    if (PhoneBridge.speaking.value) {
+      presentation.applyPose(AvatarPose.speaking);
+    } else if (presentation.pose == AvatarPose.speaking) {
+      presentation.applyPose(AvatarPose.idle);
+    }
+  });
   final poster = _ChatPoster();
   final autoCapture = _AutoCaptureScheduler(
     settings: settings,
