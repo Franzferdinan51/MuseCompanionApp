@@ -37,6 +37,7 @@ import 'package:muse_companion/src/gadget/phone_actions.dart';
 import 'package:muse_companion/src/gadget/commands.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 
+import 'ui/approval_prompt.dart';
 import 'ui/companion_screen.dart';
 import 'ui/muse_theme.dart';
 import 'ui/scope.dart';
@@ -573,7 +574,9 @@ class _MuseCompanionAppState extends State<MuseCompanionApp>
               child: child ?? const SizedBox.shrink(),
             );
           },
-          home: const CompanionScreen(),
+          home: const ApprovalPromptListener(
+            child: CompanionScreen(),
+          ),
         ),
       ),
     );

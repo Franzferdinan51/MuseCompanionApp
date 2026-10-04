@@ -20,6 +20,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'approval_service.dart';
 import 'lmstudio_tools.dart';
 import 'systemone_client.dart';
 import 'systemone_toolmap.dart';
@@ -72,7 +73,12 @@ class LocalAiService {
     this.systemOneEnabled = false,
     this.systemOneUrl = 'http://100.68.208.113:8765',
     this.modelRole = 'agent',
+    this.approver,
   });
+
+  /// Decides whether a flagged tool call may run. Defaults to the
+  /// [ApprovalService] popup; tests inject a fake.
+  final Future<bool> Function(String title, String body)? approver;
 
   /// e.g. http://100.68.208.113:1234 (no trailing slash).
   final String baseUrl;
@@ -378,12 +384,33 @@ class LocalAiService {
       return 'error: could not parse arguments for "$name"';
     }
 
+    if (tool.requiresApproval) {
+      final approve = approver ?? ApprovalService.instance.requestApproval;
+      final approved = await approve(
+        'Allow "${tool.name}"?',
+        _describeToolCall(tool, args),
+      );
+      if (!approved) {
+        return 'denied: the user did not approve the "${tool.name}" action';
+      }
+    }
     try {
       final ctx = LmToolContext(phone: phone, cameraFacing: cameraFacing);
       return await tool.handler(args, ctx);
     } catch (e) {
       return 'error: ${_friendlyError(e)}';
     }
+  }
+
+  /// One-line human summary of a tool call for the approval popup:
+  /// the tool's description plus its key arguments.
+  String _describeToolCall(LmTool tool, Map<String, Object?> args) {
+    final desc = tool.description.trim();
+    if (args.isEmpty) return desc;
+    final parts = args.entries
+        .map((e) => '${e.key}: ${e.value}')
+        .join(', ');
+    return '$desc\n\nArguments: $parts';
   }
 
   /// Ask SystemOne which tools matter for [instruction] and narrow

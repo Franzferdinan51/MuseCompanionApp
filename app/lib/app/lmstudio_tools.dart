@@ -38,6 +38,7 @@ class LmTool {
     required this.handler,
     this.requiresUsbStorage = false,
     this.requiresUsbSerial = false,
+    this.requiresApproval = false,
   });
 
   final String name;
@@ -54,6 +55,9 @@ class LmTool {
 
   /// Only offer this tool when USB serial is enabled in Settings.
   final bool requiresUsbSerial;
+
+  /// When true, the user must approve each call in a popup before it runs.
+  final bool requiresApproval;
 
   Map<String, Object?> toJson() => {
     'type': 'function',
@@ -117,6 +121,7 @@ String _cap(String s, [int cap = 4000]) =>
 Map<String, LmTool> get _registry => {
   'take_photo': LmTool(
     name: 'take_photo',
+    requiresApproval: true,
     description:
         'Take a photo with the phone camera. Returns confirmation with '
         'the photo size in bytes.',
@@ -157,6 +162,7 @@ Map<String, LmTool> get _registry => {
   ),
   'get_location': LmTool(
     name: 'get_location',
+    requiresApproval: true,
     description:
         'Get the phone\'s last known location: latitude, longitude, '
         'accuracy in meters. Requires location permission.',
@@ -165,12 +171,14 @@ Map<String, LmTool> get _registry => {
   ),
   'list_notifications': LmTool(
     name: 'list_notifications',
+    requiresApproval: true,
     description: 'List recent notifications on the phone.',
     parameters: _objectSchema({}),
     handler: (args, ctx) => _run(ctx, 'phone.notifications', {}),
   ),
   'set_alarm': LmTool(
     name: 'set_alarm',
+    requiresApproval: true,
     description: 'Set an alarm on the phone clock.',
     parameters: _objectSchema({
       'hour': _intParam('Hour 0-23.', minimum: 0, maximum: 23),
@@ -181,6 +189,7 @@ Map<String, LmTool> get _registry => {
   ),
   'set_timer': LmTool(
     name: 'set_timer',
+    requiresApproval: true,
     description: 'Start a countdown timer on the phone clock.',
     parameters: _objectSchema({
       'seconds': _intParam(
@@ -194,6 +203,7 @@ Map<String, LmTool> get _registry => {
   ),
   'show_notification': LmTool(
     name: 'show_notification',
+    requiresApproval: true,
     description: 'Show a notification on the phone.',
     parameters: _objectSchema({
       'title': _strParam('Notification title.'),
@@ -203,6 +213,7 @@ Map<String, LmTool> get _registry => {
   ),
   'open_url': LmTool(
     name: 'open_url',
+    requiresApproval: true,
     description: 'Open a URL on the phone (browser or handling app).',
     parameters: _objectSchema({
       'url': _strParam('http:// or https:// URL to open.'),
@@ -211,6 +222,7 @@ Map<String, LmTool> get _registry => {
   ),
   'launch_app': LmTool(
     name: 'launch_app',
+    requiresApproval: true,
     description:
         'Open an installed app by package name or app name, e.g. "maps".',
     parameters: _objectSchema({
@@ -232,6 +244,7 @@ Map<String, LmTool> get _registry => {
   ),
   'get_clipboard': LmTool(
     name: 'get_clipboard',
+    requiresApproval: true,
     description: 'Read the current phone clipboard text.',
     parameters: _objectSchema({}),
     handler: (args, ctx) =>
@@ -239,6 +252,7 @@ Map<String, LmTool> get _registry => {
   ),
   'set_clipboard': LmTool(
     name: 'set_clipboard',
+    requiresApproval: true,
     description: 'Copy text to the phone clipboard.',
     parameters: _objectSchema({
       'text': _strParam('Text to copy to the clipboard.'),
