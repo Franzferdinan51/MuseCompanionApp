@@ -32,6 +32,7 @@ import '../app/model.dart';
 import '../app/phone_bridge.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
+import '../src/gadget/chat_events.dart';
 import 'dashboard_screen.dart';
 import 'diagnostics_screen.dart';
 import 'muse_theme.dart';
@@ -39,7 +40,11 @@ import 'pairing_screen.dart';
 import 'scope.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.onSendChat});
+
+  /// Callback to post a message to the Muse chat.
+  final Future<Map<String, Object?>> Function(String, List<ChatAttachment>)?
+      onSendChat;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -255,20 +260,52 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   /// Display ADB connection info on demand.
-  /// Shows USB debugging status, model, and serial for troubleshooting.
+  /// Shows USB/wireless debugging status, port, model, serial.
+  String? _adbInfoText;
+
   Future<void> _shareAdbInfo() async {
-    setState(() => _adbInfoStatus = 'Collecting ADB info...');
+    setState(() {
+      _adbInfoStatus = 'Collecting ADB info...';
+      _adbInfoText = null;
+    });
     try {
       final phone = const PhoneBridge();
       final info = await phone.adbInfo();
       final adbOn = info['adb_enabled'] == true;
+      final wifiOn = info['wifi_adb_enabled'] == true;
+      final wifiPort = info['wifi_adb_port'] ?? 0;
       final model = info['model'] ?? 'unknown';
       final serial = info['serial'] ?? 'unknown';
-      setState(() => _adbInfoStatus =
+      final text =
           'USB debugging: ${adbOn ? 'enabled' : 'disabled'}\n'
-          'Model: $model\nSerial: $serial');
+          'Wireless debugging: ${wifiOn ? 'enabled' : 'disabled'}'
+          '${wifiOn && wifiPort != 0 ? ' (port $wifiPort)' : ''}\n'
+          'Model: $model\nSerial: $serial';
+      setState(() {
+        _adbInfoStatus = text;
+        _adbInfoText = text;
+      });
     } catch (e) {
       setState(() => _adbInfoStatus = 'Error: $e');
+    }
+  }
+
+  Future<void> _sendAdbInfoToChat() async {
+    final text = _adbInfoText;
+    final send = widget.onSendChat;
+    if (text == null || send == null) return;
+    setState(() => _adbInfoStatus = 'Sending to chat...');
+    try {
+      final result = await send('ADB info from ${DateTime.now()}:\n$text', []);
+      if (result['ok'] == true) {
+        setState(() => _adbInfoStatus = '$_adbInfoText\n\nSent to chat.');
+      } else {
+        setState(() => _adbInfoStatus =
+            '$_adbInfoText\n\nFailed: ${result['error'] ?? 'unknown'}');
+      }
+    } catch (e) {
+      setState(
+          () => _adbInfoStatus = '$_adbInfoText\n\nError: $e');
     }
   }
 
@@ -787,6 +824,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const SizedBox(height: 8),
                   Text(_adbInfoStatus!,
                       style: Theme.of(context).textTheme.bodySmall),
+                ],
+                if (_adbInfoText != null && widget.onSendChat != null) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _sendAdbInfoToChat,
+                    icon: const Icon(Icons.send),
+                    label: const Text('Send to Juno'),
+                  ),
                 ],
               ],
             ),

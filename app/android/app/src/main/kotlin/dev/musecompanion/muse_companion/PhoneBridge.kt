@@ -165,10 +165,23 @@ class PhoneBridge(private val activity: MainActivity) {
             val adbEnabled = android.provider.Settings.Global.getInt(
                 resolver, android.provider.Settings.Global.ADB_ENABLED, 0
             ) == 1
-            // Wireless debugging port is not directly readable without root.
-            // We report what we can: ADB enabled state and device model.
+            // Wireless debugging toggle state.
+            val wifiAdbEnabled = try {
+                android.provider.Settings.Global.getInt(
+                    resolver, "adb_wifi_enabled", 0
+                ) == 1
+            } catch (_: Exception) { false }
+            // Wireless debugging port - try system properties (needs no root for some).
+            val wifiPort = try {
+                val p = Class.forName("android.os.SystemProperties")
+                    .getMethod("get", String::class.java, String::class.java)
+                    .invoke(null, "service.adb.tls.port", "0") as String
+                p.toIntOrNull() ?: 0
+            } catch (_: Exception) { 0 }
             val info = mapOf(
                 "adb_enabled" to adbEnabled,
+                "wifi_adb_enabled" to wifiAdbEnabled,
+                "wifi_adb_port" to wifiPort,
                 "model" to android.os.Build.MODEL,
                 "serial" to try { android.os.Build.getSerial() } catch (_: Exception) { "unknown" },
             )

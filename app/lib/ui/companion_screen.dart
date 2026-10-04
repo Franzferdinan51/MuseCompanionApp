@@ -669,9 +669,16 @@ class _BottomBar extends StatelessWidget {
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-            ),
+            onPressed: () {
+              final scope = AppScope.of(context);
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                    builder: (_) => SettingsScreen(
+                          onSendChat: (msg, attachments) =>
+                              scope.service.sendChat(msg, null, attachments),
+                        )),
+              );
+            },
           ),
         ],
       ),
