@@ -354,6 +354,12 @@ class LocalAiService {
       'selected: ${picked.join(', ')}',
     );
     if (picked.length >= names.length) return allTools;
+    // Never filter out approval-gated tools: the user must see the popup
+    // when the agent tries them, even if SystemOne ranks them low.
+    // (2026-10-04: approval popup never appeared because SystemOne
+    // filtered out take_photo for "take a photo")
+    final gated = {for (final t in allTools) if (t.requiresApproval) t.name};
+    picked.addAll(gated);
     return [for (final t in allTools) if (picked.contains(t.name)) t];
   }
 
