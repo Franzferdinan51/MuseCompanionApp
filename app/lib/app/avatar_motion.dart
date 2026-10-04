@@ -65,31 +65,31 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
   final t = seconds;
   switch (pose) {
     case AvatarPose.listening:
-      // Lean in attentively, bob with anticipation
+      // Lean in attentively - VERY visible
       return AvatarMotion(
-        bob: math.sin(t * 3.5) * 1.2,
-        lean: math.sin(t * 2) * 0.8,
-        scale: 1 + 0.03 * math.sin(t * 2.5),
+        bob: math.sin(t * 3.5) * 3.0,
+        lean: math.sin(t * 2) * 2.0,
+        scale: 1 + 0.08 * math.sin(t * 2.5),
         rings: true,
         ringPhase: (t * 0.9) % 1,
       );
     case AvatarPose.thinking:
-      // Sway side to side, deep in thought
+      // Sway side to side dramatically
       return AvatarMotion(
-        bob: math.sin(t * 2.4) * 1.5,
-        lean: math.sin(t * 1.3) * 2.5,
-        scale: 1 + 0.02 * math.sin(t * 1.8),
+        bob: math.sin(t * 2.4) * 3.0,
+        lean: math.sin(t * 1.3) * 5.0,
+        scale: 1 + 0.05 * math.sin(t * 1.8),
         rings: false,
         ringPhase: 0,
       );
     case AvatarPose.speaking:
-      // Bounce energetically while talking
+      // Bounce energetically while talking - VERY visible
       final pulse = 0.5 + 0.5 * math.sin(t * 8);
-      final bounce = math.sin(t * 6) * 1.0;
+      final bounce = math.sin(t * 6) * 2.5;
       return AvatarMotion(
         bob: bounce - level * 1.5,
-        lean: math.sin(t * 3) * 1.0,
-        scale: 1 + 0.06 * pulse,
+        lean: math.sin(t * 3) * 2.5,
+        scale: 1 + 0.12 * pulse,
         rings: true,
         ringPhase: (t * 0.6) % 1,
       );
@@ -113,11 +113,11 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
         ringPhase: 0,
       );
     case AvatarPose.idle:
-      // Gentle sway, alive but relaxed
+      // Visible sway
       return AvatarMotion(
-        bob: math.sin(t * 1.8) * 1.5,
-        lean: math.sin(t * 0.9) * 1.0,
-        scale: 1 + 0.025 * math.sin(t * 1.2),
+        bob: math.sin(t * 1.8) * 2.5,
+        lean: math.sin(t * 0.9) * 2.0,
+        scale: 1 + 0.05 * math.sin(t * 1.2),
         rings: false,
         ringPhase: 0,
       );
