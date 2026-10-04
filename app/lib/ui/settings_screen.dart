@@ -22,12 +22,15 @@
 // system Accessibility page it opens, can change those.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app/foreground.dart';
+import '../app/lmstudio_client.dart';
 import '../app/model.dart';
 import '../app/phone_bridge.dart';
 import '../src/gadget/phone_actions.dart';
@@ -804,6 +807,95 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 16),
           _SettingCard(
+            title: 'Local AI (LM Studio)',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Let a local model control the phone through LM Studio, '
+                  'bypassing the Muse link. The model gets phone tools and '
+                  'runs tasks on-device.',
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable local AI'),
+                  subtitle: const Text(
+                    'Allow local models to run phone tasks',
+                  ),
+                  value: _settings.lmStudioEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioEnabled: v),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  initialValue: _settings.lmStudioUrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Server URL',
+                    hintText: 'http://100.68.208.113:1234',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.url,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioUrl: v.trim()),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _ModelSelector(
+                  serverUrl: _settings.lmStudioUrl,
+                  label: 'Chat model',
+                  selectedModel: _settings.lmStudioChatModel,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioChatModel: v),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _ModelSelector(
+                  serverUrl: _settings.lmStudioUrl,
+                  label: 'Agent model',
+                  selectedModel: _settings.lmStudioAgentModel,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(lmStudioAgentModel: v),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Use SystemOne tool routing'),
+                  subtitle: const Text(
+                    'Narrow the phone tool list per task via SystemOne',
+                  ),
+                  value: _settings.systemOneEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(systemOneEnabled: v),
+                  ),
+                ),
+                if (_settings.systemOneEnabled) ...[
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    initialValue: _settings.systemOneUrl,
+                    decoration: const InputDecoration(
+                      labelText: 'SystemOne URL',
+                      hintText: 'http://100.68.208.113:8765',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.url,
+                    onChanged: (v) => _commit(
+                      _settings.copyWith(systemOneUrl: v.trim()),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _TestLmStudioButton(settings: _settings),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
             title: 'Auto-capture',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1178,6 +1270,278 @@ class _SettingCard extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+/// Test button for the LM Studio connection: hits /v1/models and reports.
+class _TestLmStudioButton extends StatefulWidget {
+  const _TestLmStudioButton({required this.settings});
+
+  final CompanionSettings settings;
+
+  @override
+  State<_TestLmStudioButton> createState() => _TestLmStudioButtonState();
+}
+
+class _TestLmStudioButtonState extends State<_TestLmStudioButton> {
+  String? _result;
+  bool _testing = false;
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _result = null;
+    });
+    final service = LocalAiService(
+      baseUrl: widget.settings.lmStudioUrl,
+      model: widget.settings.lmStudioAgentModel,
+      phone: const PhoneBridge(),
+      usbStorageEnabled: widget.settings.usbStorageEnabled,
+      usbSerialEnabled: widget.settings.usbSerialEnabled,
+    );
+    final error = await service.testConnection();
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _result = error.isEmpty ? 'Connected.' : error;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ElevatedButton(
+          onPressed: _testing ? null : _test,
+          child: _testing
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Test connection'),
+        ),
+        if (_result != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _result!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: _result == 'Connected.'
+                  ? Colors.green
+                  : Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+
+/// Dropdown selector for the LM Studio model, auto-fetched from the server.
+///
+/// - Fetches GET {serverUrl}/v1/models when the settings screen opens and
+///   whenever [serverUrl] changes (debounced).
+/// - "Auto (server default)" (value '') sends no model id; the server picks.
+/// - Manual refresh button is a backup; auto-fetch is the primary path.
+/// - On fetch failure the last known list is shown with a stale badge;
+///   with no cached list it falls back to a free-text field.
+/// - A previously saved id missing from the fresh list is kept as a
+///   "(custom)" entry rather than silently dropped.
+class _ModelSelector extends StatefulWidget {
+  const _ModelSelector({
+    required this.serverUrl,
+    required this.selectedModel,
+    required this.onChanged,
+    this.label = 'Model',
+  });
+
+  final String serverUrl;
+  final String selectedModel;
+  final ValueChanged<String> onChanged;
+  final String label;
+
+  @override
+  State<_ModelSelector> createState() => _ModelSelectorState();
+}
+
+class _ModelSelectorState extends State<_ModelSelector> {
+  static const _cacheKey = 'lm_studio_model_list_cache';
+
+  List<String> _models = const [];
+  bool _loading = true;
+  bool _stale = false;
+  bool _textMode = false;
+  int _generation = 0;
+  Timer? _urlDebounce;
+  late TextEditingController _textController;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController = TextEditingController(text: widget.selectedModel);
+    _loadCached().then((_) {
+      if (mounted) _fetch();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _ModelSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.serverUrl != widget.serverUrl) {
+      // Debounce: the URL field commits on every keystroke.
+      _urlDebounce?.cancel();
+      _urlDebounce = Timer(const Duration(seconds: 1), () {
+        if (mounted) _fetch();
+      });
+    }
+    if (oldWidget.selectedModel != widget.selectedModel &&
+        _textController.text != widget.selectedModel) {
+      _textController.text = widget.selectedModel;
+    }
+  }
+
+  @override
+  void dispose() {
+    _urlDebounce?.cancel();
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCached() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cacheKey);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      final ids = decoded.whereType<String>().toList();
+      if (ids.isEmpty || !mounted) return;
+      setState(() => _models = ids);
+    } catch (_) {
+      // Cache is best-effort; a corrupt entry just means a fresh fetch.
+    }
+  }
+
+  Future<void> _fetch() async {
+    final gen = ++_generation;
+    setState(() {
+      _loading = true;
+      _stale = false;
+    });
+    final ids = await LocalAiService.fetchModelIds(widget.serverUrl);
+    if (!mounted || gen != _generation) return;
+    if (ids.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_cacheKey, jsonEncode(ids));
+      } catch (_) {
+        // Cache write failure is non-fatal.
+      }
+      setState(() {
+        _models = ids;
+        _loading = false;
+        _stale = false;
+        _textMode = false;
+      });
+    } else {
+      // Fetch failed: keep the last known list (stale) or fall back to text.
+      setState(() {
+        _loading = false;
+        if (_models.isEmpty) {
+          _textMode = true;
+        } else {
+          _stale = true;
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_textMode) {
+      return TextFormField(
+        controller: _textController,
+        decoration: InputDecoration(
+          labelText: '${widget.label} (optional)',
+          hintText: 'Server unreachable — type the model id manually',
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (v) => widget.onChanged(v.trim()),
+      );
+    }
+
+    final saved = widget.selectedModel;
+    final items = <DropdownMenuItem<String>>[
+      const DropdownMenuItem(
+        value: '',
+        child: Text('Auto (server default)'),
+      ),
+    ];
+    final known = <String>{''};
+    for (final id in _models) {
+      if (known.add(id)) {
+        items.add(DropdownMenuItem(value: id, child: Text(id)));
+      }
+    }
+    // Keep a previously saved id that isn't in the fresh list.
+    if (saved.isNotEmpty && !known.contains(saved)) {
+      items.add(DropdownMenuItem(
+        value: saved,
+        child: Text('$saved (custom)'),
+      ));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: saved,
+                decoration: InputDecoration(
+                  labelText: widget.label,
+                  border: const OutlineInputBorder(),
+                ),
+                items: items,
+                onChanged: _loading
+                    ? null
+                    : (v) => widget.onChanged((v ?? '').trim()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: IconButton(
+                tooltip: 'Refresh model list',
+                onPressed: _loading ? null : _fetch,
+                icon: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+              ),
+            ),
+          ],
+        ),
+        if (_stale)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Server unreachable — showing last known list (may be stale).',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.orange),
+            ),
+          ),
+      ],
     );
   }
 }

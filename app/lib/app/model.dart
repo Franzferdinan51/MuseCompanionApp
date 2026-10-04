@@ -106,6 +106,13 @@ class CompanionSettings {
     this.adbInfoSharingEnabled = false,
     this.usbStorageEnabled = true,
     this.usbSerialEnabled = true,
+    this.lmStudioEnabled = false,
+    this.lmStudioUrl = 'http://100.68.208.113:1234',
+    this.lmStudioModel = '',
+    this.lmStudioChatModel = '',
+    this.lmStudioAgentModel = '',
+    this.systemOneEnabled = false,
+    this.systemOneUrl = 'http://100.68.208.113:8765',
   });
 
   /// One of `light`, `dark` or `system`.
@@ -156,6 +163,32 @@ class CompanionSettings {
   /// user opts out.
   final bool usbSerialEnabled;
 
+  /// Let a local AI model (via LM Studio) control the phone. Off until the
+  /// user opts in.
+  final bool lmStudioEnabled;
+
+  /// Base URL of the LM Studio server, e.g. http://100.68.208.113:1234.
+  final String lmStudioUrl;
+
+  /// Model id to request, or '' to use the server default. Never
+  /// hard-code a model id here; the user picks it in Settings.
+  final String lmStudioModel;
+
+  /// Model id for general chat via LM Studio, or '' for server default.
+  /// Never hard-code a model id here; the user picks it in Settings.
+  final String lmStudioChatModel;
+
+  /// Model id for the local-AI agent loop (tool calling), or '' for
+  /// server default. Never hard-code a model id here.
+  final String lmStudioAgentModel;
+
+  /// Ask SystemOne to narrow the phone tool list per task before sending
+  /// it to the local model. Opt-in; off by default.
+  final bool systemOneEnabled;
+
+  /// Base URL of the SystemOne router, e.g. http://100.68.208.113:8765.
+  final String systemOneUrl;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -170,6 +203,13 @@ class CompanionSettings {
     bool? adbInfoSharingEnabled,
     bool? usbStorageEnabled,
     bool? usbSerialEnabled,
+    bool? lmStudioEnabled,
+    String? lmStudioUrl,
+    String? lmStudioModel,
+    String? lmStudioChatModel,
+    String? lmStudioAgentModel,
+    bool? systemOneEnabled,
+    String? systemOneUrl,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -187,6 +227,13 @@ class CompanionSettings {
           adbInfoSharingEnabled ?? this.adbInfoSharingEnabled,
       usbStorageEnabled: usbStorageEnabled ?? this.usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled ?? this.usbSerialEnabled,
+      lmStudioEnabled: lmStudioEnabled ?? this.lmStudioEnabled,
+      lmStudioUrl: lmStudioUrl ?? this.lmStudioUrl,
+      lmStudioModel: lmStudioModel ?? this.lmStudioModel,
+      lmStudioChatModel: lmStudioChatModel ?? this.lmStudioChatModel,
+      lmStudioAgentModel: lmStudioAgentModel ?? this.lmStudioAgentModel,
+      systemOneEnabled: systemOneEnabled ?? this.systemOneEnabled,
+      systemOneUrl: systemOneUrl ?? this.systemOneUrl,
     );
   }
 
@@ -232,6 +279,19 @@ class CompanionSettings {
       usbSerialEnabled: map['usb_serial_enabled'] is bool
           ? map['usb_serial_enabled']! as bool
           : true,
+      lmStudioEnabled: map['lm_studio_enabled'] == true,
+      lmStudioUrl: _lmStudioUrl(map['lm_studio_url']),
+      lmStudioModel: _lmStudioModel(map['lm_studio_model']),
+      lmStudioChatModel: _migratedModel(
+        map['lm_studio_chat_model'],
+        map['lm_studio_model'],
+      ),
+      lmStudioAgentModel: _migratedModel(
+        map['lm_studio_agent_model'],
+        map['lm_studio_model'],
+      ),
+      systemOneEnabled: map['system_one_enabled'] == true,
+      systemOneUrl: _systemOneUrl(map['system_one_url']),
     );
   }
 
@@ -264,6 +324,48 @@ class CompanionSettings {
     if (number < 0) return 0;
     if (number > 100) return 100;
     return number;
+  }
+
+  /// LM Studio URL: must be http(s). Falls back to the Mac mini default.
+  static String _lmStudioUrl(Object? value) {
+    if (value is String) {
+      final url = value.trim();
+      if ((url.startsWith('http://') || url.startsWith('https://')) &&
+          url.length <= 256) {
+        return url;
+      }
+    }
+    return 'http://100.68.208.113:1234';
+  }
+
+  /// Model id: free text, empty means server default. Capped in length so
+  /// a bad stored value cannot blow up requests.
+  static String _lmStudioModel(Object? value) {
+    if (value is! String) return '';
+    final name = value.trim();
+    if (name.length > 160) return '';
+    return name;
+  }
+
+  /// New split keys (`lm_studio_chat_model`, `lm_studio_agent_model`) fall
+  /// back to the legacy `lm_studio_model` value on first run after upgrade,
+  /// so an existing config keeps working without user action.
+  static String _migratedModel(Object? value, Object? legacy) {
+    final current = _lmStudioModel(value);
+    if (current.isNotEmpty) return current;
+    return _lmStudioModel(legacy);
+  }
+
+  /// SystemOne URL: must be http(s). Falls back to the Mac mini default.
+  static String _systemOneUrl(Object? value) {
+    if (value is String) {
+      final url = value.trim();
+      if ((url.startsWith('http://') || url.startsWith('https://')) &&
+          url.length <= 256) {
+        return url;
+      }
+    }
+    return 'http://100.68.208.113:8765';
   }
 }
 

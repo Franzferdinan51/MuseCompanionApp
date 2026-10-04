@@ -98,6 +98,20 @@ Future<void> main() async {
   );
   final phone = const PhoneBridge();
   await phone.applySpeechVoice(presentation.settings.speechVoice);
+  // The stop button, avatar-tap barge-in, and hold-to-talk interruption all
+  // key off `presentation.pose == AvatarPose.speaking`. Drive the pose from
+  // the TTS engine's actual state (PhoneBridge.speaking) instead of only
+  // the Muse reply pipeline, so local-AI `speak_text`, the `phone.speak`
+  // command, the voice preview, and say-it-again all show the stop button
+  // and respond to barge-in. Only transitions into/out of the speaking
+  // pose; never clobbers listening/thinking/etc.
+  PhoneBridge.speaking.addListener(() {
+    if (PhoneBridge.speaking.value) {
+      presentation.applyPose(AvatarPose.speaking);
+    } else if (presentation.pose == AvatarPose.speaking) {
+      presentation.applyPose(AvatarPose.idle);
+    }
+  });
   final poster = _ChatPoster();
   final autoCapture = _AutoCaptureScheduler(
     settings: settings,
@@ -131,6 +145,11 @@ Future<void> main() async {
     cameraFacing: () => presentation.settings.cameraFacing,
     usbStorageEnabled: () => presentation.settings.usbStorageEnabled,
     usbSerialEnabled: () => presentation.settings.usbSerialEnabled,
+    lmStudioEnabled: () => presentation.settings.lmStudioEnabled,
+    lmStudioUrl: () => presentation.settings.lmStudioUrl,
+    lmStudioAgentModel: () => presentation.settings.lmStudioAgentModel,
+    systemOneEnabled: () => presentation.settings.systemOneEnabled,
+    systemOneUrl: () => presentation.settings.systemOneUrl,
   );
 
   final screen = _screenSize();
@@ -177,6 +196,11 @@ Future<void> main() async {
   chat.onActivity = (code) {
     final line = activityCaption(code);
     if (line != null) presentation.applyStatus(line);
+    // The TTS engine is the authority on speaking: an activity code that
+    // arrives after the turn ends (e.g. "idle") must not clear the speaking
+    // pose while audio is still playing, or the stop button disappears and
+    // barge-in stops working mid-utterance.
+    if (PhoneBridge.speaking.value) return;
     if (activitySetsPose(code, streaming: chat.assistantStreaming)) {
       presentation.applyPose(poseForActivity(code));
     }

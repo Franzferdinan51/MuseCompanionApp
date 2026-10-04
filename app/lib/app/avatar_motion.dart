@@ -65,29 +65,31 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
   final t = seconds;
   switch (pose) {
     case AvatarPose.listening:
-      // Static - rings indicate listening state
+      // Lean in attentively - VERY visible
       return AvatarMotion(
-        bob: 0,
-        lean: 0,
-        scale: 1,
+        bob: math.sin(t * 3.5) * 3.0,
+        lean: math.sin(t * 2) * 2.0,
+        scale: 1 + 0.08 * math.sin(t * 2.5),
         rings: true,
         ringPhase: (t * 0.9) % 1,
       );
     case AvatarPose.thinking:
-      // Static - thought dots indicate thinking state
+      // Sway side to side dramatically
       return AvatarMotion(
-        bob: 0,
-        lean: 0,
-        scale: 1,
+        bob: math.sin(t * 2.4) * 3.0,
+        lean: math.sin(t * 1.3) * 5.0,
+        scale: 1 + 0.05 * math.sin(t * 1.8),
         rings: false,
         ringPhase: 0,
       );
     case AvatarPose.speaking:
-      // Static - rings and waveform indicate speaking state
+      // Bounce energetically while talking - VERY visible
+      final pulse = 0.5 + 0.5 * math.sin(t * 8);
+      final bounce = math.sin(t * 6) * 2.5;
       return AvatarMotion(
-        bob: 0,
-        lean: 0,
-        scale: 1,
+        bob: bounce - level * 1.5,
+        lean: math.sin(t * 3) * 2.5,
+        scale: 1 + 0.12 * pulse,
         rings: true,
         ringPhase: (t * 0.6) % 1,
       );
@@ -111,11 +113,11 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
         ringPhase: 0,
       );
     case AvatarPose.idle:
-      // Static
-      return const AvatarMotion(
-        bob: 0,
-        lean: 0,
-        scale: 1,
+      // Visible sway
+      return AvatarMotion(
+        bob: math.sin(t * 1.8) * 2.5,
+        lean: math.sin(t * 0.9) * 2.0,
+        scale: 1 + 0.05 * math.sin(t * 1.2),
         rings: false,
         ringPhase: 0,
       );

@@ -137,6 +137,20 @@ class SettingsStore {
           _prefs.getBool('${_settingsPrefix}usb_storage_enabled') ?? true,
       'usb_serial_enabled':
           _prefs.getBool('${_settingsPrefix}usb_serial_enabled') ?? true,
+      'lm_studio_enabled':
+          _prefs.getBool('${_settingsPrefix}lm_studio_enabled') ?? false,
+      'lm_studio_url':
+          _prefs.getString('${_settingsPrefix}lm_studio_url'),
+      'lm_studio_model':
+          _prefs.getString('${_settingsPrefix}lm_studio_model'),
+      'lm_studio_chat_model':
+          _prefs.getString('${_settingsPrefix}lm_studio_chat_model'),
+      'lm_studio_agent_model':
+          _prefs.getString('${_settingsPrefix}lm_studio_agent_model'),
+      'system_one_enabled':
+          _prefs.getBool('${_settingsPrefix}system_one_enabled') ?? false,
+      'system_one_url':
+          _prefs.getString('${_settingsPrefix}system_one_url'),
     });
   }
 
@@ -186,6 +200,34 @@ class SettingsStore {
     await _prefs.setBool(
       '${_settingsPrefix}usb_serial_enabled',
       settings.usbSerialEnabled,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}lm_studio_enabled',
+      settings.lmStudioEnabled,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_url',
+      settings.lmStudioUrl,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_model',
+      settings.lmStudioModel,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_chat_model',
+      settings.lmStudioChatModel,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}lm_studio_agent_model',
+      settings.lmStudioAgentModel,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}system_one_enabled',
+      settings.systemOneEnabled,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}system_one_url',
+      settings.systemOneUrl,
     );
     _notifyListeners();
   }
