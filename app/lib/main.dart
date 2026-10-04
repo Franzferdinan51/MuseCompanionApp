@@ -151,6 +151,7 @@ Future<void> main() async {
     lmStudioAgentModel: () => presentation.settings.lmStudioAgentModel,
     systemOneEnabled: () => presentation.settings.systemOneEnabled,
     systemOneUrl: () => presentation.settings.systemOneUrl,
+    speakReplies: () => presentation.settings.speakReplies,
   );
 
   final screen = _screenSize();

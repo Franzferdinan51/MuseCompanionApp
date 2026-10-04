@@ -104,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
       cameraFacing: settings.cameraFacing,
       systemOneEnabled: settings.systemOneEnabled,
       systemOneUrl: settings.systemOneUrl,
+      speakAllowed: settings.speakReplies,
     );
     final result = await service.runTask(instruction);
     if (!mounted) return;

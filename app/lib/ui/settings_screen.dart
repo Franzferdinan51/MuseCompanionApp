@@ -1299,6 +1299,7 @@ class _TestLmStudioButtonState extends State<_TestLmStudioButton> {
       phone: const PhoneBridge(),
       usbStorageEnabled: widget.settings.usbStorageEnabled,
       usbSerialEnabled: widget.settings.usbSerialEnabled,
+      speakAllowed: widget.settings.speakReplies,
     );
     final error = await service.testConnection();
     if (!mounted) return;

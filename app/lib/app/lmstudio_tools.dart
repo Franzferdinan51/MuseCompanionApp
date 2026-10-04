@@ -17,12 +17,17 @@ class LmToolContext {
   const LmToolContext({
     required this.phone,
     required this.cameraFacing,
+    this.speakAllowed = true,
   });
 
   final PhoneActions phone;
 
-  /// 'back' or 'front' — default camera for take_photo.
+  /// 'back' or 'front' -- default camera for take_photo.
   final String cameraFacing;
+
+  /// False when the user turned off "Speak replies": speak_text must not
+  /// produce audio. (2026-10-04: voice doomloop fix)
+  final bool speakAllowed;
 }
 
 /// A tool handler: runs the tool, returns text for the model.
@@ -147,6 +152,9 @@ Map<String, LmTool> get _registry => {
     handler: (args, ctx) async {
       final text = args['text']?.toString() ?? '';
       if (text.trim().isEmpty) return 'error: text is required';
+      if (!ctx.speakAllowed) {
+        return 'speech is disabled: the user turned off Speak replies';
+      }
       await ctx.phone.speak(text);
       final shown = text.length > 80 ? '${text.substring(0, 80)}...' : text;
       return 'Speaking "$shown"';

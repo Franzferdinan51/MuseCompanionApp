@@ -870,6 +870,7 @@ class CompanionExecutor {
     this.lmStudioAgentModel,
     this.systemOneEnabled,
     this.systemOneUrl,
+    this.speakReplies,
   });
 
   final CompanionDisplay display;
@@ -891,6 +892,10 @@ class CompanionExecutor {
   final bool Function()? lmStudioEnabled;
   final String Function()? lmStudioUrl;
   final String Function()? lmStudioAgentModel;
+
+  /// Voice output. phone.speak is refused while [speakReplies] returns
+  /// false (2026-10-04: voice doomloop fix).
+  final bool Function()? speakReplies;
 
   /// SystemOne tool routing. When [systemOneEnabled] returns true, the
   /// phone tool list is narrowed per task via [systemOneUrl] before
@@ -1140,6 +1145,9 @@ class CompanionExecutor {
   Future<Map<String, Object?>> _speak(Map<String, Object?> params) async {
     final phone = _requirePhone();
     if (phone is Map<String, Object?>) return phone;
+    if (speakReplies?.call() == false) {
+      return errorResult('voice output is off (Speak replies disabled)');
+    }
     final text = params['text'];
     if (text is! String || text.trim().isEmpty) {
       return errorResult('text is required');
@@ -1181,6 +1189,7 @@ class CompanionExecutor {
       cameraFacing: cameraFacing?.call() ?? 'back',
       systemOneEnabled: systemOneEnabled?.call() == true,
       systemOneUrl: systemOneUrl?.call() ?? 'http://100.68.208.113:8765',
+      speakAllowed: speakReplies?.call() ?? true,
     );
     final result = await service.runTask(instruction.trim());
     if (!result.ok) return errorResult(result.error);

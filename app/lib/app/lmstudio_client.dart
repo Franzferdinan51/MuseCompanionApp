@@ -76,6 +76,7 @@ class LocalAiService {
     required this.usbStorageEnabled,
     required this.usbSerialEnabled,
     this.cameraFacing = 'back',
+    this.speakAllowed = true,
     this.systemOneEnabled = false,
     this.systemOneUrl = 'http://100.68.208.113:8765',
     this.modelRole = 'agent',
@@ -100,6 +101,10 @@ class LocalAiService {
   final bool usbStorageEnabled;
   final bool usbSerialEnabled;
   final String cameraFacing;
+
+  /// False when the user turned off "Speak replies": the speak_text tool
+  /// will not produce audio. (2026-10-04: voice doomloop fix)
+  final bool speakAllowed;
 
   /// When true, ask SystemOne to narrow the tool list per task.
   final bool systemOneEnabled;
@@ -280,7 +285,11 @@ class LocalAiService {
     }
 
     var toolCalls = 0;
-    final ctx = LmToolContext(phone: phone, cameraFacing: cameraFacing);
+    final ctx = LmToolContext(
+      phone: phone,
+      cameraFacing: cameraFacing,
+      speakAllowed: speakAllowed,
+    );
     final lcTools = phoneToolsToLangChain(
       tools: tools,
       ctx: ctx,
