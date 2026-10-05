@@ -25,6 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:langchain/langchain.dart';
 import 'package:langchain_openai/langchain_openai.dart';
 
+import 'agent_memory.dart';
 import 'approval_service.dart';
 import 'lmstudio_tools.dart';
 import 'phone_tool_adapter.dart';
@@ -280,6 +281,13 @@ class LocalAiService {
       usbStorageEnabled: usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled,
     );
+    // On-device long-term memory: additive and fail-open. The agent works
+    // fine with empty memory. Memory contents never leave the phone: they
+    // are only injected into this local system prompt and exposed through
+    // the memory_remember / memory_recall tools below.
+    final memory = AgentMemory.instance;
+    await memory.init();
+    tools = [...tools, ...memoryLmTools(memory)];
     if (systemOneEnabled) {
       tools = await _filterLmToolsViaSystemOne(instruction, tools);
     }
@@ -321,7 +329,7 @@ class LocalAiService {
               'You can control the phone by calling the provided functions. '
               'Call functions when the user asks you to do something on the '
               'phone; otherwise just answer. Keep spoken-style answers short.\n'
-              '${_capabilityGuide()}',
+              '${_capabilityGuide()}${memory.promptContext()}',
         ),
       ),
     );
@@ -360,6 +368,12 @@ class LocalAiService {
     // filtered out take_photo for "take a photo")
     final gated = {for (final t in allTools) if (t.requiresApproval) t.name};
     picked.addAll(gated);
+    // Never filter out the memory tools either: long-term memory is
+    // session infrastructure, not a task-specific capability. Dropping
+    // memory_recall would blind the agent to everything it remembered.
+    picked.addAll(
+      [for (final t in allTools) if (t.name.startsWith('memory_')) t.name],
+    );
     return [for (final t in allTools) if (picked.contains(t.name)) t];
   }
 
@@ -377,6 +391,8 @@ class LocalAiService {
       'show a notification with show_notification',
       'open URLs and apps with open_url and launch_app',
       'vibrate, read/set the clipboard, toggle the flashlight',
+      'remember lasting facts across sessions with memory_remember and '
+          'look them up with memory_recall',
     ];
     if (usbStorageEnabled) {
       caps.add(
