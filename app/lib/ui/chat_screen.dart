@@ -37,6 +37,7 @@ import '../app/lmstudio_client.dart';
 import '../src/gadget/service.dart';
 import 'muse_theme.dart';
 import 'scope.dart';
+import 'slash_autocomplete.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -61,6 +62,20 @@ class _ChatScreenState extends State<ChatScreen> {
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
+  /// Current slash-command query, or null when the autocomplete popup is
+  /// hidden. Driven by the composer controller listener.
+  String? _slashQuery;
+
+  /// Pin/archive flags for this conversation, restored from ChatStore.
+  bool _pinned = false;
+  bool _archived = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onComposerChanged);
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -81,6 +96,14 @@ class _ChatScreenState extends State<ChatScreen> {
     _store = store;
     store.restore().then((_) {
       if (mounted) _scrollToEnd();
+    });
+    store.restoreMeta().then((_) {
+      if (mounted) {
+        setState(() {
+          _pinned = store.meta.pinned;
+          _archived = store.meta.archived;
+        });
+      }
     });
     _chatSub = scope.chat.stream.listen((_) {
       _saveTimer?.cancel();
@@ -114,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
     await _post(text);
   }
 
-  /// Power-user shortcuts: `/photo`, `/voice`, `/local`, `/speak`.
+  /// Power-user shortcuts (see [kSlashCommands] for the full list).
   /// Unknown slashes fall through as normal messages.
   Future<void> _handleSlash(String text) async {
     final parts = text.substring(1).split(RegExp(r'\s+'));
@@ -147,6 +170,26 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Composer listener: show the slash-command popup while a leading
+  /// `/` token is being typed; hide it otherwise (backspaced past `/`,
+  /// command finished, text sent/cleared).
+  void _onComposerChanged() {
+    final query = slashCommandQuery(
+      _controller.text,
+      _controller.selection.baseOffset,
+    );
+    if (query != _slashQuery) setState(() => _slashQuery = query);
+  }
+
+  /// Insert a picked slash command, leaving a trailing space so arguments
+  /// can follow (e.g. `/local ...`). The listener then hides the popup.
+  void _insertSlashCommand(SlashCommand command) {
+    _controller.text = '${command.trigger} ';
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+  }
+
   /// Clear-history with a confirm step. Clears memory and disk.
   Future<void> _clearHistory() async {
     final confirm = await showDialog<bool>(
@@ -174,6 +217,21 @@ class _ChatScreenState extends State<ChatScreen> {
       await _store?.clear();
       ActivityLog.instance.add(ActivityKind.chat, 'Chat history cleared');
     }
+  }
+
+  /// Pin/unpin this conversation. Persisted via ChatStore.
+  Future<void> _togglePin() async {
+    final next = !_pinned;
+    setState(() => _pinned = next);
+    await _store?.setPinned(next);
+  }
+
+  /// Archive/unarchive this conversation. Archived chats hide their
+  /// messages behind [_ArchivedPlaceholder] until unarchived.
+  Future<void> _toggleArchive() async {
+    final next = !_archived;
+    setState(() => _archived = next);
+    await _store?.setArchived(next);
   }
 
   /// Run the composer's text (or a prompted instruction) through the local
@@ -512,7 +570,19 @@ class _ChatScreenState extends State<ChatScreen> {
     final agent = scope.service.agentName;
     return MusePage(
       appBar: AppBar(
-        title: Text(agent == null ? 'Message Muse' : 'Message $agent'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_pinned)
+              const Padding(
+                padding: EdgeInsets.only(right: 6),
+                child: Icon(Icons.push_pin, size: 18),
+              ),
+            Flexible(
+              child: Text(agent == null ? 'Message Muse' : 'Message $agent'),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: 'Search messages',
@@ -528,10 +598,25 @@ class _ChatScreenState extends State<ChatScreen> {
           PopupMenuButton<String>(
             tooltip: 'Chat options',
             onSelected: (value) {
-              if (value == 'clear') _clearHistory();
+              switch (value) {
+                case 'pin':
+                  _togglePin();
+                case 'archive':
+                  _toggleArchive();
+                case 'clear':
+                  _clearHistory();
+              }
             },
-            itemBuilder: (context) => const [
+            itemBuilder: (context) => [
               PopupMenuItem(
+                value: 'pin',
+                child: Text(_pinned ? 'Unpin chat' : 'Pin chat'),
+              ),
+              PopupMenuItem(
+                value: 'archive',
+                child: Text(_archived ? 'Unarchive chat' : 'Archive chat'),
+              ),
+              const PopupMenuItem(
                 value: 'clear',
                 child: Text('Clear history'),
               ),
@@ -548,7 +633,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? 'Listening… release to send'
                   : scope.chat.activity,
             ),
-          if (_searching)
+          if (_searching && !_archived)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: TextField(
@@ -568,7 +653,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 onChanged: (q) => setState(() => _searchQuery = q),
               ),
             ),
-          if (_ready && !_listening && !_searching) _QuickReplies(
+          if (_ready && !_listening && !_searching && !_archived) _QuickReplies(
             onPhoto: _capture,
             onSayAgain: () async {
               final reply = scope.chat.lastReply;
@@ -581,36 +666,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onCapabilities: () => _post('What can you do?'),
           ),
           Expanded(
-            child: StreamBuilder<void>(
-              stream: scope.chat.stream,
-              builder: (context, _) {
-                final all = scope.chat.messages;
-                final messages = _searchQuery.trim().isEmpty
-                    ? all
-                    : scope.chat.search(_searchQuery);
-                if (messages.isEmpty) {
-                  return _searchQuery.trim().isEmpty
-                      ? _EmptyHint(ready: _ready)
-                      : Center(
-                          child: Text(
-                            'No messages match "$_searchQuery".',
-                            style:
-                                Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        );
-                }
-                final items = _buildListItems(messages);
-                return ListView.builder(
-                  controller: _scroll,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  itemCount: items.length,
-                  itemBuilder: (context, i) => items[i],
-                );
-              },
-            ),
+            child: _buildMessageArea(),
           ),
           if (_listening)
             _RecordingWaveform(
@@ -618,23 +674,78 @@ class _ChatScreenState extends State<ChatScreen> {
                   AppScope.of(context).phone.recordingAmplitude(),
             ),
           const _AgentStatusLine(),
-          _Composer(
-            controller: _controller,
-            ready: _ready,
-            listening: _listening,
-            capturing: _capturing,
-            connection: _connection,
-            onSend: _send,
-            onListenStart: _startVoice,
-            onListenEnd: _stopVoice,
-            onCapture: _capture,
-            onLocalAi: _askLocalAi,
-          ),
+          if (_slashQuery != null)
+            Builder(
+              builder: (context) {
+                final matches = matchingSlashCommands(_slashQuery!);
+                if (matches.isEmpty) return const SizedBox.shrink();
+                return SlashCommandMenu(
+                  commands: matches,
+                  onSelect: _insertSlashCommand,
+                );
+              },
+            ),
+          if (!_archived)
+            _Composer(
+              controller: _controller,
+              ready: _ready,
+              listening: _listening,
+              capturing: _capturing,
+              connection: _connection,
+              onSend: _send,
+              onListenStart: _startVoice,
+              onListenEnd: _stopVoice,
+              onCapture: _capture,
+              onLocalAi: _askLocalAi,
+            ),
         ],
       ),
     );
   }
+
+  /// Message-list area: an archived placeholder when the conversation is
+  /// archived, otherwise the message list wrapped in a tap-away detector
+  /// that dismisses the slash-command popup.
+  Widget _buildMessageArea() {
+    if (_archived) return _ArchivedPlaceholder(onUnarchive: _toggleArchive);
+    final scope = AppScope.of(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        // Tapping the message list dismisses the slash popup ("tap away");
+        // the keyboard and composer are left alone.
+        if (_slashQuery != null) setState(() => _slashQuery = null);
+      },
+      child: StreamBuilder<void>(
+        stream: scope.chat.stream,
+        builder: (context, _) {
+          final all = scope.chat.messages;
+          final messages = _searchQuery.trim().isEmpty
+              ? all
+              : scope.chat.search(_searchQuery);
+          if (messages.isEmpty) {
+            return _searchQuery.trim().isEmpty
+                ? _EmptyHint(ready: _ready)
+                : Center(
+                    child: Text(
+                      'No messages match "$_searchQuery".',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  );
+          }
+          final items = _buildListItems(messages);
+          return ListView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            itemCount: items.length,
+            itemBuilder: (context, i) => items[i],
+          );
+        },
+      ),
+    );
+  }
 }
+
 
 class _OfflineBanner extends StatelessWidget {
   const _OfflineBanner({required this.connection});
@@ -692,6 +803,50 @@ class _EmptyHint extends StatelessWidget {
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: museMist.withValues(alpha: 0.9),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown instead of the message list while the conversation is
+/// archived. The app-bar menu (or the button below) unarchives it —
+/// archived chats are hidden, never deleted.
+class _ArchivedPlaceholder extends StatelessWidget {
+  const _ArchivedPlaceholder({required this.onUnarchive});
+
+  final VoidCallback onUnarchive;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.archive_outlined,
+              size: 64,
+              color: theme.colorScheme.outline,
+            ),
+            const SizedBox(height: 12),
+            Text('This chat is archived', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Messages are hidden until you unarchive.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onUnarchive,
+              child: const Text('Unarchive chat'),
             ),
           ],
         ),
