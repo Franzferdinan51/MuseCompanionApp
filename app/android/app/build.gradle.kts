@@ -13,6 +13,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // 2026-10-04: required by flutter_local_notifications (added for
+        // hermes-ports notification approvals).
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -52,4 +55,6 @@ repositories {
 dependencies {
     // USB serial drivers: CDC-ACM, FTDI, CP210x, CH340, PL2303.
     implementation("com.github.mik3y:usb-serial-for-android:3.7.0")
+    // Core library desugaring (required by flutter_local_notifications).
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

@@ -53,7 +53,11 @@ dependencies:
   markdown: ^7.3.0
   flutter_local_notifications: ^22.3.1
   # Receive shared text/images from other apps ("Share to Juno").
-  receive_sharing_intent: ^1.8.0
+  # Pinned to 1.8.1 (2026-10-04): 1.9.0's android/build.gradle uses the
+  # Kotlin 2.x `kotlin {}` DSL without applying the Kotlin Gradle plugin,
+  # which fails with "Could not find method kotlin()" on our Gradle setup.
+  # 1.8.1 applies its own kotlin-android plugin via buildscript and builds.
+  receive_sharing_intent: 1.8.1
   # KaTeX math rendering ($...$ inline, $$...$$ block).
   flutter_math_fork: ^0.7.4
   # Mermaid diagrams: rendered to SVG in an offscreen WebView, shown with
