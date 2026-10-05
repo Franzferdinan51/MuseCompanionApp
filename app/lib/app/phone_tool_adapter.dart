@@ -8,6 +8,8 @@
 
 import 'package:langchain/langchain.dart';
 
+import 'agent_status.dart';
+import 'event_bus.dart';
 import 'lmstudio_tools.dart';
 
 /// Signature of the user-approval callback: shows a popup and completes
@@ -20,6 +22,30 @@ String describePhoneToolCall(LmTool tool, Map<String, Object?> args) {
   if (args.isEmpty) return desc;
   final parts = args.entries.map((e) => '${e.key}: ${e.value}').join(', ');
   return '$desc\n\nArguments: $parts';
+}
+
+/// Compute the status label without ever throwing: a bad arg map must
+/// not break the tool path.
+String _safeLabel(String toolName, Map<String, Object?> args) {
+  try {
+    return toolLabel(toolName, args);
+  } catch (_) {
+    return 'Using $toolName...';
+  }
+}
+
+/// One-line arg summary for the Activity log. Never throws.
+String _safeArgsLine(Map<String, Object?> args) {
+  try {
+    if (args.isEmpty) return '';
+    final parts = args.entries
+        .map((e) => '${e.key}: ${e.value}')
+        .join(', ')
+        .trim();
+    return parts.length <= 120 ? parts : '${parts.substring(0, 119)}...';
+  } catch (_) {
+    return '';
+  }
 }
 
 /// Convert phone [LmTool]s into LangChain [Tool]s backed by the same
@@ -41,18 +67,46 @@ List<Tool> phoneToolsToLangChain({
         func: (input) async {
           onToolCall?.call();
           final args = input.map((k, v) => MapEntry(k, v as Object?));
+          // Status + event bus wiring: additive and fire-and-forget.
+          // A failure here must never break tool execution.
+          final label = _safeLabel(t.name, args);
+          final argsLine = _safeArgsLine(args);
+          EventBus.instance.emit(
+            AppEventKind.toolCall,
+            payload: {'tool': t.name, 'label': label, 'args': argsLine},
+          );
+          AgentStatusBus.instance.working(label);
           if (t.requiresApproval && approver != null) {
             final approved = await approver(
               'Allow "${t.name}"?',
               describePhoneToolCall(t, args),
             );
             if (!approved) {
+              EventBus.instance.emit(
+                AppEventKind.toolResult,
+                payload: {'tool': t.name, 'label': label, 'ok': false,
+                    'detail': 'denied by user'},
+              );
               return 'denied: the user did not approve the "${t.name}" action';
             }
           }
           try {
-            return await t.handler(args, ctx);
+            final out = await t.handler(args, ctx);
+            EventBus.instance.emit(
+              AppEventKind.toolResult,
+              payload: {'tool': t.name, 'label': label, 'ok': true},
+            );
+            // Keep the status fresh so a long tool chain does not
+            // expire to "Ready" mid-run; the next tool call updates
+            // the label.
+            AgentStatusBus.instance.working(label);
+            return out;
           } catch (e) {
+            EventBus.instance.emit(
+              AppEventKind.toolResult,
+              payload: {'tool': t.name, 'label': label, 'ok': false,
+                  'detail': e.toString()},
+            );
             return 'error: $e';
           }
         },
