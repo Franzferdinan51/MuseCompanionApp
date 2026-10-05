@@ -23,6 +23,8 @@ dependencies:
   path_provider: ^2.1.5
   # Runtime permission requests (Bluetooth, notifications).
   permission_handler: 11.4.0
+  # On-device wake word detection (openWakeWord TFLite models).
+  tflite_flutter: ^0.11.0
   # Battery level for the device.health command.
   battery_plus: ^6.2.1
   # Pre-built agent framework: tool-calling agent loop for the
@@ -82,3 +84,7 @@ flutter:
     # Mermaid UMD bundle (MIT, https://github.com/mermaid-js/mermaid)
     # for offline diagram rendering.
     - assets/js/mermaid.min.js
+    # openWakeWord TFLite models (Apache 2.0) for Hey Jarvis beta wake word.
+    - assets/wake_word/melspectrogram.tflite
+    - assets/wake_word/embedding_model.tflite
+    - assets/wake_word/hey_jarvis_v0.1.tflite

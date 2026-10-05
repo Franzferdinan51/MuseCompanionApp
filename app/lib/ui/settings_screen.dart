@@ -27,6 +27,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../app/wake_word.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app/foreground.dart';
@@ -76,6 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   int _voiceLookupGeneration = 0;
   Timer? _voiceLookup;
   String? _adbInfoStatus;
+  String _wakeStatus = 'Off.';
 
   // OpenRouter voice (opt-in cloud TTS for testing). The Android TTS path
   // above is untouched; these controls only configure the alternative.
@@ -133,6 +135,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (mounted) setState(() => _connection = state);
     });
     _refreshServiceState();
+    _refreshWakeStatus();
     scope.sdkTokens
         .load()
         .then((saved) {
@@ -409,6 +412,38 @@ class _SettingsScreenState extends State<SettingsScreen>
       _openRouterTestTts = null;
       if (mounted) setState(() => _testingOpenRouter = false);
     }
+  /// Recompute the wake-word status line from settings + device state.
+  Future<void> _refreshWakeStatus() async {
+    String status;
+    if (!_settings.wakeWordEnabled) {
+      status = 'Off.';
+    } else if (!await Permission.microphone.isGranted) {
+      status = 'Microphone permission not granted.';
+    } else {
+      status = 'Ready — listening for "$wakeWordUiLabel" on the companion screen.';
+    }
+    if (!mounted) return;
+    setState(() => _wakeStatus = status);
+  }
+
+  Future<void> _commitWake(CompanionSettings next) async {
+    await _commit(next);
+    await _refreshWakeStatus();
+  }
+
+  Future<void> _requestWakeMic() async {
+    final status = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!status.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Microphone permission is required for wake word detection.',
+          ),
+        ),
+      );
+    }
+    await _refreshWakeStatus();
   }
 
   Future<void> _commit(CompanionSettings next) async {
@@ -981,6 +1016,87 @@ class _SettingsScreenState extends State<SettingsScreen>
                     Text(_openRouterTestResult!),
                   ],
                 ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Wake word',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Say "$wakeWordUiLabel" on the companion screen to start a '
+                  'voice note \u2014 no hands needed. Detection runs on-device '
+                  'via openWakeWord: three tiny TFLite models on 16kHz '
+                  'audio, no account, no cloud, no streaming, no full '
+                  'speech recognition. Audio never leaves your phone.',
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Listen for "$wakeWordLabel"'),
+                  subtitle: const Text(
+                    'Opt-in. Only runs on the companion screen.',
+                  ),
+                  value: _settings.wakeWordEnabled,
+                  onChanged: (v) => _commitWake(
+                    _settings.copyWith(wakeWordEnabled: v),
+                  ),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Keyword'),
+                  subtitle: Text('"$wakeWordUiLabel"'),
+                  trailing: TextButton(
+                    onPressed: _requestWakeMic,
+                    child: const Text('Grant mic'),
+                  ),
+                ),
+                Row(
+                  children: [
+                    const Icon(Icons.tune_outlined),
+                    Expanded(
+                      child: Slider(
+                        value: _settings.wakeWordSensitivity,
+                        min: 0,
+                        max: 1,
+                        divisions: 20,
+                        label:
+                            '${(_settings.wakeWordSensitivity * 100).round()}%',
+                        onChanged: (v) => _commitWake(
+                          _settings.copyWith(wakeWordSensitivity: v),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 44,
+                      child: Text(
+                        '${(_settings.wakeWordSensitivity * 100).round()}%',
+                      ),
+                    ),
+                  ],
+                ),
+                const Text(
+                  'Sensitivity: higher hears more (and false-alarms more).',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Status: $_wakeStatus',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Battery: the mic stays open while the companion screen '
+                  'is in the foreground. openWakeWord is built for this \u2014 '
+                  'three tiny on-device TFLite models, roughly 1\u20133% per '
+                  'hour on most phones. Detection pauses automatically when the app '
+                  'is backgrounded, the screen sleeps, or a voice note '
+                  'records, so the drain is bounded by active screen time. '
+                  'It does not listen on the lock screen.',
+                  style: TextStyle(fontSize: 12),
+                ),
               ],
             ),
           ),

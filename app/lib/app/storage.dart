@@ -157,6 +157,12 @@ class SettingsStore {
           _prefs.getBool('${_settingsPrefix}usb_storage_enabled') ?? true,
       'usb_serial_enabled':
           _prefs.getBool('${_settingsPrefix}usb_serial_enabled') ?? true,
+      'wake_word_enabled':
+          _prefs.getBool('${_settingsPrefix}wake_word_enabled') ?? false,
+      'wake_word_model':
+          _prefs.getString('${_settingsPrefix}wake_word_model') ?? 'hey_jarvis',
+      'wake_word_sensitivity':
+          _prefs.getDouble('${_settingsPrefix}wake_word_sensitivity') ?? 0.5,
       'lm_studio_enabled':
           _prefs.getBool('${_settingsPrefix}lm_studio_enabled') ?? false,
       'lm_studio_url':
@@ -226,6 +232,18 @@ class SettingsStore {
     await _prefs.setBool(
       '${_settingsPrefix}usb_serial_enabled',
       settings.usbSerialEnabled,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}wake_word_enabled',
+      settings.wakeWordEnabled,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}wake_word_model',
+      settings.wakeWordModel,
+    );
+    await _prefs.setDouble(
+      '${_settingsPrefix}wake_word_sensitivity',
+      settings.wakeWordSensitivity,
     );
     await _prefs.setBool(
       '${_settingsPrefix}lm_studio_enabled',
