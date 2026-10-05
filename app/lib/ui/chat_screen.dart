@@ -29,6 +29,7 @@ import 'package:muse_companion/src/gadget/chat_events.dart';
 import 'package:muse_companion/src/gadget/phone_actions.dart';
 
 import '../app/avatar_motion.dart';
+import '../app/activity_log.dart';
 import '../app/chat.dart';
 import '../app/lmstudio_client.dart';
 import '../src/gadget/service.dart';
@@ -159,6 +160,11 @@ class _ChatScreenState extends State<ChatScreen> {
     return result;
   }
 
+  static String _short(String text) {
+    final t = text.trim();
+    return t.length > 60 ? '${t.substring(0, 60)}...' : t;
+  }
+
   Future<void> _post(
     String text, [
     List<ChatAttachment> attachments = const [],
@@ -180,13 +186,36 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToEnd();
     final result = await scope.service.sendChat(text, null, attachments);
     if (!mounted) return;
+    final isVoice = attachments.any((a) => a.mimeType.startsWith('audio/'));
+    final isPhoto = attachments.any((a) => a.mimeType.startsWith('image/'));
+    final kind = isVoice
+        ? ActivityKind.voice
+        : isPhoto
+        ? ActivityKind.photo
+        : ActivityKind.chat;
     if (result['ok'] == true) {
       scope.chat.markSent(id);
+      ActivityLog.instance.add(
+        kind,
+        isVoice
+            ? 'Voice note sent'
+            : isPhoto
+            ? 'Photo sent'
+            : 'Message sent: ${_short(text)}',
+      );
     } else {
       final error = result['error'];
-      scope.chat.markFailed(
-        id,
-        error is String && error.isNotEmpty ? error : 'send failed',
+      final msg = error is String && error.isNotEmpty ? error : 'send failed';
+      scope.chat.markFailed(id, msg);
+      ActivityLog.instance.add(
+        kind,
+        isVoice
+            ? 'Voice note failed'
+            : isPhoto
+            ? 'Photo failed'
+            : 'Message failed: ${_short(text)}',
+        detail: msg,
+        ok: false,
       );
     }
     _scrollToEnd();
