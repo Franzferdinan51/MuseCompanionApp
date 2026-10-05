@@ -41,6 +41,9 @@ class ChatMessage {
     this.attachmentBytes,
     this.attachmentMime,
     this.attachmentName,
+    this.canvasDocId,
+    this.canvasTitle,
+    this.canvasUpdated = false,
   });
 
   final int id;
@@ -60,6 +63,17 @@ class ChatMessage {
   final Uint8List? attachmentBytes;
   final String? attachmentMime;
   final String? attachmentName;
+
+  /// Set when this message is a tappable canvas document card: the
+  /// document id to open on the Canvas screen.
+  final String? canvasDocId;
+
+  /// Title shown on the canvas card.
+  final String? canvasTitle;
+
+  /// True when the card represents an update to an existing document
+  /// (vs. a newly created one).
+  final bool canvasUpdated;
 
   /// True when this message carries an audio attachment.
   bool get hasAudio =>
@@ -152,6 +166,33 @@ class ChatHistory {
     }
   }
 
+  /// Post a tappable canvas document card as an assistant message. The
+  /// bubble renders the card; tapping opens the document on the Canvas
+  /// screen. [updated] marks an update to an existing document vs. a
+  /// fresh creation.
+  void addCanvasCard({
+    required String docId,
+    required String title,
+    bool updated = false,
+  }) {
+    _messages.add(
+      ChatMessage(
+        id: _nextId++,
+        text: updated
+            ? 'Updated canvas document: $title'
+            : 'Canvas document: $title',
+        sentAt: DateTime.now(),
+        status: ChatStatus.sent,
+        role: ChatRole.assistant,
+        canvasDocId: docId,
+        canvasTitle: title,
+        canvasUpdated: updated,
+      ),
+    );
+    _trim();
+    _emit();
+  }
+
   /// Mark [id] delivered.
   void markSent(int id) {
     final message = _find(id);
@@ -203,6 +244,9 @@ class ChatHistory {
             ? ChatStatus.sent
             : message.status,
         role: message.role,
+        canvasDocId: message.canvasDocId,
+        canvasTitle: message.canvasTitle,
+        canvasUpdated: message.canvasUpdated,
       ),
     );
     _trim();

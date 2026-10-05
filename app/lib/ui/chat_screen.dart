@@ -34,6 +34,7 @@ import '../app/chat.dart';
 import '../app/chat_store.dart';
 import '../app/lmstudio_client.dart';
 import '../src/gadget/service.dart';
+import 'canvas_screen.dart';
 import 'muse_theme.dart';
 import 'scope.dart';
 
@@ -199,6 +200,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final id = scope.chat.addSending('Local AI: $instruction');
     _scrollToEnd();
     scope.presentation.applyStatus('Asking local AI...');
+    // Canvas documents created/updated by the agent surface as tappable
+    // cards in chat once the run finishes.
+    final canvasEvents = <({String docId, String title, bool updated})>[];
     final service = LocalAiService(
       baseUrl: settings.lmStudioUrl,
       model: settings.lmStudioAgentModel,
@@ -209,6 +213,8 @@ class _ChatScreenState extends State<ChatScreen> {
       systemOneEnabled: settings.systemOneEnabled,
       systemOneUrl: settings.systemOneUrl,
       speakAllowed: settings.speakReplies,
+      onCanvasDocument: (docId, title, updated) =>
+          canvasEvents.add((docId: docId, title: title, updated: updated)),
     );
     final result = await service.runTask(instruction);
     if (!mounted) return;
@@ -219,6 +225,13 @@ class _ChatScreenState extends State<ChatScreen> {
           ? '(local AI finished with no text)'
           : result.text;
       scope.chat.addLocalAssistant(answer);
+      for (final event in canvasEvents) {
+        scope.chat.addCanvasCard(
+          docId: event.docId,
+          title: event.title,
+          updated: event.updated,
+        );
+      }
     } else {
       scope.chat.addLocalAssistant('Local AI error: ${result.error}');
     }
@@ -513,6 +526,13 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text(agent == null ? 'Message Muse' : 'Message $agent'),
         actions: [
+          IconButton(
+            tooltip: 'Canvas documents',
+            icon: const Icon(Icons.edit_note_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CanvasListScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Search messages',
             icon: Icon(_searching ? Icons.close : Icons.search),
@@ -1109,6 +1129,13 @@ class _Bubble extends StatelessWidget {
               ],
               if (streamingEmpty)
                 _TypingDots(color: ink)
+              else if (message.canvasDocId != null)
+                _CanvasCard(
+                  docId: message.canvasDocId!,
+                  title: message.canvasTitle ?? 'Canvas document',
+                  updated: message.canvasUpdated,
+                  ink: ink,
+                )
               else if (showText)
                 _BubbleText(text: message.text, color: ink, mine: mine)
               else if (message.hasAudio)
@@ -1142,6 +1169,84 @@ class _Bubble extends StatelessWidget {
       ),
     );
     return bubble;
+  }
+}
+
+/// Tappable canvas document card: opens the document on the Canvas
+/// screen. Posted when the local agent creates or updates a document.
+class _CanvasCard extends StatelessWidget {
+  const _CanvasCard({
+    required this.docId,
+    required this.title,
+    required this.updated,
+    required this.ink,
+  });
+
+  final String docId;
+  final String title;
+  final bool updated;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => CanvasScreen(docId: docId)),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: ink.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: ink.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.edit_note_outlined,
+              size: 28,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: ink,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    updated
+                        ? 'Updated on your canvas · tap to open'
+                        : 'On your canvas · tap to open',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: ink.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.open_in_new,
+              size: 16,
+              color: ink.withValues(alpha: 0.6),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

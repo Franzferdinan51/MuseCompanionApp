@@ -26,6 +26,7 @@ import 'package:langchain/langchain.dart';
 import 'package:langchain_openai/langchain_openai.dart';
 
 import 'approval_service.dart';
+import 'canvas_store.dart';
 import 'lmstudio_tools.dart';
 import 'phone_tool_adapter.dart';
 import 'systemone_client.dart';
@@ -81,11 +82,18 @@ class LocalAiService {
     this.systemOneUrl = 'http://100.68.208.113:8765',
     this.modelRole = 'agent',
     this.approver,
+    this.onCanvasDocument,
   });
 
   /// Decides whether a flagged tool call may run. Defaults to the
   /// [ApprovalService] popup; tests inject a fake.
   final Future<bool> Function(String title, String body)? approver;
+
+  /// Fired when the agent creates or updates a canvas document during a
+  /// task, so the UI can surface a tappable card in chat.
+  /// (docId, title, updated)
+  final void Function(String docId, String title, bool updated)?
+  onCanvasDocument;
 
   /// e.g. http://100.68.208.113:1234 (no trailing slash).
   final String baseUrl;
@@ -285,10 +293,16 @@ class LocalAiService {
     }
 
     var toolCalls = 0;
+    // The canvas store is best-effort here: when the documents directory
+    // is unavailable the canvas tools stay registered but report an
+    // error instead of running (see LmToolContext.canvas).
+    final canvas = await CanvasStore.instance();
     final ctx = LmToolContext(
       phone: phone,
       cameraFacing: cameraFacing,
       speakAllowed: speakAllowed,
+      canvas: canvas,
+      onCanvasDocument: onCanvasDocument,
     );
     final lcTools = phoneToolsToLangChain(
       tools: tools,
@@ -377,6 +391,8 @@ class LocalAiService {
       'show a notification with show_notification',
       'open URLs and apps with open_url and launch_app',
       'vibrate, read/set the clipboard, toggle the flashlight',
+      'create and edit shared canvas documents with canvas_create, '
+          'canvas_update and canvas_list',
     ];
     if (usbStorageEnabled) {
       caps.add(

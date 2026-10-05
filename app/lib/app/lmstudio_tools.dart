@@ -11,6 +11,7 @@
 // device.invoke worked.
 
 import '../src/gadget/phone_actions.dart';
+import 'canvas_store.dart';
 
 /// Context passed to every tool handler.
 class LmToolContext {
@@ -18,6 +19,8 @@ class LmToolContext {
     required this.phone,
     required this.cameraFacing,
     this.speakAllowed = true,
+    this.canvas,
+    this.onCanvasDocument,
   });
 
   final PhoneActions phone;
@@ -28,6 +31,16 @@ class LmToolContext {
   /// False when the user turned off "Speak replies": speak_text must not
   /// produce audio. (2026-10-04: voice doomloop fix)
   final bool speakAllowed;
+
+  /// Versioned document store for the canvas tools. Null when the canvas
+  /// feature is unavailable (e.g. unit tests without a documents dir);
+  /// the canvas tools then report an error instead of crashing.
+  final CanvasStore? canvas;
+
+  /// Called whenever a canvas tool creates or updates a document so the
+  /// UI can surface a tappable card in chat. (docId, title, updated)
+  final void Function(String docId, String title, bool updated)?
+  onCanvasDocument;
 }
 
 /// A tool handler: runs the tool, returns text for the model.
@@ -316,6 +329,111 @@ Map<String, LmTool> get _registry => {
     parameters: _objectSchema({}),
     handler: (args, ctx) => _run(ctx, 'usb.serial_list', {}),
     requiresUsbSerial: true,
+  ),
+  // --- Shared canvas ---------------------------------------------------
+  // Documents the agent and the user share beside the chat. The user can
+  // open them from a card in chat or the Canvas screen, read, edit and
+  // keep them. Purely local: these tools never touch the phone hardware.
+  'canvas_create': LmTool(
+    name: 'canvas_create',
+    description:
+        'Create a document on the shared canvas: a panel beside the chat '
+        'where the user can read, edit, preview and keep it. Use it for '
+        'anything document-like: long writing, notes, plans, reports, '
+        'code files, HTML/SVG pages or small web apps, tables. Keep the '
+        'chat reply short and point to the canvas instead of pasting the '
+        'whole thing into chat. HTML runs OFFLINE in a sandbox: put all '
+        'CSS and JS inline in one self-contained file (no CDN scripts, '
+        'external fonts/images, fetch or localStorage: they are blocked).',
+    parameters: _objectSchema({
+      'title': _strParam('Document title.'),
+      'type': _strParam(
+        'Content type: "markdown", "html", "code", "text" or "svg". '
+        'Default "markdown".',
+      ),
+      'content': _strParam('Full document text.'),
+      'lang': _strParam(
+        'Programming language when type is "code", e.g. "python", '
+        '"dart". Optional.',
+      ),
+    }, ['title', 'content']),
+    handler: (args, ctx) async {
+      final store = ctx.canvas;
+      if (store == null) return 'error: canvas is not available';
+      final title = args['title']?.toString().trim() ?? '';
+      if (title.isEmpty) return 'error: title is required';
+      final content = args['content']?.toString() ?? '';
+      try {
+        final doc = await store.create(
+          title: title,
+          type: CanvasDocType.fromName(args['type']?.toString()),
+          content: content,
+          lang: args['lang']?.toString().trim() ?? '',
+          by: 'agent',
+          note: 'created',
+        );
+        ctx.onCanvasDocument?.call(doc.id, doc.title, false);
+        return 'Created canvas document "${doc.title}" '
+            '(id: ${doc.id}, type: ${doc.type.name}). '
+            'Tell the user it is on their canvas.';
+      } on CanvasStoreException catch (e) {
+        return 'error: ${e.message}';
+      }
+    },
+  ),
+  'canvas_update': LmTool(
+    name: 'canvas_update',
+    description:
+        'Replace a canvas document\'s whole content (creates a new '
+        'version; the old one stays in history). Call canvas_list first '
+        'if you do not know the document id.',
+    parameters: _objectSchema({
+      'id': _strParam('Document id (from canvas_create or canvas_list).'),
+      'content': _strParam('Full replacement text.'),
+      'note': _strParam(
+        'Short note for the version history, e.g. "added section 3". '
+        'Optional.',
+      ),
+    }, ['id', 'content']),
+    handler: (args, ctx) async {
+      final store = ctx.canvas;
+      if (store == null) return 'error: canvas is not available';
+      final id = args['id']?.toString().trim() ?? '';
+      if (id.isEmpty) return 'error: id is required';
+      try {
+        final doc = await store.update(
+          id,
+          content: args['content']?.toString() ?? '',
+          by: 'agent',
+          note: args['note']?.toString().trim() ?? '',
+        );
+        ctx.onCanvasDocument?.call(doc.id, doc.title, true);
+        return 'Updated canvas document "${doc.title}" '
+            '(now revision ${doc.rev}). '
+            'Tell the user it is on their canvas.';
+      } on CanvasStoreException catch (e) {
+        return 'error: ${e.message}';
+      }
+    },
+  ),
+  'canvas_list': LmTool(
+    name: 'canvas_list',
+    description:
+        'List the documents on the shared canvas: id, title, type and '
+        'revision. Use before canvas_update when you need an id.',
+    parameters: _objectSchema({}),
+    handler: (args, ctx) async {
+      final store = ctx.canvas;
+      if (store == null) return 'error: canvas is not available';
+      final docs = await store.list();
+      if (docs.isEmpty) return 'The canvas is empty.';
+      final lines = docs.map(
+        (d) =>
+            '- "${d.title}" (id: ${d.id}, type: ${d.type.name}, '
+            'rev ${d.rev})',
+      );
+      return _cap(lines.join('\n'));
+    },
   ),
 };
 

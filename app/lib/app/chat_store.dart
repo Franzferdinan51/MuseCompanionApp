@@ -44,6 +44,9 @@ class ChatStore {
       'role': m.role.name,
       'hasAudio': m.hasAudio,
       'hasImage': m.hasImage,
+      if (m.canvasDocId != null) 'canvasDocId': m.canvasDocId,
+      if (m.canvasTitle != null) 'canvasTitle': m.canvasTitle,
+      if (m.canvasUpdated) 'canvasUpdated': true,
     };
   }
 
@@ -55,6 +58,8 @@ class ChatStore {
     if (at == null) return null;
     final statusName = json['status'];
     final roleName = json['role'];
+    final canvasDocId = json['canvasDocId'];
+    final canvasTitle = json['canvasTitle'];
     return ChatMessage(
       id: -1, // Reassigned on restore.
       text: text,
@@ -67,6 +72,9 @@ class ChatStore {
         (v) => v.name == roleName,
         orElse: () => ChatRole.user,
       ),
+      canvasDocId: canvasDocId is String ? canvasDocId : null,
+      canvasTitle: canvasTitle is String ? canvasTitle : null,
+      canvasUpdated: json['canvasUpdated'] == true,
     );
   }
 
