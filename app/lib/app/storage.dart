@@ -27,6 +27,7 @@ import 'package:muse_companion/src/gadget/identity.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'approval_service.dart';
 import 'model.dart';
 
 const String _pairingKey = 'muse_pairing_record';
@@ -299,5 +300,46 @@ class SettingsStore {
 
   Future<void> saveIntroSent(bool sent) async {
     await _prefs.setBool(_introKey, sent);
+  }
+
+  /// Persistent "always allow" approval decisions, backed by
+  /// [SharedPrefsAlwaysAllowStore].
+  AlwaysAllowStore approvalAllowances() => SharedPrefsAlwaysAllowStore(_prefs);
+}
+
+const String _alwaysAllowedToolsKey = 'muse_always_allowed_tools';
+
+/// Persists "always allow" approval decisions (tool name set) in
+/// SharedPreferences. Tool names are non-secret preferences, not secrets:
+/// they name capabilities ("take_photo"), never credentials.
+class SharedPrefsAlwaysAllowStore implements AlwaysAllowStore {
+  SharedPrefsAlwaysAllowStore(this._prefs);
+
+  final SharedPreferences _prefs;
+
+  @override
+  Set<String> loadAllowed() {
+    final raw = _prefs.getString(_alwaysAllowedToolsKey);
+    if (raw == null || raw.isEmpty) return <String>{};
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is List) {
+        return decoded.whereType<String>().toSet();
+      }
+      return <String>{};
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  @override
+  Future<void> setAllowed(String toolName, bool allowed) async {
+    final current = loadAllowed();
+    if (allowed) {
+      current.add(toolName);
+    } else {
+      current.remove(toolName);
+    }
+    await _prefs.setString(_alwaysAllowedToolsKey, json.encode(current.toList()));
   }
 }
