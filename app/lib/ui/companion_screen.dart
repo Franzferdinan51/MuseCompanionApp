@@ -289,12 +289,21 @@ class _PortraitBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        _StatusLines(lines: presentation.lines),
+        // Right padding keeps the pills clear of the floating side dock;
+        // long status text ("Taking a photo…") ellipsizes instead of
+        // growing into it.
+        Padding(
+          padding: const EdgeInsets.only(right: kSideDockClearance),
+          child: _StatusLines(lines: presentation.lines),
+        ),
         const SizedBox(height: 12),
-        _ConnectionStatus(
-          key: const ValueKey('connection_status'),
-          state: presentation.connection ?? ConnectionState.unpaired,
-          detail: presentation.statusDetail,
+        Padding(
+          padding: const EdgeInsets.only(right: kSideDockClearance),
+          child: _ConnectionStatus(
+            key: const ValueKey('connection_status'),
+            state: presentation.connection ?? ConnectionState.unpaired,
+            detail: presentation.statusDetail,
+          ),
         ),
       ],
     );
@@ -345,12 +354,14 @@ class _LandscapeBody extends StatelessWidget {
             ),
           ),
         ),
-        // Right: status pills stacked compactly. The scroll view guards
-        // against overflow on very short landscape heights.
+        // Right: status pills stacked compactly, clear of the side dock.
+        // The scroll view guards against overflow on very short
+        // landscape heights.
         Expanded(
           flex: 5,
           child: Center(
             child: SingleChildScrollView(
+              padding: const EdgeInsets.only(right: kSideDockClearance),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -844,6 +855,8 @@ class _StatusLines extends StatelessWidget {
               Text(
                 line,
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: const Color(0xFF000000 | avatarCaptionRgb),
                   fontWeight: FontWeight.w600,
