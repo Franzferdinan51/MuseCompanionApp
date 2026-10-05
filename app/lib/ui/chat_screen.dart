@@ -30,6 +30,7 @@ import 'package:muse_companion/src/gadget/phone_actions.dart';
 
 import '../app/avatar_motion.dart';
 import '../app/activity_log.dart';
+import '../app/agent_status.dart';
 import '../app/chat.dart';
 import '../app/chat_store.dart';
 import '../app/lmstudio_client.dart';
@@ -616,6 +617,7 @@ class _ChatScreenState extends State<ChatScreen> {
               amplitude: () =>
                   AppScope.of(context).phone.recordingAmplitude(),
             ),
+          const _AgentStatusLine(),
           _Composer(
             controller: _controller,
             ready: _ready,
@@ -1533,6 +1535,90 @@ class _Composer extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Agent status line: a subtle indicator under the message list showing
+/// what the on-device agent is doing ("Thinking…", "Running …").
+/// Hidden when the agent is idle. Fed by [AgentStatusBus] (which is in
+/// turn fed by the agent's tool-call wiring), so it also reflects runs
+/// triggered from gadget commands, not just the chat screen.
+class _AgentStatusLine extends StatelessWidget {
+  const _AgentStatusLine();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<AgentStatus>(
+      valueListenable: AgentStatusBus.instance.status,
+      builder: (context, status, _) {
+        if (!status.working) return const SizedBox.shrink();
+        final theme = Theme.of(context);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+          child: Row(
+            children: [
+              _PulseDot(color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  status.text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Small pulsing dot used by [_AgentStatusLine].
+class _PulseDot extends StatefulWidget {
+  const _PulseDot({required this.color});
+
+  final Color color;
+
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.35, end: 1.0).animate(_controller),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: widget.color,
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }
