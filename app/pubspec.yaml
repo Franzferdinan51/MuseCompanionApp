@@ -49,6 +49,8 @@ dependencies:
   url_launcher: ^6.3.1
   # Element type for the markdown code-block builder.
   markdown: ^7.3.0
+  # Receive shared text/images from other apps ("Share to Juno").
+  receive_sharing_intent: ^1.8.0
 
 dev_dependencies:
   flutter_test:
