@@ -412,6 +412,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       _openRouterTestTts = null;
       if (mounted) setState(() => _testingOpenRouter = false);
     }
+  }
+
   /// Recompute the wake-word status line from settings + device state.
   Future<void> _refreshWakeStatus() async {
     String status;
@@ -627,7 +629,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return MusePage(
       appBar: AppBar(title: const Text('Companion Settings')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 104),
+        padding: const EdgeInsets.all(24),
         children: [
           _PairingCard(
             connection: _connection,
@@ -737,7 +739,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             child: Row(
               children: [
                 Icon(
-                  Icons.monitor_heart_outlined,
+                  Icons.bug_report_outlined,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 12),
@@ -1016,7 +1018,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     Text(_openRouterTestResult!),
                   ],
                 ],
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 16),

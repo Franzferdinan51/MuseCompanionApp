@@ -45,11 +45,7 @@ class _HomeTabsState extends State<HomeTabs> {
   int _index = 0;
 
   static const _tabs = [
-    _Tab(
-      label: 'Home',
-      icon: Icons.pets_outlined,
-      activeIcon: Icons.pets,
-    ),
+    _Tab(label: 'Home', icon: Icons.pets_outlined, activeIcon: Icons.pets),
     _Tab(
       label: 'Chat',
       icon: Icons.chat_bubble_outline,
@@ -111,15 +107,17 @@ class _HomeTabsState extends State<HomeTabs> {
                   // Soft gradient scrim: keeps the floating icons readable
                   // over scrolling content without a hard bar edge.
                   Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            museInk.withValues(alpha: 0.0),
-                            museInk.withValues(alpha: 0.6),
-                          ],
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              museInk.withValues(alpha: 0.0),
+                              museInk.withValues(alpha: 0.6),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -186,11 +184,7 @@ class _TabIcon extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
           child: Tooltip(
             message: tab.label,
-            child: Icon(
-              tab.activeIcon,
-              size: 20,
-              color: museBlue,
-            ),
+            child: Icon(tab.activeIcon, size: 20, color: museBlue),
           ),
         ),
       );

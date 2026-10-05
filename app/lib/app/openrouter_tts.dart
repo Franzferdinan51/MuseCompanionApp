@@ -30,6 +30,8 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
 
+import '../src/gadget/phone_actions.dart';
+
 /// OpenRouter TTS endpoint (OpenAI-compatible shape).
 const String kOpenRouterSpeechUrl = 'https://openrouter.ai/api/v1/audio/speech';
 
@@ -44,9 +46,9 @@ const String kDefaultOpenRouterModel = 'fish-audio/s2.1-pro-free:free';
 const int kOpenRouterTtsChunkChars = 1800;
 
 /// User-facing failure from an OpenRouter TTS call. Never carries the key.
-class OpenRouterTtsException implements Exception {
-  const OpenRouterTtsException(this.message);
-  final String message;
+/// Extends [PhoneActionException] so existing catch blocks handle it.
+class OpenRouterTtsException extends PhoneActionException {
+  const OpenRouterTtsException(super.message);
   @override
   String toString() => 'OpenRouterTtsException: $message';
 }

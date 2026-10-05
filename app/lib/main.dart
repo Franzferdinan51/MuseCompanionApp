@@ -25,6 +25,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:muse_companion/app/approval_notifications.dart';
 import 'package:muse_companion/app/approval_service.dart';
+import 'package:muse_companion/app/agent_status.dart';
 import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
@@ -213,6 +214,14 @@ Future<void> main() async {
   final chat = ChatHistory();
   service.onChatEvent.listen((event) {
     chat.applyServerEvent(event.event, event.payload);
+  });
+  // Server-sent working status drives the agent status line in chat.
+  service.onWorkingStatus.listen((text) {
+    if (text.isEmpty) {
+      AgentStatusBus.instance.ready();
+    } else {
+      AgentStatusBus.instance.working(text);
+    }
   });
   // The on-screen Muse gadgets put the reply under the character while
   // it streams, then speak a short form of it. The full text stays in chat.
