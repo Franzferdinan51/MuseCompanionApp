@@ -20,37 +20,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:muse_companion/app/model.dart';
 
 void main() {
-  group('CompanionSettings.voiceReadAloud', () {
+  group('CompanionSettings.speakReplies', () {
     test('defaults to true', () {
-      expect(const CompanionSettings().voiceReadAloud, isTrue);
+      expect(const CompanionSettings().speakReplies, isTrue);
     });
 
     test('survives a toMap/fromMap round-trip when true', () {
-      const settings = CompanionSettings(voiceReadAloud: true);
+      const settings = CompanionSettings(speakReplies: true);
       final restored = CompanionSettings.fromMap(settings.toMap());
-      expect(restored.voiceReadAloud, isTrue);
+      expect(restored.speakReplies, isTrue);
     });
 
     test('survives a toMap/fromMap round-trip when false', () {
-      const settings = CompanionSettings(voiceReadAloud: false);
+      const settings = CompanionSettings(speakReplies: false);
       final restored = CompanionSettings.fromMap(settings.toMap());
-      expect(restored.voiceReadAloud, isFalse);
+      expect(restored.speakReplies, isFalse);
     });
 
     test('missing key means on (older installs)', () {
       final restored = CompanionSettings.fromMap({'theme': 'dark'});
-      expect(restored.voiceReadAloud, isTrue);
+      expect(restored.speakReplies, isTrue);
     });
 
     test('copyWith preserves and overrides the flag', () {
       const base = CompanionSettings();
-      expect(base.copyWith().voiceReadAloud, isTrue);
-      expect(base.copyWith(voiceReadAloud: false).voiceReadAloud, isFalse);
+      expect(base.copyWith().speakReplies, isTrue);
+      expect(base.copyWith(speakReplies: false).speakReplies, isFalse);
       expect(
         base
-            .copyWith(voiceReadAloud: false)
+            .copyWith(speakReplies: false)
             .copyWith(theme: 'light')
-            .voiceReadAloud,
+            .speakReplies,
         isFalse,
       );
     });
