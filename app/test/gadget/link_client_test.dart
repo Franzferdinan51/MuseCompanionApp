@@ -44,6 +44,33 @@ class _Pipe implements LinkSocket {
   }
 }
 
+/// A socket whose send throws like a closed WebSocket sink once killed.
+/// close() ends the read stream too, like a real socket close.
+class _KillablePipe implements LinkSocket {
+  _KillablePipe(this._inbox, this._outbox);
+
+  final StreamController<Uint8List> _inbox;
+  final StreamController<Uint8List> _outbox;
+
+  /// When true, send throws like a dead WebSocket sink.
+  bool dead = false;
+
+  @override
+  Future<void> send(Uint8List data) async {
+    if (dead) throw StateError('Bad state: StreamSink is closed');
+    _outbox.add(data);
+  }
+
+  @override
+  Stream<Uint8List> get stream => _inbox.stream;
+
+  @override
+  Future<void> close() async {
+    if (!_outbox.isClosed) await _outbox.close();
+    if (!_inbox.isClosed) await _inbox.close();
+  }
+}
+
 /// Just enough of the Muse VM: Noise responder plus the control stream.
 ///
 /// A background reader decrypts every frame, answers agent-identity
@@ -343,6 +370,80 @@ void main() {
       await pair.vm.acceptControlStream();
       await pair.vm.nextMessage(); // link.register
       await pair.vm.close();
+      await expectLater(outcomeFuture, completion(Outcome.closed));
+    });
+
+    test('send on a dead socket throws LinkSocketClosed, not raw StateError',
+        () async {
+      Future<Map<String, Object?>> runCommand(String command,
+              Map<String, Object?> params, int? timeoutMs) async =>
+          {'ok': true};
+      final toDevice = StreamController<Uint8List>();
+      final toVm = StreamController<Uint8List>();
+      final deviceSocket = _KillablePipe(toDevice, toVm);
+      final vmSocket = _Pipe(toVm, toDevice);
+      Future<LinkSocket> connect(String url, Map<String, String> headers,
+          String userAgent) async => deviceSocket;
+      final session = LinkSession(
+        noiseHost: 'gw.example',
+        vmId: 'vm 1&x',
+        vmAuthToken: 'tok',
+        device: _device,
+        runCommand: runCommand,
+        userAgent: 'test/0',
+        connect: connect,
+      );
+      final vm = _FakeVm(vmSocket);
+      final outcomeFuture = session.run(null);
+      addTearDown(() async {
+        await vm.close();
+      });
+      await vm.handshake();
+      await vm.acceptControlStream();
+      await vm.nextMessage(); // link.register
+      deviceSocket.dead = true;
+      await expectLater(
+        session.send({'method': 'link.heartbeat'}),
+        throwsA(isA<LinkSocketClosed>()),
+      );
+      await vm.close();
+      await expectLater(outcomeFuture, completion(Outcome.closed));
+    });
+
+    test('dead socket mid-session ends via Outcome.closed, no unhandled error',
+        () async {
+      Future<Map<String, Object?>> runCommand(String command,
+              Map<String, Object?> params, int? timeoutMs) async =>
+          {'ok': true};
+      final toDevice = StreamController<Uint8List>();
+      final toVm = StreamController<Uint8List>();
+      final deviceSocket = _KillablePipe(toDevice, toVm);
+      final vmSocket = _Pipe(toVm, toDevice);
+      Future<LinkSocket> connect(String url, Map<String, String> headers,
+          String userAgent) async => deviceSocket;
+      final session = LinkSession(
+        noiseHost: 'gw.example',
+        vmId: 'vm 1&x',
+        vmAuthToken: 'tok',
+        device: _device,
+        runCommand: runCommand,
+        userAgent: 'test/0',
+        connect: connect,
+        heartbeatInterval: const Duration(milliseconds: 50),
+      );
+      final vm = _FakeVm(vmSocket);
+      final outcomeFuture = session.run(null);
+      await vm.handshake();
+      await vm.acceptControlStream();
+      final reg = await vm.nextMessage(); // link.register
+      // Ack the register so heartbeats start flowing.
+      await vm.sendMessage({'id': reg['id'] as String});
+      // Let the first heartbeat go through, then kill the socket like a
+      // dropped WebSocket. The next heartbeat is fire-and-forget: it must
+      // end the session via Outcome.closed, never an unhandled exception
+      // (an unhandled async error fails this test automatically).
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      deviceSocket.dead = true;
       await expectLater(outcomeFuture, completion(Outcome.closed));
     });
 

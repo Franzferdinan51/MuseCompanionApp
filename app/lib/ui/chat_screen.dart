@@ -829,8 +829,14 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
     _lastOrientation = orientation;
+    final landscape = orientation == Orientation.landscape;
     return MusePage(
       appBar: AppBar(
+        // Landscape is vertically tight: shrink the bar and its icons.
+        toolbarHeight: landscape ? 48 : null,
+        titleSpacing: landscape ? 8 : null,
+        actionsIconTheme:
+            landscape ? const IconThemeData(size: 20) : null,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -840,7 +846,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Icon(Icons.push_pin, size: 18),
               ),
             Flexible(
-              child: Text(agent == null ? 'Message Muse' : 'Message $agent'),
+              child: Text(
+                agent == null ? 'Message Muse' : 'Message $agent',
+                style: landscape ? const TextStyle(fontSize: 16) : null,
+              ),
             ),
           ],
         ),
@@ -1014,7 +1023,9 @@ class _ChatScreenState extends State<ChatScreen> {
           final items = _buildListItems(messages);
           return ListView.builder(
             controller: _scroll,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            // Right padding keeps bubbles and timestamps clear of the
+            // floating side dock in both orientations.
+            padding: const EdgeInsets.fromLTRB(16, 12, 16 + kSideDockClearance, 12),
             itemCount: items.length,
             itemBuilder: (context, i) => items[i],
           );
@@ -1767,7 +1778,7 @@ class _QuickReplies extends StatelessWidget {
     final theme = Theme.of(context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(
         children: [
           _chip(theme, Icons.photo_camera_outlined, 'Take a photo', onPhoto),
@@ -1927,7 +1938,9 @@ class _Composer extends StatelessWidget {
       children: [
         if (pendingAttachments.isNotEmpty) _buildPendingTray(context),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          // Right padding keeps the send button clear of the floating
+          // side dock in both orientations.
+          padding: const EdgeInsets.fromLTRB(12, 8, 12 + kSideDockClearance, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [

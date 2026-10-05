@@ -259,13 +259,27 @@ abstract class LinkSocket {
   Future<void> close();
 }
 
+/// The link socket died mid-session (e.g. `Bad state: StreamSink is
+/// closed`). Extends [StateError] so existing `on StateError` handlers keep
+/// working, but callers can also catch it by type and route the session
+/// through the normal reconnect path instead of letting it escape as an
+/// unhandled async exception.
+class LinkSocketClosed extends StateError {
+  LinkSocketClosed([super.message = 'socket closed']);
+}
+
 class _IoLinkSocket implements LinkSocket {
   _IoLinkSocket(this._socket);
   final WebSocket _socket;
 
   @override
   Future<void> send(Uint8List data) async {
-    _socket.add(data);
+    if (_socket.closeCode != null) throw LinkSocketClosed();
+    try {
+      _socket.add(data);
+    } on StateError {
+      throw LinkSocketClosed();
+    }
   }
 
   @override
@@ -341,12 +355,14 @@ class LinkSession {
     required RunCommand runCommand,
     required String userAgent,
     LinkConnector? connect,
+    Duration heartbeatInterval = const Duration(seconds: 60),
   })  : _url = noiseUrl(noiseHost, vmId),
         _token = vmAuthToken,
         _device = device,
         _runCommand = runCommand,
         _userAgent = userAgent,
-        _connect = connect;
+        _connect = connect,
+        _heartbeatInterval = heartbeatInterval;
 
   final String _url;
   final String _token;
@@ -354,6 +370,7 @@ class LinkSession {
   final RunCommand _runCommand;
   final String _userAgent;
   final LinkConnector? _connect;
+  final Duration _heartbeatInterval;
 
   LinkSocket? _socket;
   NoiseTransport? _transport;
@@ -437,6 +454,8 @@ class LinkSession {
       return await readFuture;
     } finally {
       _alive = false;
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
       for (final request in _requests.values) {
         if (!request.done.isCompleted) {
           request.done.completeError(StateError('session ended'));
@@ -621,13 +640,37 @@ class LinkSession {
   Future<void> _sendFrames(List<Uint8List> frames) {
     final next = _sendTail.then((_) async {
       final socket = _socket;
-      if (socket == null) throw StateError('session ended');
+      if (socket == null) throw LinkSocketClosed('session ended');
       for (final frame in frames) {
-        await socket.send(frame);
+        try {
+          await socket.send(frame);
+        } on StateError {
+          // The sink died mid-session ("Bad state: StreamSink is closed").
+          throw LinkSocketClosed();
+        }
       }
     });
     _sendTail = next.then((_) {}, onError: (_) {});
     return next;
+  }
+
+  /// Tracks a fire-and-forget send. A dead socket ends the session through
+  /// the normal reconnect path instead of escaping as an unhandled async
+  /// exception.
+  void _trackTask(Future<void> task) {
+    _tasks.add(task);
+    task.then((_) {}, onError: (Object e) {
+      if (e is LinkSocketClosed) _socketDied();
+    }).whenComplete(() => _tasks.remove(task));
+  }
+
+  /// The socket died mid-session: close it so the read loop finishes and
+  /// [run] returns [Outcome.closed] through the normal reconnect path.
+  void _socketDied() {
+    final socket = _socket;
+    if (socket == null) return;
+    onStatus?.call('link socket closed; reconnecting');
+    unawaited(socket.close());
   }
 
   Future<Outcome> _readLoop(StreamIterator<Uint8List> incoming) async {
@@ -752,9 +795,7 @@ class LinkSession {
             'id': id,
             'answer': approved ? 'yes' : 'no',
           };
-          final task = send(reply);
-          _tasks.add(task);
-          task.whenComplete(() => _tasks.remove(task));
+          _trackTask(send(reply));
           onStatus?.call('prompt:$id:${approved ? "yes" : "no"}');
         });
         return true;
@@ -813,19 +854,13 @@ class LinkSession {
         // The firmware sends one heartbeat as soon as register is acked,
         // then daily. The VM uses it as a sign the command path is up.
         // Send heartbeats every 60s to keep the command path marked as up.
-        final beat = send({'method': 'link.heartbeat'});
-        _tasks.add(beat);
-        beat.whenComplete(() => _tasks.remove(beat));
+        _trackTask(send({'method': 'link.heartbeat'}));
         // Periodic heartbeat to keep device.invoke routing alive.
         _heartbeatTimer?.cancel();
-        _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-          final hb = send({'method': 'link.heartbeat'});
-          _tasks.add(hb);
-          hb.whenComplete(() => _tasks.remove(hb));
+        _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+          _trackTask(send({'method': 'link.heartbeat'}));
         });
-        final task = _openChatSubscription();
-        _tasks.add(task);
-        task.whenComplete(() => _tasks.remove(task));
+        _trackTask(_openChatSubscription());
         _requestIdentity();
       }
       return null;
@@ -836,9 +871,7 @@ class LinkSession {
     }
     final parsed = parseInvoke(message);
     if (parsed != null) {
-      final task = _invoke(parsed, sourceStream: sourceStream);
-      _tasks.add(task);
-      task.whenComplete(() => _tasks.remove(task));
+      _trackTask(_invoke(parsed, sourceStream: sourceStream));
     }
     return null;
   }

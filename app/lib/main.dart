@@ -26,6 +26,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:muse_companion/app/approval_notifications.dart';
 import 'package:muse_companion/app/approval_service.dart';
 import 'package:muse_companion/app/agent_status.dart';
+import 'package:muse_companion/app/event_bus.dart';
 import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
@@ -216,7 +217,16 @@ Future<void> main() async {
     chat.applyServerEvent(event.event, event.payload);
   });
   // Server-sent working status drives the agent status line in chat.
+  // While a local phone tool runs, its descriptive toolLabel ("Taking a
+  // photo…") wins over the server's generic text: the phone knows exactly
+  // what it is doing, the server only knows it asked for a tool.
+  var localToolActive = false;
+  EventBus.instance.stream.listen((event) {
+    if (event.kind == AppEventKind.toolCall) localToolActive = true;
+    if (event.kind == AppEventKind.toolResult) localToolActive = false;
+  });
   service.onWorkingStatus.listen((text) {
+    if (localToolActive) return;
     if (text.isEmpty) {
       AgentStatusBus.instance.ready();
     } else {

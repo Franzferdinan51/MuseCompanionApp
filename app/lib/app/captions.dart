@@ -19,6 +19,8 @@
 // turn a chat reply or an activity code into that line. They do not
 // touch the network or the display.
 
+import 'agent_status.dart';
+
 /// Visible caption under the character. Four short lines, not the whole reply.
 const int captionLimit = 240;
 
@@ -35,6 +37,9 @@ String speakableReply(String text) => _clip(_clean(text), spokenLimit);
 String? activityCaption(String code) {
   final key = code.trim().toLowerCase().replaceAll(' ', '_');
   if (key.isEmpty) return null;
+  // A code naming a phone tool gets the rich descriptive label
+  // ("Taking a photo…") instead of the title-cased fallback.
+  if (hasToolLabel(key)) return toolLabel(key, const {});
   const known = <String, String>{
     'thinking': 'Thinking…',
     'working': 'Working…',

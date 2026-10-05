@@ -281,6 +281,7 @@ class _PortraitBody extends StatelessWidget {
         Expanded(
           child: _Character(presentation: presentation, asleep: asleep),
         ),
+        const SizedBox(height: 8),
         Text(
           'Tap to pet, hold to talk',
           style: theme.textTheme.bodySmall?.copyWith(
@@ -333,7 +334,7 @@ class _LandscapeBody extends StatelessWidget {
                     asleep: asleep,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Text(
                   'Tap to pet, hold to talk',
                   style: theme.textTheme.bodySmall?.copyWith(

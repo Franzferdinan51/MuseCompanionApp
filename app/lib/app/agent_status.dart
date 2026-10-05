@@ -115,6 +115,32 @@ String _short(Object? v, [int n = 60]) {
 }
 
 /// Human-readable label for a tool call, e.g. "Running `ls /sdcard`".
+/// Phone tool names with a dedicated friendly label in [toolLabel].
+/// Used to recognize tool activity codes reported by the server.
+const Set<String> labeledToolNames = {
+  'take_photo',
+  'speak_text',
+  'get_device_health',
+  'get_location',
+  'list_notifications',
+  'set_alarm',
+  'set_timer',
+  'show_notification',
+  'open_url',
+  'launch_app',
+  'vibrate',
+  'get_clipboard',
+  'set_clipboard',
+  'toggle_flashlight',
+  'usb_list_devices',
+  'usb_list_volumes',
+  'usb_list_files',
+  'usb_serial_list',
+};
+
+/// Whether [toolName] has a dedicated friendly label.
+bool hasToolLabel(String toolName) => labeledToolNames.contains(toolName);
+
 /// Ported mapper logic from their `_tool_label`, adapted to our phone
 /// tool registry (see lmstudio_tools.dart).
 String toolLabel(String toolName, Map<String, Object?> args) {

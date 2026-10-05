@@ -23,6 +23,7 @@
 // it expires, and immediately if the API rejects it.
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
@@ -96,6 +97,8 @@ class Backoff {
     var delay = backoffBaseS * (1 << failures);
     if (delay > backoffMaxS) delay = backoffMaxS;
     failures += 1;
+    // +/-20% jitter so retries don't hammer in lockstep.
+    delay *= 0.8 + 0.4 * _random.nextDouble();
     return delay > floor ? delay : floor;
   }
 
@@ -104,6 +107,8 @@ class Backoff {
     floor = 0;
   }
 }
+
+final Random _random = Random();
 
 typedef ServiceLogger = void Function(String message);
 
