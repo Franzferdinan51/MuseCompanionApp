@@ -31,6 +31,7 @@ import 'package:muse_companion/src/gadget/phone_actions.dart';
 import '../app/avatar_motion.dart';
 import '../app/activity_log.dart';
 import '../app/chat.dart';
+import '../app/chat_store.dart';
 import '../app/lmstudio_client.dart';
 import '../src/gadget/service.dart';
 import 'muse_theme.dart';
@@ -47,26 +48,53 @@ class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
   StreamSubscription<ConnectionState>? _connectionSub;
+  StreamSubscription<void>? _chatSub;
   ConnectionState _connection = ConnectionState.unpaired;
   bool _listening = false;
   bool _capturing = false;
   String? _captionBeforeListen;
+  ChatStore? _store;
+  bool _storeArmed = false;
+  Timer? _saveTimer;
+  bool _searching = false;
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _connectionSub?.cancel();
     final scope = AppScope.of(context);
+    _armStore(scope);
     _connection = scope.service.connectionState;
     _connectionSub = scope.service.onStateChanged.listen((state) {
       if (mounted) setState(() => _connection = state);
     });
   }
 
+  /// One-time: restore persisted history, then debounce-save on changes.
+  void _armStore(AppScope scope) {
+    if (_storeArmed) return;
+    _storeArmed = true;
+    final store = ChatStore(scope.chat);
+    _store = store;
+    store.restore().then((_) {
+      if (mounted) _scrollToEnd();
+    });
+    _chatSub = scope.chat.stream.listen((_) {
+      _saveTimer?.cancel();
+      _saveTimer = Timer(const Duration(seconds: 2), () => store.save());
+    });
+  }
+
   @override
   void dispose() {
+    _saveTimer?.cancel();
+    _store?.save();
+    _chatSub?.cancel();
     _connectionSub?.cancel();
     _controller.dispose();
+    _searchController.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -78,19 +106,90 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+    if (text.startsWith('/')) {
+      await _handleSlash(text);
+      return;
+    }
     await _post(text);
+  }
+
+  /// Power-user shortcuts: `/photo`, `/voice`, `/local`, `/speak`.
+  /// Unknown slashes fall through as normal messages.
+  Future<void> _handleSlash(String text) async {
+    final parts = text.substring(1).split(RegExp(r'\s+'));
+    final cmd = parts[0].toLowerCase();
+    final arg = parts.length > 1 ? parts.sublist(1).join(' ').trim() : '';
+    switch (cmd) {
+      case 'photo':
+        _controller.clear();
+        await _capture();
+      case 'voice':
+        _controller.clear();
+        _showError('Hold the mic button to record a voice note.');
+      case 'local':
+        if (arg.isEmpty) {
+          _showError('Usage: /local <what should the local model do>');
+        } else {
+          _controller.clear();
+          await _askLocalAiWith(arg);
+        }
+      case 'speak':
+        _controller.clear();
+        final reply = AppScope.of(context).chat.lastReply;
+        if (reply != null && reply.trim().isNotEmpty) {
+          await _speakMessage(reply);
+        } else {
+          _showError('Nothing to speak yet.');
+        }
+      default:
+        await _post(text);
+    }
+  }
+
+  /// Clear-history with a confirm step. Clears memory and disk.
+  Future<void> _clearHistory() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear chat history?'),
+        content: const Text(
+          'This deletes the conversation from this device. '
+          'It cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      AppScope.of(context).chat.clearAll();
+      await _store?.clear();
+      ActivityLog.instance.add(ActivityKind.chat, 'Chat history cleared');
+    }
   }
 
   /// Run the composer's text (or a prompted instruction) through the local
   /// AI model via LM Studio. The model can use phone tools to act.
-  Future<void> _askLocalAi() async {
+  Future<void> _askLocalAi() => _askLocalAiWith('');
+
+  /// Same as [_askLocalAi] but with a pre-supplied instruction (slash cmd).
+  Future<void> _askLocalAiWith(String preset) async {
     final scope = AppScope.of(context);
     final settings = scope.presentation.settings;
     if (!settings.lmStudioEnabled) {
       _showError('Local AI is disabled. Turn it on in Settings.');
       return;
     }
-    var instruction = _controller.text.trim();
+    var instruction = preset.trim().isNotEmpty
+        ? preset.trim()
+        : _controller.text.trim();
     if (instruction.isEmpty) {
       instruction = await _promptInstruction() ?? '';
       if (instruction.trim().isEmpty) return;
@@ -413,6 +512,31 @@ class _ChatScreenState extends State<ChatScreen> {
     return MusePage(
       appBar: AppBar(
         title: Text(agent == null ? 'Message Muse' : 'Message $agent'),
+        actions: [
+          IconButton(
+            tooltip: 'Search messages',
+            icon: Icon(_searching ? Icons.close : Icons.search),
+            onPressed: () => setState(() {
+              _searching = !_searching;
+              if (!_searching) {
+                _searchQuery = '';
+                _searchController.clear();
+              }
+            }),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Chat options',
+            onSelected: (value) {
+              if (value == 'clear') _clearHistory();
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'clear',
+                child: Text('Clear history'),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -423,13 +547,56 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? 'Listening… release to send'
                   : scope.chat.activity,
             ),
+          if (_searching)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Search messages…',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                onChanged: (q) => setState(() => _searchQuery = q),
+              ),
+            ),
+          if (_ready && !_listening && !_searching) _QuickReplies(
+            onPhoto: _capture,
+            onSayAgain: () async {
+              final reply = scope.chat.lastReply;
+              if (reply != null && reply.trim().isNotEmpty) {
+                await _speakMessage(reply);
+              } else {
+                _showError('Nothing to say yet.');
+              }
+            },
+            onCapabilities: () => _post('What can you do?'),
+          ),
           Expanded(
             child: StreamBuilder<void>(
               stream: scope.chat.stream,
               builder: (context, _) {
-                final messages = scope.chat.messages;
+                final all = scope.chat.messages;
+                final messages = _searchQuery.trim().isEmpty
+                    ? all
+                    : scope.chat.search(_searchQuery);
                 if (messages.isEmpty) {
-                  return _EmptyHint(ready: _ready);
+                  return _searchQuery.trim().isEmpty
+                      ? _EmptyHint(ready: _ready)
+                      : Center(
+                          child: Text(
+                            'No messages match "$_searchQuery".',
+                            style:
+                                Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        );
                 }
                 final items = _buildListItems(messages);
                 return ListView.builder(
@@ -1124,6 +1291,55 @@ class _ActivityBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: theme.colorScheme.primaryContainer,
       child: Text(text, style: theme.textTheme.bodySmall),
+    );
+  }
+}
+
+/// One-tap suggestion chips above the composer.
+class _QuickReplies extends StatelessWidget {
+  const _QuickReplies({
+    required this.onPhoto,
+    required this.onSayAgain,
+    required this.onCapabilities,
+  });
+
+  final VoidCallback onPhoto;
+  final VoidCallback onSayAgain;
+  final VoidCallback onCapabilities;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        children: [
+          _chip(theme, Icons.photo_camera_outlined, 'Take a photo', onPhoto),
+          const SizedBox(width: 8),
+          _chip(theme, Icons.replay, 'Say it again', onSayAgain),
+          const SizedBox(width: 8),
+          _chip(
+            theme,
+            Icons.lightbulb_outline,
+            'What can you do?',
+            onCapabilities,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(
+    ThemeData theme,
+    IconData icon,
+    String label,
+    VoidCallback onTap,
+  ) {
+    return ActionChip(
+      avatar: Icon(icon, size: 16, color: theme.colorScheme.primary),
+      label: Text(label),
+      onPressed: onTap,
     );
   }
 }

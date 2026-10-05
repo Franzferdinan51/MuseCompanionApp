@@ -191,6 +191,39 @@ class ChatHistory {
   /// Find a message by id, or null.
   ChatMessage? find(int id) => _find(id);
 
+  /// Restore one persisted message (used by ChatStore). The id is
+  /// reassigned so it cannot collide with live messages.
+  void restoreMessage(ChatMessage message) {
+    _messages.add(
+      ChatMessage(
+        id: _nextId++,
+        text: message.text,
+        sentAt: message.sentAt,
+        status: message.status == ChatStatus.sending
+            ? ChatStatus.sent
+            : message.status,
+        role: message.role,
+      ),
+    );
+    _trim();
+    _emit();
+  }
+
+  /// Remove all messages (clear-history action).
+  void clearAll() {
+    _messages.clear();
+    _emit();
+  }
+
+  /// Case-insensitive text search over message bodies.
+  List<ChatMessage> search(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return _messages
+        .where((m) => m.text.toLowerCase().contains(q))
+        .toList();
+  }
+
   /// Fold one `/chat/subscribe` event into the history.
   void applyServerEvent(String name, Map<String, Object?> payload) {
     final role = _text(payload['role']) ?? _text(payload['author']);
