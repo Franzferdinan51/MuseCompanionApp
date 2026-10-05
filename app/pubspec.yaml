@@ -58,7 +58,6 @@ dependencies:
   flutter_math_fork: ^0.7.4
   # Mermaid diagrams: rendered to SVG in an offscreen WebView, shown with
   # pinch-to-zoom (flutter_svg), no network needed (mermaid.min.js bundled).
-  webview_flutter: ^4.14.1
   flutter_svg: ^2.3.0
 
 dev_dependencies:

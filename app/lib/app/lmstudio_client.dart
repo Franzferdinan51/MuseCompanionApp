@@ -25,17 +25,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:langchain/langchain.dart';
 import 'package:langchain_openai/langchain_openai.dart';
 
-<<<<<<< HEAD
-import 'agent_status.dart';
-=======
 import 'agent_memory.dart';
->>>>>>> dev/hp-memory
+import 'agent_status.dart';
 import 'approval_service.dart';
-<<<<<<< HEAD
-import 'event_bus.dart';
-=======
 import 'canvas_store.dart';
->>>>>>> origin/dev/hp-canvas
+import 'event_bus.dart';
 import 'lmstudio_tools.dart';
 import 'phone_tool_adapter.dart';
 import 'systemone_client.dart';
@@ -434,13 +428,10 @@ class LocalAiService {
       'show a notification with show_notification',
       'open URLs and apps with open_url and launch_app',
       'vibrate, read/set the clipboard, toggle the flashlight',
-<<<<<<< HEAD
       'remember lasting facts across sessions with memory_remember and '
           'look them up with memory_recall',
-=======
       'create and edit shared canvas documents with canvas_create, '
           'canvas_update and canvas_list',
->>>>>>> origin/dev/hp-canvas
     ];
     if (usbStorageEnabled) {
       caps.add(
