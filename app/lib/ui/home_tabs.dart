@@ -56,8 +56,8 @@ class _HomeTabsState extends State<HomeTabs> {
     ),
     _Tab(
       label: 'Device',
-      icon: Icons.monitor_heart_outlined,
-      activeIcon: Icons.monitor_heart,
+      icon: Icons.phone_android_outlined,
+      activeIcon: Icons.phone_android,
     ),
     _Tab(
       label: 'Activity',
