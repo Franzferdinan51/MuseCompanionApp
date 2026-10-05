@@ -41,6 +41,7 @@ import 'diagnostics_screen.dart';
 import 'muse_theme.dart';
 import 'pairing_screen.dart';
 import 'scope.dart';
+import '../app/approval_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.onSendChat});
@@ -1070,6 +1071,29 @@ class _SettingsScreenState extends State<SettingsScreen>
                   value: _settings.allowSendSms,
                   onChanged: (v) =>
                       _commit(_settings.copyWith(allowSendSms: v)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Debug',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Trigger a test approval popup to verify the flow works.',
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonal(
+                  onPressed: () {
+                    ApprovalService.instance.requestApproval(
+                      title: 'Allow "take_photo"?',
+                      body:
+                          'The agent wants to take a photo with the rear camera. This is a test prompt.',
+                    );
+                  },
+                  child: const Text('Test approval popup'),
                 ),
               ],
             ),
