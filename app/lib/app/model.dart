@@ -113,6 +113,9 @@ class CompanionSettings {
     this.lmStudioAgentModel = '',
     this.systemOneEnabled = false,
     this.systemOneUrl = 'http://100.68.208.113:8765',
+    this.voiceProvider = 'android',
+    this.openRouterModel = 'fish-audio/s2.1-pro-free:free',
+    this.openRouterVoice = '',
   });
 
   /// One of `light`, `dark` or `system`.
@@ -189,6 +192,20 @@ class CompanionSettings {
   /// Base URL of the SystemOne router, e.g. http://100.68.208.113:8765.
   final String systemOneUrl;
 
+  /// Voice provider: 'android' (native on-device TTS, the default) or
+  /// 'openrouter' (OpenRouter cloud TTS). Opt-in only; the Android path
+  /// is untouched and stays the default.
+  final String voiceProvider;
+
+  /// OpenRouter TTS model id, user-editable in Settings (OpenRouter rotates
+  /// free models, so this is never hard-coded). Defaults to the free
+  /// Fish Audio model.
+  final String openRouterModel;
+
+  /// OpenRouter TTS voice id (a Fish Audio reference/voice id), or ''
+  /// for the model's default voice.
+  final String openRouterVoice;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -210,6 +227,9 @@ class CompanionSettings {
     String? lmStudioAgentModel,
     bool? systemOneEnabled,
     String? systemOneUrl,
+    String? voiceProvider,
+    String? openRouterModel,
+    String? openRouterVoice,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -234,6 +254,9 @@ class CompanionSettings {
       lmStudioAgentModel: lmStudioAgentModel ?? this.lmStudioAgentModel,
       systemOneEnabled: systemOneEnabled ?? this.systemOneEnabled,
       systemOneUrl: systemOneUrl ?? this.systemOneUrl,
+      voiceProvider: voiceProvider ?? this.voiceProvider,
+      openRouterModel: openRouterModel ?? this.openRouterModel,
+      openRouterVoice: openRouterVoice ?? this.openRouterVoice,
     );
   }
 
@@ -292,6 +315,9 @@ class CompanionSettings {
       ),
       systemOneEnabled: map['system_one_enabled'] == true,
       systemOneUrl: _systemOneUrl(map['system_one_url']),
+      voiceProvider: _voiceProvider(map['voice_provider']),
+      openRouterModel: _openRouterModel(map['openrouter_model']),
+      openRouterVoice: _openRouterVoice(map['openrouter_voice']),
     );
   }
 
@@ -366,6 +392,35 @@ class CompanionSettings {
       }
     }
     return 'http://100.68.208.113:8765';
+  }
+
+  /// Voice provider: 'openrouter' only when explicitly stored; anything
+  /// else (including missing) means the Android TTS default.
+  static String _voiceProvider(Object? value) =>
+      value == 'openrouter' ? 'openrouter' : 'android';
+
+  /// OpenRouter model id: printable ASCII, capped in length. Empty or bad
+  /// values fall back to the free Fish Audio default.
+  static String _openRouterModel(Object? value) {
+    if (value is! String) return 'fish-audio/s2.1-pro-free:free';
+    final id = value.trim();
+    if (id.isEmpty || id.length > 160) return 'fish-audio/s2.1-pro-free:free';
+    for (final unit in id.codeUnits) {
+      if (unit < 0x21 || unit > 0x7e) return 'fish-audio/s2.1-pro-free:free';
+    }
+    return id;
+  }
+
+  /// OpenRouter voice id: same shape as a model id; empty means the
+  /// model's default voice.
+  static String _openRouterVoice(Object? value) {
+    if (value is! String) return '';
+    final id = value.trim();
+    if (id.length > 160) return '';
+    for (final unit in id.codeUnits) {
+      if (unit < 0x21 || unit > 0x7e) return '';
+    }
+    return id;
   }
 }
 

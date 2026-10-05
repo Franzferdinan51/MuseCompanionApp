@@ -144,6 +144,21 @@ Future<void> main() async {
 
   syncSpeakEnabled();
   settings.addListener(syncSpeakEnabled);
+  // Voice provider routing: Android TTS is the default; OpenRouter is
+  // opt-in and only used when a key is saved in secure storage.
+  Future<void> syncVoiceProvider() async {
+    final voice = presentation.settings;
+    PhoneBridge.voiceProvider = voice.voiceProvider;
+    PhoneBridge.openRouterModel = voice.openRouterModel;
+    PhoneBridge.openRouterVoice = voice.openRouterVoice;
+    PhoneBridge.openRouterApiKey = await const OpenRouterKeyStore().load();
+  }
+
+  await syncVoiceProvider();
+  settings.addListener(() {
+    // ignore: unawaited_futures
+    syncVoiceProvider();
+  });
   final executor = CompanionExecutor(
     display: display,
     health: health,

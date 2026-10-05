@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../src/gadget/phone_actions.dart';
+import 'openrouter_tts.dart';
 
 const MethodChannel _phoneChannel = MethodChannel('dev.musecompanion/phone');
 
@@ -112,6 +113,24 @@ class PhoneBridge implements PhoneActions {
   /// lowest level, so no code path can bypass the user's choice.
   static bool speakEnabled = true;
 
+  /// Voice provider: 'android' (native TTS, the default) or 'openrouter'
+  /// (OpenRouter cloud TTS, opt-in). Synced from settings in main.dart.
+  /// The Android path below is byte-for-byte the original behavior.
+  static String voiceProvider = 'android';
+
+  /// OpenRouter TTS model id, user-editable in Settings.
+  static String openRouterModel = kDefaultOpenRouterModel;
+
+  /// OpenRouter TTS voice id (Fish Audio reference id), or '' for default.
+  static String openRouterVoice = '';
+
+  /// OpenRouter API key from secure storage. Null/empty means the
+  /// OpenRouter path is unavailable and speak() falls back to Android TTS.
+  static String? openRouterApiKey;
+
+  /// Shared OpenRouter playback, so stopSpeak() can interrupt it.
+  static final OpenRouterTts _openRouterTts = OpenRouterTts();
+
   @override
   Future<Uint8List> captureJpeg({String facing = 'back'}) async {
     await _ensure(Permission.camera, 'Camera');
@@ -164,7 +183,20 @@ class PhoneBridge implements PhoneActions {
     final generation = ++_speakGeneration;
     speaking.value = true;
     try {
-      await _call<void>('speak', {'text': text});
+      final key = openRouterApiKey;
+      if (voiceProvider == 'openrouter' && key != null && key.isNotEmpty) {
+        // Opt-in cloud path. Any failure surfaces as an exception;
+        // the Android path below is unchanged.
+        await _openRouterTts.synthesizeAndPlay(
+          text: text,
+          apiKey: key,
+          model: openRouterModel,
+          voice: openRouterVoice,
+        );
+      } else {
+        // Default Android TTS path: exactly the original behavior.
+        await _call<void>('speak', {'text': text});
+      }
     } finally {
       // Only the latest generation clears the flag: an older speak whose
       // native call was flushed by a newer one must not mark us idle.
@@ -180,6 +212,8 @@ class PhoneBridge implements PhoneActions {
   Future<void> stopSpeak() async {
     _speakGeneration++;
     speaking.value = false;
+    // Best-effort: no-op when the OpenRouter path was never used.
+    await _openRouterTts.stop();
     await _call<void>('stopSpeak');
   }
 

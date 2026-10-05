@@ -80,6 +80,25 @@ class SecureSdkTokenStore {
   Future<void> delete() => _storage.delete(key: _sdkTokenKey);
 }
 
+const String _openRouterKeyKey = 'muse_openrouter_api_key';
+
+/// OpenRouter API key for cloud TTS, kept in encrypted storage.
+///
+/// The key is a secret: it lives ONLY here (flutter_secure_storage), never
+/// in SharedPreferences, and is never logged.
+class OpenRouterKeyStore {
+  const OpenRouterKeyStore([this._storage = const FlutterSecureStorage()]);
+
+  final FlutterSecureStorage _storage;
+
+  Future<String?> load() => _storage.read(key: _openRouterKeyKey);
+
+  Future<void> save(String key) =>
+      _storage.write(key: _openRouterKeyKey, value: key);
+
+  Future<void> delete() => _storage.delete(key: _openRouterKeyKey);
+}
+
 /// A stable device identity persisted across upgrades and unpairings.
 class PersistentIdentity {
   PersistentIdentity(this._identity);
@@ -151,6 +170,12 @@ class SettingsStore {
           _prefs.getBool('${_settingsPrefix}system_one_enabled') ?? false,
       'system_one_url':
           _prefs.getString('${_settingsPrefix}system_one_url'),
+      'voice_provider':
+          _prefs.getString('${_settingsPrefix}voice_provider'),
+      'openrouter_model':
+          _prefs.getString('${_settingsPrefix}openrouter_model'),
+      'openrouter_voice':
+          _prefs.getString('${_settingsPrefix}openrouter_voice'),
     });
   }
 
@@ -228,6 +253,18 @@ class SettingsStore {
     await _prefs.setString(
       '${_settingsPrefix}system_one_url',
       settings.systemOneUrl,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}voice_provider',
+      settings.voiceProvider,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}openrouter_model',
+      settings.openRouterModel,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}openrouter_voice',
+      settings.openRouterVoice,
     );
     _notifyListeners();
   }
