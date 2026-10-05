@@ -21,6 +21,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
@@ -280,8 +281,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(controller.text.trim()),
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
             child: const Text('Ask'),
           ),
         ],
@@ -525,9 +525,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _scrollToEnd() {
@@ -580,7 +579,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 bytes: bytes,
               ),
             ];
-      final result = await scope.service.sendChat(entry.text, null, attachments);
+      final result = await scope.service.sendChat(
+        entry.text,
+        null,
+        attachments,
+      );
       if (!mounted) return false;
       if (result['ok'] == true) {
         // Best-effort: the message may have been deleted or its id
@@ -603,8 +606,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
     if (batch.text.isNotEmpty) {
       final existing = _controller.text.trimRight();
-      _controller.text =
-          existing.isEmpty ? batch.text : '$existing\n\n${batch.text}';
+      _controller.text = existing.isEmpty
+          ? batch.text
+          : '$existing\n\n${batch.text}';
       _controller.selection = TextSelection.fromPosition(
         TextPosition(offset: _controller.text.length),
       );
@@ -707,10 +711,7 @@ class _ChatScreenState extends State<ChatScreen> {
               if (value == 'clear') _clearHistory();
             },
             itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'clear',
-                child: Text('Clear history'),
-              ),
+              PopupMenuItem(value: 'clear', child: Text('Clear history')),
             ],
           ),
         ],
@@ -744,18 +745,19 @@ class _ChatScreenState extends State<ChatScreen> {
                 onChanged: (q) => setState(() => _searchQuery = q),
               ),
             ),
-          if (_ready && !_listening && !_searching) _QuickReplies(
-            onPhoto: _capture,
-            onSayAgain: () async {
-              final reply = scope.chat.lastReply;
-              if (reply != null && reply.trim().isNotEmpty) {
-                await _speakMessage(reply);
-              } else {
-                _showError('Nothing to say yet.');
-              }
-            },
-            onCapabilities: () => _post('What can you do?'),
-          ),
+          if (_ready && !_listening && !_searching)
+            _QuickReplies(
+              onPhoto: _capture,
+              onSayAgain: () async {
+                final reply = scope.chat.lastReply;
+                if (reply != null && reply.trim().isNotEmpty) {
+                  await _speakMessage(reply);
+                } else {
+                  _showError('Nothing to say yet.');
+                }
+              },
+              onCapabilities: () => _post('What can you do?'),
+            ),
           Expanded(
             child: StreamBuilder<void>(
               stream: scope.chat.stream,
@@ -770,8 +772,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       : Center(
                           child: Text(
                             'No messages match "$_searchQuery".',
-                            style:
-                                Theme.of(context).textTheme.bodyMedium,
+                            style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         );
                 }
@@ -790,8 +791,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           if (_listening)
             _RecordingWaveform(
-              amplitude: () =>
-                  AppScope.of(context).phone.recordingAmplitude(),
+              amplitude: () => AppScope.of(context).phone.recordingAmplitude(),
             ),
           _Composer(
             controller: _controller,
@@ -896,17 +896,25 @@ String _dayLabel(DateTime day) {
   if (diff == 0) return 'Today';
   if (diff == 1) return 'Yesterday';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[day.month - 1]} ${day.day}';
 }
 
 /// Placeholder bubble labels that the attachment UI already communicates.
 bool _isPlaceholderLabel(String text) =>
-    text == 'Voice note' ||
-    text == '\u{1F3A4} Voice note' ||
-    text == 'Photo';
+    text == 'Voice note' || text == '\u{1F3A4} Voice note' || text == 'Photo';
 
 class _DayDivider extends StatelessWidget {
   const _DayDivider({required this.date});
@@ -1160,7 +1168,8 @@ class _Bubble extends StatelessWidget {
   final VoidCallback onSpeak;
 
   void _showActions(BuildContext context) {
-    final failed = message.status == ChatStatus.failed ||
+    final failed =
+        message.status == ChatStatus.failed ||
         message.status == ChatStatus.queued;
     showModalBottomSheet<void>(
       context: context,
@@ -1203,9 +1212,7 @@ class _Bubble extends StatelessWidget {
               ),
               title: Text(
                 'Delete',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               onTap: () {
                 Navigator.of(context).pop();
@@ -1378,9 +1385,7 @@ class _BubbleText extends StatelessWidget {
       data: text,
       selectable: true,
       styleSheet: sheet,
-      builders: {
-        'pre': _CodeBlockBuilder(textColor: color),
-      },
+      builders: {'pre': _CodeBlockBuilder(textColor: color)},
       onTapLink: (text, href, title) => _openLink(href),
     );
   }
@@ -1584,11 +1589,7 @@ class _RecordingWaveformState extends State<_RecordingWaveform> {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(
-            Icons.mic,
-            size: 18,
-            color: theme.colorScheme.error,
-          ),
+          Icon(Icons.mic, size: 18, color: theme.colorScheme.error),
           const SizedBox(width: 8),
           ..._levels.map(
             (level) => Padding(
@@ -1671,66 +1672,66 @@ class _Composer extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-          IconButton(
-            tooltip: 'Ask local AI (LM Studio)',
-            onPressed: ready ? onLocalAi : null,
-            icon: const Icon(Icons.smart_toy_outlined),
-          ),
-          IconButton(
-            tooltip: 'Show the camera',
-            onPressed: ready && !capturing ? onCapture : null,
-            icon: capturing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.photo_camera_outlined),
-          ),
-          Listener(
-            onPointerDown: ready ? (_) => onListenStart() : null,
-            onPointerUp: (_) => onListenEnd(),
-            onPointerCancel: (_) => onListenEnd(),
-            child: IconButton(
-              tooltip: 'Hold to talk',
-              onPressed: ready ? () {} : null,
-              icon: Icon(
-                listening ? Icons.mic : Icons.mic_none,
-                color: listening ? theme.colorScheme.error : null,
+              IconButton(
+                tooltip: 'Ask local AI (LM Studio)',
+                onPressed: ready ? onLocalAi : null,
+                icon: const Icon(Icons.smart_toy_outlined),
               ),
-            ),
-          ),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => onSend(),
-              decoration: InputDecoration(
-                hintText: hint,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+              IconButton(
+                tooltip: 'Show the camera',
+                onPressed: ready && !capturing ? onCapture : null,
+                icon: capturing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.photo_camera_outlined),
+              ),
+              Listener(
+                onPointerDown: ready ? (_) => onListenStart() : null,
+                onPointerUp: (_) => onListenEnd(),
+                onPointerCancel: (_) => onListenEnd(),
+                child: IconButton(
+                  tooltip: 'Hold to talk',
+                  onPressed: ready ? () {} : null,
+                  icon: Icon(
+                    listening ? Icons.mic : Icons.mic_none,
+                    color: listening ? theme.colorScheme.error : null,
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              tooltip: 'Send',
-              icon: Icon(Icons.send, color: theme.colorScheme.onPrimary),
-              onPressed: onSend,
-            ),
-          ),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  minLines: 1,
+                  maxLines: 4,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => onSend(),
+                  decoration: InputDecoration(
+                    hintText: hint,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  tooltip: 'Send',
+                  icon: Icon(Icons.send, color: theme.colorScheme.onPrimary),
+                  onPressed: onSend,
+                ),
+              ),
             ],
           ),
         ),
@@ -1749,7 +1750,7 @@ class _Composer extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
         itemCount: pendingAttachments.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final attachment = pendingAttachments[index];
           return Stack(

@@ -229,9 +229,7 @@ class ChatHistory {
   List<ChatMessage> search(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
-    return _messages
-        .where((m) => m.text.toLowerCase().contains(q))
-        .toList();
+    return _messages.where((m) => m.text.toLowerCase().contains(q)).toList();
   }
 
   /// Fold one `/chat/subscribe` event into the history.

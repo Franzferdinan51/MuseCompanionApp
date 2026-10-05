@@ -52,23 +52,24 @@ class OutboxEntry {
       attachmentBase64 == null ? null : base64Decode(attachmentBase64!);
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'text': text,
-        'attachmentBase64': attachmentBase64,
-        'attachmentMime': attachmentMime,
-        'attachmentName': attachmentName,
-        'enqueuedAt': enqueuedAt.toIso8601String(),
-      };
+    'id': id,
+    'text': text,
+    'attachmentBase64': attachmentBase64,
+    'attachmentMime': attachmentMime,
+    'attachmentName': attachmentName,
+    'enqueuedAt': enqueuedAt.toIso8601String(),
+  };
 
   factory OutboxEntry.fromJson(Map<String, dynamic> json) => OutboxEntry(
-        id: (json['id'] as num?)?.toInt() ?? 0,
-        text: (json['text'] as String?) ?? '',
-        attachmentBase64: json['attachmentBase64'] as String?,
-        attachmentMime: json['attachmentMime'] as String?,
-        attachmentName: json['attachmentName'] as String?,
-        enqueuedAt: DateTime.tryParse(json['enqueuedAt'] as String? ?? '') ??
-            DateTime.fromMillisecondsSinceEpoch(0),
-      );
+    id: (json['id'] as num?)?.toInt() ?? 0,
+    text: (json['text'] as String?) ?? '',
+    attachmentBase64: json['attachmentBase64'] as String?,
+    attachmentMime: json['attachmentMime'] as String?,
+    attachmentName: json['attachmentName'] as String?,
+    enqueuedAt:
+        DateTime.tryParse(json['enqueuedAt'] as String? ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+  );
 }
 
 /// Persisted FIFO of unsent chat messages. Single shared instance.
