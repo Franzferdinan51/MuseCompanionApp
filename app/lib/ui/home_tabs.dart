@@ -247,7 +247,7 @@ class _HomeTabsState extends State<HomeTabs> {
                         width: 48,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF5A7395).withValues(alpha: 0.5),
+                          color: const Color(0xFF9DB9DC).withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -325,7 +325,18 @@ class _InactiveTabIcon extends StatelessWidget {
       icon: Icon(
         tab.icon,
         size: 20,
-        color: const Color(0xFF5A7395), // muted blue-grey
+        // Brightened from the old muted blue-grey so the inactive icons
+        // read clearly against the backdrop in both orientations; the
+        // soft shadow keeps them legible over bright content showing
+        // through under the gradient scrim.
+        color: const Color(0xFF9DB9DC),
+        shadows: const [
+          Shadow(
+            color: Colors.black54,
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
       ),
     );
   }

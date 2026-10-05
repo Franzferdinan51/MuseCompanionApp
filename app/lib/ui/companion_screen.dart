@@ -193,6 +193,11 @@ class _Surface extends StatelessWidget {
   Widget build(BuildContext context) {
     final presentation = scope.presentation;
     final theme = Theme.of(context);
+    // Landscape gets a two-column layout (see _LandscapeBody) so the
+    // width is used instead of stacking everything into one crowded
+    // center strip. Portrait keeps the classic stacked look.
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       backgroundColor: museInk,
       body: DecoratedBox(
@@ -212,30 +217,22 @@ class _Surface extends StatelessWidget {
                     Column(
                       children: [
                         Expanded(
-                          child: _Character(
-                            presentation: presentation,
-                            asleep: asleep,
-                          ),
+                          child: landscape
+                              ? _LandscapeBody(
+                                  presentation: presentation,
+                                  asleep: asleep,
+                                  theme: theme,
+                                )
+                              : _PortraitBody(
+                                  presentation: presentation,
+                                  asleep: asleep,
+                                  theme: theme,
+                                ),
                         ),
-                        Text(
-                          'Tap to pet, hold to talk',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: museMist.withValues(alpha: 0.82),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _StatusLines(lines: presentation.lines),
-                        const SizedBox(height: 12),
-                        _ConnectionStatus(
-                          state:
-                              presentation.connection ??
-                              ConnectionState.unpaired,
-                          detail: presentation.statusDetail,
-                        ),
-                        // Internal bottom clearance: keeps the status
-                        // bubble and Pair button above the floating
-                        // tab bar while the backdrop stays full-bleed
-                        // behind the gradient scrim.
+                        // Internal bottom clearance: keeps content above the
+                        // floating tab bar while the backdrop stays
+                        // full-bleed behind the gradient scrim. Shared by
+                        // portrait and landscape.
                         const SizedBox(height: kFloatingTabBarClearance),
                       ],
                     ),
@@ -265,6 +262,116 @@ class _Surface extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Portrait Home tab: the classic vertically stacked layout.
+class _PortraitBody extends StatelessWidget {
+  const _PortraitBody({
+    required this.presentation,
+    required this.asleep,
+    required this.theme,
+  });
+
+  final PresentationState presentation;
+  final bool asleep;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const ValueKey('companion_portrait'),
+      children: [
+        Expanded(
+          child: _Character(presentation: presentation, asleep: asleep),
+        ),
+        Text(
+          'Tap to pet, hold to talk',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: museMist.withValues(alpha: 0.82),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _StatusLines(lines: presentation.lines),
+        const SizedBox(height: 12),
+        _ConnectionStatus(
+          key: const ValueKey('connection_status'),
+          state: presentation.connection ?? ConnectionState.unpaired,
+          detail: presentation.statusDetail,
+        ),
+      ],
+    );
+  }
+}
+
+/// Landscape Home tab: two columns so the width gets used instead of
+/// stacking everything into a crowded center strip. Avatar (shrunk a
+/// touch for breathing room) + caption on the left, status pills
+/// stacked compactly and vertically centered on the right.
+class _LandscapeBody extends StatelessWidget {
+  const _LandscapeBody({
+    required this.presentation,
+    required this.asleep,
+    required this.theme,
+  });
+
+  final PresentationState presentation;
+  final bool asleep;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      key: const ValueKey('companion_landscape'),
+      children: [
+        // Left: avatar + caption.
+        Expanded(
+          flex: 6,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Expanded(
+                  child: _Character(
+                    presentation: presentation,
+                    asleep: asleep,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap to pet, hold to talk',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: museMist.withValues(alpha: 0.82),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Right: status pills stacked compactly. The scroll view guards
+        // against overflow on very short landscape heights.
+        Expanded(
+          flex: 5,
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _StatusLines(lines: presentation.lines),
+                  const SizedBox(height: 12),
+                  _ConnectionStatus(
+                    key: const ValueKey('connection_status'),
+                    state:
+                        presentation.connection ?? ConnectionState.unpaired,
+                    detail: presentation.statusDetail,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -759,7 +866,11 @@ class _StatusLines extends StatelessWidget {
 /// "say it again" moved to the Chat tab app bar; this keeps only
 /// the status bubble and the contextual Pair button.
 class _ConnectionStatus extends StatelessWidget {
-  const _ConnectionStatus({required this.state, required this.detail});
+  const _ConnectionStatus({
+    super.key,
+    required this.state,
+    required this.detail,
+  });
 
   final ConnectionState state;
   final String detail;

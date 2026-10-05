@@ -498,4 +498,69 @@ void main() {
     expect(barOpacity().opacity, 1.0);
     expect(find.byKey(const ValueKey('tabBarHandle')), findsNothing);
   });
+
+  testWidgets('landscape home tab uses two-column layout and clears the tab bar',
+      (tester) async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.init();
+    final presentation =
+        PresentationState(settings: settings.loadSettings());
+    final service = GadgetService(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      commands: const {},
+      runCommand: (_, _, _) async => {'ok': true},
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final ble = BlePeripheralManager(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final chat = ChatHistory();
+    addTearDown(() async {
+      await service.stop();
+      await ble.dispose();
+      chat.close();
+      presentation.close();
+    });
+
+    // Portrait keeps the classic stacked layout. (The default test
+    // surface is 800x600, which reads as landscape, so set an explicit
+    // portrait size first.)
+    tester.view.physicalSize = const Size(600, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(AppScope(
+      service: service,
+      presentation: presentation,
+      settings: settings,
+      ble: ble,
+      chat: chat,
+      sdkTokens: SecureSdkTokenStore(),
+      child: const MaterialApp(
+        home: HomeTabs(),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byKey(const ValueKey('companion_portrait')), findsOneWidget);
+    expect(find.byKey(const ValueKey('companion_landscape')), findsNothing);
+
+    // Landscape: switches to the two-column layout, and the
+    // connection-status pill stays fully above the floating tab bar.
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pump(const Duration(milliseconds: 500));
+    await settleBriefly(tester);
+    expect(find.byKey(const ValueKey('companion_landscape')), findsOneWidget);
+    expect(find.byKey(const ValueKey('companion_portrait')), findsNothing);
+    final pillRect =
+        tester.getRect(find.byKey(const ValueKey('connection_status')));
+    final barRect = tester.getRect(
+      find.byKey(const ValueKey('tabBarSafeArea')),
+    );
+    expect(pillRect.bottom, lessThanOrEqualTo(barRect.top));
+    // No overlap between the pill and the tab bar.
+    expect(pillRect.overlaps(barRect), isFalse);
+  });
 }
