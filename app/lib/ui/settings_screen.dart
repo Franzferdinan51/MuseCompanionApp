@@ -33,6 +33,8 @@ import '../app/foreground.dart';
 import '../app/lmstudio_client.dart';
 import '../app/model.dart';
 import '../app/phone_bridge.dart';
+import '../app/openrouter_tts.dart';
+import '../app/storage.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import '../src/gadget/chat_events.dart';
@@ -74,6 +76,21 @@ class _SettingsScreenState extends State<SettingsScreen>
   Timer? _voiceLookup;
   String? _adbInfoStatus;
 
+  // OpenRouter voice (opt-in cloud TTS for testing). The Android TTS path
+  // above is untouched; these controls only configure the alternative.
+  final TextEditingController _openRouterModelController =
+      TextEditingController();
+  final TextEditingController _openRouterKeyController =
+      TextEditingController();
+  final TextEditingController _openRouterVoiceController =
+      TextEditingController();
+  bool _obscureOpenRouterKey = true;
+  bool _openRouterKeySaved = false;
+  bool _openRouterArmed = false;
+  bool _testingOpenRouter = false;
+  String? _openRouterTestResult;
+  OpenRouterTts? _openRouterTestTts;
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +112,20 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.didChangeDependencies();
     final scope = AppScope.of(context);
     _settings = scope.settings.loadSettings();
+    if (!_openRouterArmed) {
+      _openRouterArmed = true;
+      _openRouterModelController.text = _settings.openRouterModel;
+      _openRouterVoiceController.text = _settings.openRouterVoice;
+      // Never fill the key field with the saved key; show saved/not-saved
+      // state instead.
+      const OpenRouterKeyStore().load().then((saved) {
+        if (mounted) {
+          setState(
+            () => _openRouterKeySaved = saved != null && saved.isNotEmpty,
+          );
+        }
+      }).catchError((_) {});
+    }
     _connectionSub?.cancel();
     _connection = scope.service.connectionState;
     _connectionSub = scope.service.onStateChanged.listen((state) {
@@ -257,6 +288,10 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   void dispose() {
+    _openRouterModelController.dispose();
+    _openRouterKeyController.dispose();
+    _openRouterVoiceController.dispose();
+    _openRouterTestTts?.dispose();
     _voiceLookup?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _connectionSub?.cancel();
@@ -310,6 +345,68 @@ class _SettingsScreenState extends State<SettingsScreen>
     } catch (e) {
       setState(
           () => _adbInfoStatus = '$_adbInfoText\n\nError: $e');
+    }
+  }
+
+  /// Save the typed API key to encrypted storage (or delete it when
+  /// the field is empty). Updates the PhoneBridge routing immediately.
+  Future<void> _saveOpenRouterKey() async {
+    final key = _openRouterKeyController.text.trim();
+    const store = OpenRouterKeyStore();
+    if (key.isEmpty) {
+      await store.delete();
+    } else {
+      await store.save(key);
+    }
+    PhoneBridge.openRouterApiKey = key.isEmpty ? null : key;
+    if (!mounted) return;
+    setState(() {
+      _openRouterKeySaved = key.isNotEmpty;
+      _openRouterKeyController.clear();
+      _openRouterTestResult = key.isEmpty ? 'API key removed.' : null;
+    });
+  }
+
+  /// Speak a short phrase through the configured OpenRouter settings so
+  /// the user can verify the key and model work.
+  Future<void> _testOpenRouterVoice() async {
+    if (_testingOpenRouter) return;
+    final typedKey = _openRouterKeyController.text.trim();
+    final key = typedKey.isNotEmpty
+        ? typedKey
+        : await const OpenRouterKeyStore().load() ?? '';
+    if (key.isEmpty) {
+      setState(() => _openRouterTestResult = 'Save an API key first.');
+      return;
+    }
+    final typedModel = _openRouterModelController.text.trim();
+    final model =
+        typedModel.isNotEmpty ? typedModel : _settings.openRouterModel;
+    setState(() {
+      _testingOpenRouter = true;
+      _openRouterTestResult = null;
+    });
+    try {
+      _openRouterTestTts = OpenRouterTts();
+      await _openRouterTestTts!.synthesizeAndPlay(
+        text: 'This is a test of the OpenRouter voice.',
+        apiKey: key,
+        model: model,
+        voice: _openRouterVoiceController.text.trim(),
+      );
+      if (mounted) {
+        setState(() => _openRouterTestResult = 'Voice test played.');
+      }
+    } on OpenRouterTtsException catch (e) {
+      if (mounted) setState(() => _openRouterTestResult = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _openRouterTestResult = 'Voice test failed.');
+      }
+    } finally {
+      await _openRouterTestTts?.dispose();
+      _openRouterTestTts = null;
+      if (mounted) setState(() => _testingOpenRouter = false);
     }
   }
 
@@ -736,6 +833,122 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onPressed: _openTtsSettings,
                   child: const Text('Get clearer voices'),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Voice provider',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Android TTS is the default and stays as-is. OpenRouter '
+                  'is an opt-in cloud voice for testing.',
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'android',
+                      label: Text('Android TTS'),
+                      icon: Icon(Icons.smartphone_outlined),
+                    ),
+                    ButtonSegment(
+                      value: 'openrouter',
+                      label: Text('OpenRouter'),
+                      icon: Icon(Icons.cloud_outlined),
+                    ),
+                  ],
+                  selected: {_settings.voiceProvider},
+                  onSelectionChanged: (next) => _commit(
+                    _settings.copyWith(voiceProvider: next.first),
+                  ),
+                ),
+                if (_settings.voiceProvider == 'openrouter') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _openRouterModelController,
+                    decoration: const InputDecoration(
+                      labelText: 'Model',
+                      hintText: 'fish-audio/s2.1-pro-free:free',
+                      helperText: 'OpenRouter changes free models often - '
+                          'update this when they do.',
+                    ),
+                    onSubmitted: (v) => _commit(
+                      _settings.copyWith(openRouterModel: v.trim()),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _openRouterKeyController,
+                    obscureText: _obscureOpenRouterKey,
+                    decoration: InputDecoration(
+                      labelText: 'API key',
+                      hintText: _openRouterKeySaved
+                          ? 'Key saved - paste a new one to replace it'
+                          : 'Paste your OpenRouter API key',
+                      helperText: _openRouterKeySaved
+                          ? 'A key is saved in secure storage.'
+                          : 'Stored encrypted on this phone, never logged.',
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              _obscureOpenRouterKey
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                            ),
+                            tooltip: _obscureOpenRouterKey
+                                ? 'Show key'
+                                : 'Hide key',
+                            onPressed: () => setState(
+                              () => _obscureOpenRouterKey =
+                                  !_obscureOpenRouterKey,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.save_outlined),
+                            tooltip: 'Save key',
+                            onPressed: _saveOpenRouterKey,
+                          ),
+                        ],
+                      ),
+                    ),
+                    onSubmitted: (_) => _saveOpenRouterKey(),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _openRouterVoiceController,
+                    decoration: const InputDecoration(
+                      labelText: 'Voice id (optional)',
+                      hintText: 'Fish Audio reference id',
+                      helperText:
+                          "Leave empty for the model's default voice.",
+                    ),
+                    onSubmitted: (v) => _commit(
+                      _settings.copyWith(openRouterVoice: v.trim()),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'fish-audio/s2.1-pro-free is free on OpenRouter.',
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed:
+                        _testingOpenRouter ? null : _testOpenRouterVoice,
+                    icon: const Icon(Icons.play_arrow_outlined),
+                    label: Text(
+                      _testingOpenRouter ? 'Testing...' : 'Test voice',
+                    ),
+                  ),
+                  if (_openRouterTestResult != null) ...[
+                    const SizedBox(height: 8),
+                    Text(_openRouterTestResult!),
+                  ],
+                ],
               ],
             ),
           ),

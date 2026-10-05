@@ -41,6 +41,8 @@ dependencies:
   model_viewer_plus: ^1.10.0
   # Video-clip avatar animation.
   video_player: ^2.9.0
+  # OpenRouter TTS playback (plays synthesized MP3 bytes in memory).
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
