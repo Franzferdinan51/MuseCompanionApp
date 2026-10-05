@@ -25,7 +25,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:langchain/langchain.dart';
 import 'package:langchain_openai/langchain_openai.dart';
 
+import 'agent_status.dart';
 import 'approval_service.dart';
+import 'event_bus.dart';
 import 'lmstudio_tools.dart';
 import 'phone_tool_adapter.dart';
 import 'systemone_client.dart';
@@ -326,10 +328,31 @@ class LocalAiService {
       ),
     );
     final executor = AgentExecutor(agent: agent, maxIterations: _maxRounds);
+    // Status + event bus: additive, fire-and-forget. The agent path must
+    // not depend on this.
+    AgentStatusBus.instance.working('Thinking...');
+    EventBus.instance.emit(
+      AppEventKind.status,
+      payload: {'text': 'Thinking...', 'working': true},
+    );
     try {
       final text = (await executor.run(instruction)).trim();
+      AgentStatusBus.instance.ready();
+      EventBus.instance.emit(
+        AppEventKind.reply,
+        payload: {'text': text.length <= 200 ? text : '${text.substring(0, 197)}...'},
+      );
+      EventBus.instance.emit(
+        AppEventKind.status,
+        payload: {'text': 'Ready', 'working': false},
+      );
       return LocalAiResult(text: text, toolCalls: toolCalls);
     } catch (e) {
+      AgentStatusBus.instance.ready();
+      EventBus.instance.emit(
+        AppEventKind.error,
+        payload: {'message': _friendlyError(e)},
+      );
       return LocalAiResult(
         text: '',
         toolCalls: toolCalls,
