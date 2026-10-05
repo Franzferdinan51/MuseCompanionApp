@@ -12,6 +12,7 @@
 // - Answers are debounced by the UI (see approval_prompt.dart).
 
 import 'dart:async';
+import 'event_bus.dart';
 
 /// A single pending approval question.
 class ApprovalRequest {
@@ -101,12 +102,20 @@ class ApprovalService {
   void closeRequest(String id) {
     if (_active?.id == id) {
       _active!._complete(false);
+      EventBus.instance.emit(
+        AppEventKind.approvalResponse,
+        payload: {'id': id, 'approved': false, 'timedOut': false},
+      );
       _advance();
       return;
     }
     final index = _queue.indexWhere((r) => r.id == id);
     if (index >= 0) {
       _queue.removeAt(index)._complete(false);
+      EventBus.instance.emit(
+        AppEventKind.approvalResponse,
+        payload: {'id': id, 'approved': false, 'timedOut': false},
+      );
     }
   }
 
@@ -115,6 +124,10 @@ class ApprovalService {
   void answerRequest(String id, bool approved) {
     if (_active?.id == id) {
       _active!._complete(true == approved);
+      EventBus.instance.emit(
+        AppEventKind.approvalResponse,
+        payload: {'id': id, 'approved': true == approved, 'timedOut': false},
+      );
       _advance();
     }
   }
@@ -122,10 +135,18 @@ class ApprovalService {
   void _activate(ApprovalRequest request) {
     _active = request;
     _requests.add(request);
+    EventBus.instance.emit(
+      AppEventKind.approvalRequest,
+      payload: {'id': request.id, 'title': request.title},
+    );
     // TTL expiry auto-denies, like the reference protocol.
     Future.delayed(request.timeout, () {
       if (!request.isCompleted) {
         request._complete(false);
+        EventBus.instance.emit(
+          AppEventKind.approvalResponse,
+          payload: {'id': request.id, 'approved': false, 'timedOut': true},
+        );
         if (_active?.id == request.id) _advance();
       }
     });
