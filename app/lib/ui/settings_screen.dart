@@ -627,7 +627,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return MusePage(
       appBar: AppBar(title: const Text('Companion Settings')),
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 104),
         children: [
           _PairingCard(
             connection: _connection,
