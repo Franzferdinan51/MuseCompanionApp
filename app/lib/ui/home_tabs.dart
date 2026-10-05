@@ -41,9 +41,21 @@ class HomeTabs extends StatefulWidget {
 }
 
 class _HomeTabsState extends State<HomeTabs> {
-  int _index = 0;
+  static const int _settingsIndex = 5;
 
-  void _selectTab(int i) => setState(() => _index = i);
+  int _index = 0;
+  int _previousIndex = 0;
+
+  void _selectTab(int i) => setState(() {
+        if (i != _index) _previousIndex = _index;
+        _index = i;
+      });
+
+  /// Settings is a detail page: back returns to the tab we came from.
+  void _backFromSettings() => _selectTab(
+      _previousIndex == _settingsIndex ? 0 : _previousIndex);
+
+  bool get _onSettings => _index == _settingsIndex;
 
   static const _tabs = [
     _Tab(label: 'Home', icon: Icons.pets_outlined, activeIcon: Icons.pets),
@@ -90,23 +102,34 @@ class _HomeTabsState extends State<HomeTabs> {
               const DeviceScreen(),
               const ActivityScreen(),
               const MediaScreen(),
-              const _SettingsTab(),
+              _SettingsTab(onBack: _backFromSettings),
             ],
           ),
           // Floating side dock: right edge, vertically centered.
+          // Hidden on the Settings detail page (it gets a back button
+          // instead). Fades out and ignores touches while hidden.
           // Positioned.fill + Align keeps it a direct Stack child.
           Positioned.fill(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: SafeArea(
-                left: false,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: _SideDock(
-                    key: const ValueKey('sideDock'),
-                    tabs: _tabs,
-                    index: _index,
-                    onSelect: _selectTab,
+            child: IgnorePointer(
+              key: const ValueKey('sideDockIgnore'),
+              ignoring: _onSettings,
+              child: AnimatedOpacity(
+                key: const ValueKey('sideDockFade'),
+                opacity: _onSettings ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: SafeArea(
+                    left: false,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: _SideDock(
+                        key: const ValueKey('sideDock'),
+                        tabs: _tabs,
+                        index: _index,
+                        onSelect: _selectTab,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -118,10 +141,13 @@ class _HomeTabsState extends State<HomeTabs> {
   }
 }
 
-/// Settings as a tab: grabs AppScope at build time so the tab list can
-/// stay const while SettingsScreen gets its onSendChat callback.
+/// Settings as a detail page: grabs AppScope at build time so the tab list
+/// can stay const while SettingsScreen gets its callbacks. The dock is
+/// hidden here; [onBack] returns to the previous tab.
 class _SettingsTab extends StatelessWidget {
-  const _SettingsTab();
+  const _SettingsTab({required this.onBack});
+
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +155,7 @@ class _SettingsTab extends StatelessWidget {
     return SettingsScreen(
       onSendChat: (msg, attachments) =>
           scope.service.sendChat(msg, null, attachments),
+      onBack: onBack,
     );
   }
 }

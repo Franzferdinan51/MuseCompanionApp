@@ -49,11 +49,14 @@ import 'scope.dart';
 import '../app/approval_service.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, this.onSendChat});
+  const SettingsScreen({super.key, this.onSendChat, this.onBack});
 
   /// Callback to post a message to the Muse chat.
   final Future<Map<String, Object?>> Function(String, List<ChatAttachment>)?
       onSendChat;
+
+  /// Back navigation for the detail-page pattern (dock is hidden here).
+  final VoidCallback? onBack;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -628,7 +631,12 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return MusePage(
-      appBar: AppBar(title: const Text('Companion Settings')),
+      appBar: AppBar(
+        title: const Text('Companion Settings'),
+        leading: widget.onBack == null
+            ? null
+            : BackButton(onPressed: widget.onBack),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
         children: [

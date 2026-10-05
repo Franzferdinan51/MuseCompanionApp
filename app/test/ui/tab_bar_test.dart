@@ -136,6 +136,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(activeDockIcon().icon, Icons.settings);
 
+    // The dock is hidden on the Settings detail page: back returns to
+    // the previous tab (Chat here).
+    await tester.tap(find.byType(BackButton));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(activeDockIcon().icon, Icons.chat_bubble);
+
     await tester.tap(find.byTooltip('Home'));
     await tester.pump(const Duration(milliseconds: 500));
     expect(activeDockIcon().icon, Icons.pets);
@@ -202,6 +208,39 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('sideDock')));
     expect(pillRect.right, lessThan(dockRect.left),
         reason: 'status pill must not reach the side dock');
+  });
+  testWidgets('Settings hides the dock and back returns to Home',
+      (tester) async {
+    final harness = await buildTabs();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(harness.widget);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    AnimatedOpacity dockFade() => tester.widget<AnimatedOpacity>(
+        find.byKey(const ValueKey('sideDockFade')));
+    expect(dockFade().opacity, 1.0);
+
+    // Navigate in via the dock: Settings gear icon.
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Dock fades out and ignores touches; back button appears.
+    expect(dockFade().opacity, 0.0);
+    expect(
+        tester
+            .widget<IgnorePointer>(
+                find.byKey(const ValueKey('sideDockIgnore')))
+            .ignoring,
+        isTrue);
+    expect(find.byType(BackButton), findsOneWidget);
+
+    // Back returns to Home and the dock fades back in.
+    await tester.tap(find.byType(BackButton));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(dockFade().opacity, 1.0);
+    expect(find.byType(BackButton), findsNothing);
   });
 }
 
