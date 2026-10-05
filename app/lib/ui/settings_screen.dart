@@ -40,6 +40,7 @@ import '../src/gadget/service.dart';
 import '../src/gadget/chat_events.dart';
 import 'dashboard_screen.dart';
 import 'diagnostics_screen.dart';
+import 'memory_screen.dart';
 import 'muse_theme.dart';
 import 'pairing_screen.dart';
 import 'scope.dart';
@@ -708,6 +709,33 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => const DiagnosticsScreen(),
+                    ),
+                  ),
+                  child: const Text('Open'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Agent memory',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.psychology_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Facts the on-device agent remembers about you, '
+                    'stored only on this phone',
+                  ),
+                ),
+                FilledButton.tonal(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MemoryScreen(),
                     ),
                   ),
                   child: const Text('Open'),
