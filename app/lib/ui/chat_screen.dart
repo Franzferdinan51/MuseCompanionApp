@@ -973,16 +973,9 @@ class _ChatScreenState extends State<ChatScreen> {
               onRemovePending: _removePendingAttachment,
               onLiveMode: _openLiveMode,
             ),
-          // Clearance for the floating tab bar overlay. While the
-          // keyboard is up the bar hides itself (see home_tabs.dart),
-          // so the spacer collapses and the composer sits right
-          // above the keyboard - critical in landscape where every
-          // pixel counts.
-          SizedBox(
-            height: MediaQuery.of(context).viewInsets.bottom > 0
-                ? 8
-                : kFloatingTabBarClearance,
-          ),
+          // Small breathing room below the composer; navigation is a
+          // floating side dock now, nothing to clear at the bottom.
+          const SizedBox(height: 8),
         ],
       ),
     );

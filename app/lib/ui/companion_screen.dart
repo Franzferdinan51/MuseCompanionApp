@@ -229,11 +229,6 @@ class _Surface extends StatelessWidget {
                                   theme: theme,
                                 ),
                         ),
-                        // Internal bottom clearance: keeps content above the
-                        // floating tab bar while the backdrop stays
-                        // full-bleed behind the gradient scrim. Shared by
-                        // portrait and landscape.
-                        const SizedBox(height: kFloatingTabBarClearance),
                       ],
                     ),
                     if (asleep)
