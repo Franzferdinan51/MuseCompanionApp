@@ -20,8 +20,14 @@
 // page background, tooltips instead of labels, and the active tab wrapped
 // in a MuseBubble (rounded, themed) for the accent. A soft gradient scrim
 // behind the icons keeps them readable over content without a hard edge.
+//
+// The bar auto-hides on scroll-down in scrollable tabs (slide + fade,
+// ~200ms) and comes back on scroll-up, on reaching the top, on tapping
+// the slim edge handle, or on switching tabs — so it never interferes
+// with content and never strands the user without navigation.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'activity_screen.dart';
 import 'chat_screen.dart';
@@ -44,6 +50,47 @@ class HomeTabs extends StatefulWidget {
 
 class _HomeTabsState extends State<HomeTabs> {
   int _index = 0;
+
+  /// Drives the floating tab bar's auto-hide. Scrolling down in the active
+  /// tab hides the bar (and its gradient scrim fades with it); scrolling up,
+  /// tapping the edge handle, or switching tabs brings it back.
+  final ValueNotifier<bool> _tabBarVisible = ValueNotifier<bool>(true);
+
+  @override
+  void dispose() {
+    _tabBarVisible.dispose();
+    super.dispose();
+  }
+
+  void _selectTab(int i) {
+    // Switching tabs always recovers the bar - never strand the user
+    // without navigation.
+    _tabBarVisible.value = true;
+    setState(() => _index = i);
+  }
+
+  /// Standard hide-on-scroll-down / show-on-scroll-up, driven by scroll
+  /// notifications bubbling up from the active tab's scrollable. The Home
+  /// tab (CompanionScreen) is not scrollable, so it never hides the bar.
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is UserScrollNotification) {
+      switch (notification.direction) {
+        case ScrollDirection.reverse:
+          if (_tabBarVisible.value) _tabBarVisible.value = false;
+        case ScrollDirection.forward:
+          if (!_tabBarVisible.value) _tabBarVisible.value = true;
+        case ScrollDirection.idle:
+          break;
+      }
+    } else if (notification is ScrollUpdateNotification) {
+      // Reaching the very top always restores the bar.
+      if (notification.metrics.pixels <= notification.metrics.minScrollExtent &&
+          !_tabBarVisible.value) {
+        _tabBarVisible.value = true;
+      }
+    }
+    return false; // let the notification keep bubbling
+  }
 
   static const _tabs = [
     _Tab(label: 'Home', icon: Icons.pets_outlined, activeIcon: Icons.pets),
@@ -84,65 +131,123 @@ class _HomeTabsState extends State<HomeTabs> {
       // a hard bar edge.
       body: Stack(
         children: [
-          IndexedStack(
-            index: _index,
-            children: [
-              // CompanionScreen is full-bleed: its own Column carries an
-              // internal bottom spacer clearing the floating tab bar.
-              // No outer Padding here - that would reveal the scaffold
-              // background as a solid strip behind the icons.
-              const CompanionScreen(),
-              const ChatScreen(),
-              const DeviceScreen(),
-              const ActivityScreen(),
-              const MediaScreen(),
-              const _SettingsTab(),
-            ],
+          NotificationListener<ScrollNotification>(
+            onNotification: _onScrollNotification,
+            child: IndexedStack(
+              index: _index,
+              children: [
+                // CompanionScreen is full-bleed: its own Column carries an
+                // internal bottom spacer clearing the floating tab bar.
+                // No outer Padding here - that would reveal the scaffold
+                // background as a solid strip behind the icons.
+                const CompanionScreen(),
+                const ChatScreen(),
+                const DeviceScreen(),
+                const ActivityScreen(),
+                const MediaScreen(),
+                const _SettingsTab(),
+              ],
+            ),
           ),
+          // Floating tab bar: auto-hides on scroll-down (slide + fade);
+          // the gradient scrim is inside the animated child so it fades
+          // away with the icons instead of lingering as a floating strip.
+          // NOTE: Positioned must stay a direct child of the outer Stack -
+          // the animation widgets wrap its child, not the Positioned itself.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: SafeArea(
-              // Key for widget tests to scope to the tab bar.
-              key: const ValueKey('tabBarSafeArea'),
-              top: false,
-              child: Stack(
-                children: [
-                  // Soft gradient scrim: keeps the floating icons readable
-                  // over scrolling content without a hard bar edge.
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              museInk.withValues(alpha: 0.0),
-                              museInk.withValues(alpha: 0.6),
-                            ],
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _tabBarVisible,
+              builder: (context, visible, child) {
+                return AnimatedSlide(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  offset: visible ? Offset.zero : const Offset(0, 1.5),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    opacity: visible ? 1.0 : 0.0,
+                    child: child,
+                  ),
+                );
+              },
+              child: SafeArea(
+                // Key for widget tests to scope to the tab bar.
+                key: const ValueKey('tabBarSafeArea'),
+                top: false,
+                child: Stack(
+                  children: [
+                    // Soft gradient scrim: keeps the floating icons readable
+                    // over scrolling content without a hard bar edge.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                museInk.withValues(alpha: 0.0),
+                                museInk.withValues(alpha: 0.6),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        for (var i = 0; i < _tabs.length; i++)
-                          _TabIcon(
-                            tab: _tabs[i],
-                            active: i == _index,
-                            onTap: () => setState(() => _index = i),
-                          ),
-                      ],
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          for (var i = 0; i < _tabs.length; i++)
+                            _TabIcon(
+                              tab: _tabs[i],
+                              active: i == _index,
+                              onTap: () => _selectTab(i),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Slim edge handle: visible only while the tab bar is hidden, so
+          // there's always a tappable way to bring navigation back.
+          // (Positioned stays a direct child of the outer Stack.)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _tabBarVisible,
+              builder: (context, visible, _) {
+                if (visible) return const SizedBox.shrink();
+                return SafeArea(
+                  top: false,
+                  child: GestureDetector(
+                    key: const ValueKey('tabBarHandle'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _tabBarVisible.value = true,
+                    child: Container(
+                      height: 28,
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 48,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF5A7395).withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],

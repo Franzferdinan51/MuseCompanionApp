@@ -24,9 +24,20 @@ import 'package:muse_companion/ui/home_tabs.dart';
 import 'package:muse_companion/ui/companion_screen.dart';
 import 'package:muse_companion/ui/muse_theme.dart';
 import 'package:muse_companion/ui/scope.dart';
+import 'package:muse_companion/ui/settings_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  /// Pumps in small increments so implicit animations and ballistic scroll
+  /// settle deterministically. A single large pump can leave the slide
+  /// transition mid-flight in the test harness even though the animation
+  /// targets are correct.
+  Future<void> settleBriefly(WidgetTester tester) async {
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
   testWidgets('tab bar matches old _BottomBar aesthetic and switches tabs',
       (tester) async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -239,5 +250,108 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
     expectClearance();
+  });
+
+  testWidgets('tab bar auto-hides on scroll-down and recovers', (tester) async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.init();
+    final presentation =
+        PresentationState(settings: settings.loadSettings());
+    final service = GadgetService(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      commands: const {},
+      runCommand: (_, _, _) async => {'ok': true},
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final ble = BlePeripheralManager(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final chat = ChatHistory();
+    addTearDown(() async {
+      await service.stop();
+      await ble.dispose();
+      chat.close();
+      presentation.close();
+    });
+
+    await tester.pumpWidget(AppScope(
+      service: service,
+      presentation: presentation,
+      settings: settings,
+      ble: ble,
+      chat: chat,
+      sdkTokens: SecureSdkTokenStore(),
+      child: const MaterialApp(
+        home: HomeTabs(),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Switch to the scrollable Settings tab.
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    AnimatedOpacity barOpacity() => tester.widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byKey(const ValueKey('tabBarSafeArea')),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
+        );
+
+    // Bar starts visible; no recovery handle needed.
+    expect(barOpacity().opacity, 1.0);
+    expect(find.byKey(const ValueKey('tabBarHandle')), findsNothing);
+
+    final list = find
+        .descendant(
+          of: find.byType(SettingsScreen),
+          matching: find.byType(ListView),
+        )
+        .first;
+
+    // Scroll down (drag up) -> bar slides away and fades, handle appears.
+    await tester.drag(list, const Offset(0, -500));
+    await settleBriefly(tester);
+    expect(barOpacity().opacity, 0.0);
+    expect(find.byKey(const ValueKey('tabBarHandle')), findsOneWidget);
+
+    // Scroll up (drag down) -> bar comes back, handle disappears.
+    await tester.drag(list, const Offset(0, 500));
+    await settleBriefly(tester);
+    expect(barOpacity().opacity, 1.0);
+    expect(find.byKey(const ValueKey('tabBarHandle')), findsNothing);
+
+    // Hide again, then tap the edge handle -> bar recovers.
+    await tester.drag(list, const Offset(0, -500));
+    await settleBriefly(tester);
+    expect(find.byKey(const ValueKey('tabBarHandle')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tabBarHandle')));
+    await settleBriefly(tester);
+    expect(barOpacity().opacity, 1.0);
+    expect(find.byKey(const ValueKey('tabBarHandle')), findsNothing);
+
+    // Tab switching keeps the bar visible and still works.
+    await settleBriefly(tester);
+    await tester.tap(find.byTooltip('Home'));
+    await settleBriefly(tester);
+    expect(barOpacity().opacity, 1.0);
+    final homeIcon = tester
+        .widgetList<Icon>(find.descendant(
+          of: find.descendant(
+            of: find.byKey(const ValueKey('tabBarSafeArea')),
+            matching: find.byType(MuseBubble),
+          ),
+          matching: find.byType(Icon),
+        ))
+        .single;
+    expect(homeIcon.icon, Icons.pets);
   });
 }
