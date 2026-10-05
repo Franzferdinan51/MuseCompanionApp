@@ -34,12 +34,6 @@ import 'scope.dart';
 
 /// Bottom-tab home. Each tab keeps its own state via IndexedStack;
 /// the Companion avatar screen is tab 0 (the default).
-/// Bottom clearance (logical px) that tab content must reserve so its
-/// lowest interactive elements sit above the floating tab-bar row.
-/// Tab bar is roughly 16px top pad + 48px icon row + 12px bottom pad,
-/// plus a small margin. Device bottom insets are handled by each
-/// tab's own SafeArea, so this covers just the floating row itself.
-const double kFloatingTabBarClearance = 88.0;
 
 class HomeTabs extends StatefulWidget {
   const HomeTabs({super.key});
@@ -93,14 +87,11 @@ class _HomeTabsState extends State<HomeTabs> {
           IndexedStack(
             index: _index,
             children: [
-              // Home tab content is not scrollable, so it needs explicit
-              // bottom clearance: otherwise its lowest buttons
-              // (connection status, Pair) sit underneath the floating
-              // tab bar in both portrait and landscape.
-              const Padding(
-                padding: EdgeInsets.only(bottom: kFloatingTabBarClearance),
-                child: CompanionScreen(),
-              ),
+              // CompanionScreen is full-bleed: its own Column carries an
+              // internal bottom spacer clearing the floating tab bar.
+              // No outer Padding here - that would reveal the scaffold
+              // background as a solid strip behind the icons.
+              const CompanionScreen(),
               const ChatScreen(),
               const DeviceScreen(),
               const ActivityScreen(),

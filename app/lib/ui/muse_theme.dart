@@ -11,6 +11,13 @@ const Color museBlue = Color(0xFF1877F2);
 const Color museBlueDeep = Color(0xFF0A3F86);
 const Color museInk = Color(0xFF07101C);
 const Color museNight = Color(0xFF0C1828);
+/// Bottom clearance (logical px) that tab content must reserve so its
+/// lowest interactive elements sit above the floating tab-bar row.
+/// The tab bar is roughly 16px top pad + 48px icon row + 12px bottom pad,
+/// plus a small margin. Device bottom insets are handled by each
+/// tab's own SafeArea, so this covers just the floating row itself.
+const double kFloatingTabBarClearance = 88.0;
+
 const Color museMist = Color(0xFFF4F8FF);
 
 const String museLogoAsset = 'assets/brand/juno-logo-glossy.png';

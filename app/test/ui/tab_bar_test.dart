@@ -195,24 +195,36 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The Home tab (CompanionScreen) is wrapped in bottom padding that must
-    // be at least as tall as the floating tab bar, so its lowest buttons
-    // (connection status, Pair) never sit underneath the tab icons.
+    // CompanionScreen carries an INTERNAL bottom spacer (not an outer
+    // Padding - that would reveal the scaffold background as a solid
+    // strip) at least as tall as the floating tab bar, so its lowest
+    // buttons (connection status, Pair) never sit underneath the icons.
     void expectClearance() {
       final barRect =
           tester.getRect(find.byKey(const ValueKey('tabBarSafeArea')));
-      final wrapper = find
-          .ancestor(
-            of: find.byType(CompanionScreen),
-            matching: find.byType(Padding),
-          )
-          .first;
-      final padding = tester.widget<Padding>(wrapper).padding as EdgeInsets;
+      // No outer Padding wrapper around CompanionScreen: that regresses
+      // the solid-strip look.
       expect(
-        padding.bottom,
+        find.ancestor(
+          of: find.byType(CompanionScreen),
+          matching: find.byType(Padding),
+        ),
+        findsNothing,
+        reason: 'no outer Padding may wrap CompanionScreen',
+      );
+      final spacer = find.descendant(
+        of: find.byType(CompanionScreen),
+        matching: find.byWidgetPredicate(
+          (w) => w is SizedBox && w.height == kFloatingTabBarClearance,
+        ),
+      );
+      expect(spacer, findsOneWidget);
+      final spacerRect = tester.getRect(spacer.first);
+      expect(
+        spacerRect.height,
         greaterThanOrEqualTo(barRect.height),
         reason:
-            'home tab bottom padding (${padding.bottom}) must clear the '
+            'home tab bottom spacer (${spacerRect.height}) must clear the '
             'floating tab bar (${barRect.height})',
       );
     }

@@ -232,6 +232,11 @@ class _Surface extends StatelessWidget {
                               ConnectionState.unpaired,
                           detail: presentation.statusDetail,
                         ),
+                        // Internal bottom clearance: keeps the status
+                        // bubble and Pair button above the floating
+                        // tab bar while the backdrop stays full-bleed
+                        // behind the gradient scrim.
+                        const SizedBox(height: kFloatingTabBarClearance),
                       ],
                     ),
                     if (asleep)
