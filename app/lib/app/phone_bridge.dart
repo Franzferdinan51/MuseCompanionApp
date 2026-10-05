@@ -17,6 +17,8 @@
 // of a crash. Permissions are requested here so both the chat screen
 // and a Muse `link.invoke` ask the user the same way.
 
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -316,6 +318,12 @@ class PhoneBridge implements PhoneActions {
         await _ensure(Permission.phone, 'Phone');
       case 'phone.sms':
       case 'phone.messages':
+        if (Platform.isIOS) {
+          throw const PhoneActionException(
+            'SMS is not available on iOS - Apple does not allow apps to '
+            'read or send text messages. Use iMessage sharing instead.',
+          );
+        }
         await _ensure(Permission.sms, 'SMS');
       case 'phone.contacts':
         await _ensure(Permission.contacts, 'Contacts');

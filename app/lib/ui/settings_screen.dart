@@ -23,6 +23,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
@@ -1404,7 +1405,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                       'Calendar',
                       () => _ask(Permission.calendarFullAccess, 'Calendar'),
                     ),
-                    _permitButton('SMS', () => _ask(Permission.sms, 'SMS')),
+                    if (!Platform.isIOS)
+                      _permitButton('SMS', () => _ask(Permission.sms, 'SMS')),
                     _permitButton(
                       'Phone',
                       () => _ask(Permission.phone, 'Phone'),
