@@ -19,7 +19,12 @@
 // same shape the Muse gadget firmware uses.
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:audioplayers/audioplayers.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -34,6 +39,8 @@ import '../app/agent_status.dart';
 import '../app/chat.dart';
 import '../app/chat_store.dart';
 import '../app/lmstudio_client.dart';
+import '../app/outbox.dart';
+import '../app/share_intake.dart';
 import '../src/gadget/service.dart';
 import 'muse_theme.dart';
 import 'scope.dart';
@@ -70,6 +77,12 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _pinned = false;
   bool _archived = false;
 
+  /// Images from "Share to Juno" waiting in the composer tray. Sent with the
+  /// next composer send; never sent on their own.
+  final List<ChatAttachment> _pendingAttachments = <ChatAttachment>[];
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _shareArmed = false;
+
   @override
   void initState() {
     super.initState();
@@ -82,9 +95,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _connectionSub?.cancel();
     final scope = AppScope.of(context);
     _armStore(scope);
+    _armShareIntake();
+    _armOutbox();
     _connection = scope.service.connectionState;
     _connectionSub = scope.service.onStateChanged.listen((state) {
       if (mounted) setState(() => _connection = state);
+      // Agent reachability changed: flush queued messages when back online.
+      _maybeFlush();
     });
   }
 
@@ -117,6 +134,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _store?.save();
     _chatSub?.cancel();
     _connectionSub?.cancel();
+    _connectivitySub?.cancel();
+    ShareIntake.instance.dispose();
     _controller.dispose();
     _searchController.dispose();
     _scroll.dispose();
@@ -129,12 +148,26 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    final pending = _pendingAttachments.toList();
+    if (text.isEmpty && pending.isEmpty) return;
     if (text.startsWith('/')) {
       await _handleSlash(text);
       return;
     }
-    await _post(text);
+    // Composer send consumes the share tray; _post stores the attachments on
+    // the message (and in the outbox on failure) from here on.
+    _pendingAttachments.clear();
+    setState(() {});
+    await _post(text, pending);
+  }
+
+  /// base64 for the outbox, or null when there's nothing worth persisting
+  /// (no attachment, or one too big to persist sensibly).
+  static String? _persistableAttachment(ChatAttachment? attachment) {
+    final bytes = attachment?.bytes;
+    if (bytes == null || bytes.isEmpty) return null;
+    if (bytes.length > Outbox.maxAttachmentBytes) return null;
+    return base64Encode(bytes);
   }
 
   /// Power-user shortcuts (see [kSlashCommands] for the full list).
@@ -307,8 +340,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(controller.text.trim()),
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
             child: const Text('Ask'),
           ),
         ],
@@ -364,14 +396,27 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       final error = result['error'];
       final msg = error is String && error.isNotEmpty ? error : 'send failed';
-      scope.chat.markFailed(id, msg);
+      // Failed sends don't stay "tap to retry": the message goes to the
+      // persisted outbox and is flushed automatically when back online.
+      await Outbox.instance.enqueue(
+        OutboxEntry(
+          id: id,
+          text: text,
+          attachmentBase64: _persistableAttachment(first),
+          attachmentMime: first?.mimeType,
+          attachmentName: first?.filename,
+          enqueuedAt: DateTime.now(),
+        ),
+      );
+      if (!mounted) return;
+      scope.chat.markQueued(id, msg);
       ActivityLog.instance.add(
         kind,
         isVoice
-            ? 'Voice note failed'
+            ? 'Voice note queued (offline)'
             : isPhoto
-            ? 'Photo failed'
-            : 'Message failed: ${_short(text)}',
+            ? 'Photo queued (offline)'
+            : 'Message queued (offline): ${_short(text)}',
         detail: msg,
         ok: false,
       );
@@ -384,7 +429,14 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _retryMessage(int id) async {
     final scope = AppScope.of(context);
     final message = scope.chat.find(id);
-    if (message == null || message.status != ChatStatus.failed) return;
+    if (message == null ||
+        (message.status != ChatStatus.failed &&
+            message.status != ChatStatus.queued)) {
+      return;
+    }
+    // Manual retry takes the message out of the outbox; a fresh failure
+    // re-queues it below.
+    await Outbox.instance.removeById(id);
     scope.chat.markRetrying(id);
     final attachments = <ChatAttachment>[];
     if (message.attachmentBytes != null) {
@@ -406,10 +458,21 @@ class _ChatScreenState extends State<ChatScreen> {
       scope.chat.markSent(id);
     } else {
       final error = result['error'];
-      scope.chat.markFailed(
-        id,
-        error is String && error.isNotEmpty ? error : 'send failed',
+      final msg = error is String && error.isNotEmpty ? error : 'send failed';
+      await Outbox.instance.enqueue(
+        OutboxEntry(
+          id: id,
+          text: message.text,
+          attachmentBase64: attachments.isNotEmpty
+              ? _persistableAttachment(attachments.first)
+              : null,
+          attachmentMime: message.attachmentMime,
+          attachmentName: message.attachmentName,
+          enqueuedAt: DateTime.now(),
+        ),
       );
+      if (!mounted) return;
+      scope.chat.markQueued(id, msg);
     }
     _scrollToEnd();
   }
@@ -521,9 +584,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _scrollToEnd() {
@@ -536,6 +598,125 @@ class _ChatScreenState extends State<ChatScreen> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  /// "Share to Juno" wiring: armed once; shared text pre-fills the composer
+  /// and shared images join the pending tray. Never auto-sends.
+  void _armShareIntake() {
+    if (_shareArmed) return;
+    _shareArmed = true;
+    ShareIntake.instance.arm(_applySharedBatch);
+  }
+
+  /// Second outbox trigger: phone network changes. Agent reachability is the
+  /// other trigger (onStateChanged in didChangeDependencies). The flush
+  /// itself is cheap and stops at the first failure, so both can fire.
+  void _armOutbox() {
+    _connectivitySub ??= Connectivity().onConnectivityChanged.listen((results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        _maybeFlush();
+      }
+    });
+  }
+
+  /// Flush queued messages in order when the agent is reachable. No-op when
+  /// the outbox is empty or the link is down.
+  Future<void> _maybeFlush() async {
+    if (!mounted || !_ready) return;
+    final scope = AppScope.of(context);
+    await Outbox.instance.load();
+    if (Outbox.instance.isEmpty) return;
+    await Outbox.instance.flush((entry) async {
+      if (!mounted || !_ready) return false;
+      final bytes = entry.attachmentBytes;
+      final attachments = bytes == null
+          ? <ChatAttachment>[]
+          : <ChatAttachment>[
+              ChatAttachment(
+                mimeType: entry.attachmentMime ?? 'application/octet-stream',
+                filename: entry.attachmentName ?? 'attachment',
+                bytes: bytes,
+              ),
+            ];
+      final result = await scope.service.sendChat(
+        entry.text,
+        null,
+        attachments,
+      );
+      if (!mounted) return false;
+      if (result['ok'] == true) {
+        // Best-effort: the message may have been deleted or its id
+        // reassigned since it was queued; the outbox is authoritative.
+        scope.chat.markSent(entry.id);
+        ActivityLog.instance.add(
+          ActivityKind.chat,
+          'Queued message sent: ${_short(entry.text)}',
+        );
+        return true;
+      }
+      return false;
+    });
+    if (mounted) _scrollToEnd();
+  }
+
+  /// Apply one share batch: text is pre-filled (never auto-sent), images go
+  /// to the pending-attachment tray above the composer.
+  Future<void> _applySharedBatch(SharedBatch batch) async {
+    if (!mounted) return;
+    if (batch.text.isNotEmpty) {
+      final existing = _controller.text.trimRight();
+      _controller.text = existing.isEmpty
+          ? batch.text
+          : '$existing\n\n${batch.text}';
+      _controller.selection = TextSelection.fromPosition(
+        TextPosition(offset: _controller.text.length),
+      );
+    }
+    var added = 0;
+    for (final file in batch.files) {
+      try {
+        final bytes = await File(file.path).readAsBytes();
+        if (bytes.isEmpty) continue;
+        final name = file.path.split('/').last;
+        _pendingAttachments.add(
+          ChatAttachment(
+            mimeType: _shareMime(file, name),
+            filename: name.isEmpty ? 'shared_image' : name,
+            bytes: bytes,
+          ),
+        );
+        added++;
+      } catch (_) {
+        // Skip unreadable shares; the shared text (if any) still landed.
+      }
+    }
+    if (!mounted) return;
+    if (added > 0) {
+      setState(() {});
+      _showError(
+        '$added image${added == 1 ? '' : 's'} attached \u2014 review and send when ready.',
+      );
+    } else if (batch.text.isNotEmpty) {
+      _showError('Shared text added to the composer.');
+    }
+  }
+
+  /// Remove one image from the share tray.
+  void _removePendingAttachment(int index) {
+    if (index < 0 || index >= _pendingAttachments.length) return;
+    setState(() => _pendingAttachments.removeAt(index));
+  }
+
+  /// Best mime for a shared image: trust the plugin's when it looks right,
+  /// otherwise guess from the file extension.
+  String _shareMime(SharedMediaFile file, String name) {
+    final declared = file.mimeType;
+    if (declared != null && declared.startsWith('image/')) return declared;
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
   }
 
   /// Flatten messages into divider + bubble widgets.
@@ -670,8 +851,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           if (_listening)
             _RecordingWaveform(
-              amplitude: () =>
-                  AppScope.of(context).phone.recordingAmplitude(),
+              amplitude: () => AppScope.of(context).phone.recordingAmplitude(),
             ),
           const _AgentStatusLine(),
           if (_slashQuery != null)
@@ -692,11 +872,13 @@ class _ChatScreenState extends State<ChatScreen> {
               listening: _listening,
               capturing: _capturing,
               connection: _connection,
+              pendingAttachments: _pendingAttachments,
               onSend: _send,
               onListenStart: _startVoice,
               onListenEnd: _stopVoice,
               onCapture: _capture,
               onLocalAi: _askLocalAi,
+              onRemovePending: _removePendingAttachment,
             ),
         ],
       ),
@@ -874,17 +1056,25 @@ String _dayLabel(DateTime day) {
   if (diff == 0) return 'Today';
   if (diff == 1) return 'Yesterday';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[day.month - 1]} ${day.day}';
 }
 
 /// Placeholder bubble labels that the attachment UI already communicates.
 bool _isPlaceholderLabel(String text) =>
-    text == 'Voice note' ||
-    text == '\u{1F3A4} Voice note' ||
-    text == 'Photo';
+    text == 'Voice note' || text == '\u{1F3A4} Voice note' || text == 'Photo';
 
 class _DayDivider extends StatelessWidget {
   const _DayDivider({required this.date});
@@ -1138,7 +1328,9 @@ class _Bubble extends StatelessWidget {
   final VoidCallback onSpeak;
 
   void _showActions(BuildContext context) {
-    final failed = message.status == ChatStatus.failed;
+    final failed =
+        message.status == ChatStatus.failed ||
+        message.status == ChatStatus.queued;
     showModalBottomSheet<void>(
       context: context,
       builder: (context) => SafeArea(
@@ -1180,9 +1372,7 @@ class _Bubble extends StatelessWidget {
               ),
               title: Text(
                 'Delete',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               onTap: () {
                 Navigator.of(context).pop();
@@ -1201,6 +1391,7 @@ class _Bubble extends StatelessWidget {
     final time = _relativeTime(message.sentAt);
     final mine = message.role == ChatRole.user;
     final failed = message.status == ChatStatus.failed;
+    final queued = message.status == ChatStatus.queued;
     final ink = failed
         ? theme.colorScheme.onErrorContainer
         : mine
@@ -1225,7 +1416,7 @@ class _Bubble extends StatelessWidget {
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onLongPress: () => _showActions(context),
-        onTap: failed ? onRetry : null,
+        onTap: (failed || queued) ? onRetry : null,
         child: Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1282,7 +1473,9 @@ class _Bubble extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    message.error.isNotEmpty
+                    queued
+                        ? 'Queued (offline) · $time'
+                        : message.error.isNotEmpty
                         ? '${message.error} · $time'
                         : failed
                         ? 'Tap to retry · $time'
@@ -1352,9 +1545,7 @@ class _BubbleText extends StatelessWidget {
       data: text,
       selectable: true,
       styleSheet: sheet,
-      builders: {
-        'pre': _CodeBlockBuilder(textColor: color),
-      },
+      builders: {'pre': _CodeBlockBuilder(textColor: color)},
       onTapLink: (text, href, title) => _openLink(href),
     );
   }
@@ -1427,6 +1618,11 @@ class _StatusIcon extends StatelessWidget {
         Icons.error_outline,
         size: 14,
         color: theme.colorScheme.error,
+      ),
+      ChatStatus.queued => Icon(
+        Icons.schedule,
+        size: 14,
+        color: theme.colorScheme.outline,
       ),
       ChatStatus.sending => SizedBox(
         width: 12,
@@ -1553,11 +1749,7 @@ class _RecordingWaveformState extends State<_RecordingWaveform> {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(
-            Icons.mic,
-            size: 18,
-            color: theme.colorScheme.error,
-          ),
+          Icon(Icons.mic, size: 18, color: theme.colorScheme.error),
           const SizedBox(width: 8),
           ..._levels.map(
             (level) => Padding(
@@ -1595,11 +1787,13 @@ class _Composer extends StatelessWidget {
     required this.listening,
     required this.capturing,
     required this.connection,
+    required this.pendingAttachments,
     required this.onSend,
     required this.onListenStart,
     required this.onListenEnd,
     required this.onCapture,
     required this.onLocalAi,
+    required this.onRemovePending,
   });
 
   final TextEditingController controller;
@@ -1607,11 +1801,15 @@ class _Composer extends StatelessWidget {
   final bool listening;
   final bool capturing;
   final ConnectionState connection;
+
+  /// Images from "Share to Juno" not yet sent.
+  final List<ChatAttachment> pendingAttachments;
   final Future<void> Function() onSend;
   final VoidCallback onListenStart;
   final VoidCallback onListenEnd;
   final VoidCallback onCapture;
   final Future<void> Function() onLocalAi;
+  final void Function(int index) onRemovePending;
 
   @override
   Widget build(BuildContext context) {
@@ -1624,72 +1822,130 @@ class _Composer extends StatelessWidget {
             ConnectionState.waiting => 'Waiting for the link…',
             _ => 'Unavailable right now…',
           };
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          IconButton(
-            tooltip: 'Ask local AI (LM Studio)',
-            onPressed: ready ? onLocalAi : null,
-            icon: const Icon(Icons.smart_toy_outlined),
-          ),
-          IconButton(
-            tooltip: 'Show the camera',
-            onPressed: ready && !capturing ? onCapture : null,
-            icon: capturing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.photo_camera_outlined),
-          ),
-          Listener(
-            onPointerDown: ready ? (_) => onListenStart() : null,
-            onPointerUp: (_) => onListenEnd(),
-            onPointerCancel: (_) => onListenEnd(),
-            child: IconButton(
-              tooltip: 'Hold to talk',
-              onPressed: ready ? () {} : null,
-              icon: Icon(
-                listening ? Icons.mic : Icons.mic_none,
-                color: listening ? theme.colorScheme.error : null,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (pendingAttachments.isNotEmpty) _buildPendingTray(context),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              IconButton(
+                tooltip: 'Ask local AI (LM Studio)',
+                onPressed: ready ? onLocalAi : null,
+                icon: const Icon(Icons.smart_toy_outlined),
               ),
-            ),
-          ),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => onSend(),
-              decoration: InputDecoration(
-                hintText: hint,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+              IconButton(
+                tooltip: 'Show the camera',
+                onPressed: ready && !capturing ? onCapture : null,
+                icon: capturing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.photo_camera_outlined),
+              ),
+              Listener(
+                onPointerDown: ready ? (_) => onListenStart() : null,
+                onPointerUp: (_) => onListenEnd(),
+                onPointerCancel: (_) => onListenEnd(),
+                child: IconButton(
+                  tooltip: 'Hold to talk',
+                  onPressed: ready ? () {} : null,
+                  icon: Icon(
+                    listening ? Icons.mic : Icons.mic_none,
+                    color: listening ? theme.colorScheme.error : null,
+                  ),
                 ),
               ),
-            ),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  minLines: 1,
+                  maxLines: 4,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => onSend(),
+                  decoration: InputDecoration(
+                    hintText: hint,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  tooltip: 'Send',
+                  icon: Icon(Icons.send, color: theme.colorScheme.onPrimary),
+                  onPressed: onSend,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              tooltip: 'Send',
-              icon: Icon(Icons.send, color: theme.colorScheme.onPrimary),
-              onPressed: onSend,
-            ),
-          ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  /// Thumbnail strip for images shared via "Share to Juno", sitting above
+  /// the composer. Tap the close badge to drop one; everything here goes out
+  /// with the next composer send.
+  Widget _buildPendingTray(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 68,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        itemCount: pendingAttachments.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final attachment = pendingAttachments[index];
+          return Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.memory(
+                  attachment.bytes,
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: GestureDetector(
+                  onTap: () => onRemovePending(index),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface.withValues(alpha: 0.8),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.close,
+                      size: 14,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

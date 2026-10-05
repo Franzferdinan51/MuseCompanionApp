@@ -23,7 +23,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 /// Delivery state of one message.
-enum ChatStatus { sending, sent, failed }
+enum ChatStatus { sending, sent, failed, queued }
 
 /// Who wrote the bubble.
 enum ChatRole { user, assistant }
@@ -170,6 +170,16 @@ class ChatHistory {
     _emit();
   }
 
+  /// Queue [id] for the offline outbox: the send failed and the
+  /// message waits in the outbox for the next flush. Keeps its place.
+  void markQueued(int id, String error) {
+    final message = _find(id);
+    if (message == null) return;
+    message.status = ChatStatus.queued;
+    message.error = error;
+    _emit();
+  }
+
   /// Retry a failed message: back to `sending`, keeps its place.
   void markRetrying(int id) {
     final message = _find(id);
@@ -219,9 +229,7 @@ class ChatHistory {
   List<ChatMessage> search(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
-    return _messages
-        .where((m) => m.text.toLowerCase().contains(q))
-        .toList();
+    return _messages.where((m) => m.text.toLowerCase().contains(q)).toList();
   }
 
   /// Fold one `/chat/subscribe` event into the history.
