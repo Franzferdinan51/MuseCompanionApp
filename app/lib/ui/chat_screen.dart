@@ -84,6 +84,13 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   bool _shareArmed = false;
 
+  /// Last seen orientation. Rotation changes the message-list viewport
+  /// height: a scroll offset saved from portrait falls short of
+  /// landscape's larger maxScrollExtent, leaving the last message
+  /// half-hidden behind the composer. Tracked so a rotation can re-pin
+  /// the list to the bottom (only when the user was already there).
+  Orientation? _lastOrientation;
+
   @override
   void initState() {
     super.initState();
@@ -806,6 +813,22 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final agent = scope.service.agentName;
+    final orientation = MediaQuery.orientationOf(context);
+    if (_lastOrientation != null && _lastOrientation != orientation) {
+      // Rotated: if the list was at (or near) the bottom, re-pin it to
+      // the new bottom after layout settles. Without this, a portrait
+      // scroll offset falls short in landscape and the last message
+      // sits half-hidden behind the composer.
+      final wasAtBottom = _scroll.hasClients &&
+          _scroll.position.pixels >= _scroll.position.maxScrollExtent - 80;
+      if (wasAtBottom) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_scroll.hasClients) return;
+          _scroll.jumpTo(_scroll.position.maxScrollExtent);
+        });
+      }
+    }
+    _lastOrientation = orientation;
     return MusePage(
       appBar: AppBar(
         title: Row(

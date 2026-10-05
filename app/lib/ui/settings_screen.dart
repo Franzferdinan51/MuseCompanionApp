@@ -630,7 +630,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     return MusePage(
       appBar: AppBar(title: const Text('Companion Settings')),
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        // Bottom padding clears the floating tab bar: with only the
+        // base 24 the last card's buttons end up behind the tab icons
+        // and can never be scrolled fully into view.
+        padding: const EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          24 + kFloatingTabBarClearance,
+        ),
         children: [
           _PairingCard(
             connection: _connection,

@@ -417,6 +417,7 @@ void main() {
 
     // Landscape: tight vertical space, same guarantee.
     tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     await pumpTabs();
     await expectComposerAboveBar();
@@ -530,6 +531,7 @@ void main() {
     // surface is 800x600, which reads as landscape, so set an explicit
     // portrait size first.)
     tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(AppScope(
       service: service,
@@ -549,6 +551,7 @@ void main() {
     // Landscape: switches to the two-column layout, and the
     // connection-status pill stays fully above the floating tab bar.
     tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pump(const Duration(milliseconds: 500));
     await settleBriefly(tester);
@@ -562,5 +565,88 @@ void main() {
     expect(pillRect.bottom, lessThanOrEqualTo(barRect.top));
     // No overlap between the pill and the tab bar.
     expect(pillRect.overlaps(barRect), isFalse);
+  });
+
+  testWidgets('chat re-pins to bottom on rotation, last message stays visible',
+      (tester) async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.init();
+    final presentation =
+        PresentationState(settings: settings.loadSettings());
+    final service = GadgetService(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      commands: const {},
+      runCommand: (_, _, _) async => {'ok': true},
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final ble = BlePeripheralManager(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final chat = ChatHistory();
+    addTearDown(() async {
+      await service.stop();
+      await ble.dispose();
+      chat.close();
+      presentation.close();
+    });
+
+    // Portrait first.
+    tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(AppScope(
+      service: service,
+      presentation: presentation,
+      settings: settings,
+      ble: ble,
+      chat: chat,
+      sdkTokens: SecureSdkTokenStore(),
+      child: const MaterialApp(
+        home: HomeTabs(),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byTooltip('Chat'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Enough messages to scroll, then drag to the very bottom like a
+    // user reading the latest message.
+    for (var i = 0; i < 20; i++) {
+      chat.addSending(
+        'Rotation pin message $i - some filler text to make the bubble tall enough to scroll.',
+      );
+    }
+    await tester.pump(const Duration(milliseconds: 500));
+    final lastMessage = find.textContaining('Rotation pin message 19');
+    await tester.dragUntilVisible(
+      lastMessage,
+      find.byType(ListView).first,
+      const Offset(0, -300),
+    );
+    await settleBriefly(tester);
+
+    Future<void> expectLastMessageVisible() async {
+      await settleBriefly(tester);
+      final msgRect = tester.getRect(lastMessage);
+      final sendRect = tester.getRect(find.byTooltip('Send'));
+      // The last message must sit fully above the composer - never
+      // half-hidden behind it.
+      expect(msgRect.bottom, lessThanOrEqualTo(sendRect.top));
+    }
+
+    await expectLastMessageVisible();
+
+    // Rotate to landscape: the saved portrait scroll offset falls short
+    // of the new (larger) maxScrollExtent. The screen must re-pin to
+    // the bottom instead of stranding the last message behind the
+    // composer.
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    await tester.pump(const Duration(milliseconds: 500));
+    await expectLastMessageVisible();
   });
 }
