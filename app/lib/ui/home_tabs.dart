@@ -16,9 +16,10 @@
 // Activity, Media, and Settings. The avatar screen stays the default tab.
 //
 // The tab bar follows the old companion-screen _BottomBar aesthetic:
-// a floating row with no background container — plain 20px icons on the
+// a floating row with no hard background bar — plain 20px icons over the
 // page background, tooltips instead of labels, and the active tab wrapped
-// in a MuseBubble (rounded, themed) for the accent.
+// in a MuseBubble (rounded, themed) for the accent. A soft gradient scrim
+// behind the icons keeps them readable over content without a hard edge.
 
 import 'package:flutter/material.dart';
 
@@ -44,11 +45,7 @@ class _HomeTabsState extends State<HomeTabs> {
   int _index = 0;
 
   static const _tabs = [
-    _Tab(
-      label: 'Home',
-      icon: Icons.pets_outlined,
-      activeIcon: Icons.pets,
-    ),
+    _Tab(label: 'Home', icon: Icons.pets_outlined, activeIcon: Icons.pets),
     _Tab(
       label: 'Chat',
       icon: Icons.chat_bubble_outline,
@@ -81,25 +78,21 @@ class _HomeTabsState extends State<HomeTabs> {
     return Scaffold(
       backgroundColor: museInk,
       // The tab bar floats as a Stack overlay instead of using the
-      // bottomNavigationBar slot, so no dark strip paints behind it.
-      // Tab content extends underneath the floating icons.
+      // bottomNavigationBar slot. Tab content flows full-height underneath;
+      // a soft gradient scrim behind the icons keeps them readable without
+      // a hard bar edge.
       body: Stack(
         children: [
-          // Bottom clearance so tab content is not hidden
-          // behind the floating tab row.
-          Padding(
-            padding: const EdgeInsets.only(bottom: 72),
-            child: IndexedStack(
-              index: _index,
-              children: const [
-                CompanionScreen(),
-                ChatScreen(),
-                DeviceScreen(),
-                ActivityScreen(),
-                MediaScreen(),
-                _SettingsTab(),
-              ],
-            ),
+          IndexedStack(
+            index: _index,
+            children: const [
+              CompanionScreen(),
+              ChatScreen(),
+              DeviceScreen(),
+              ActivityScreen(),
+              MediaScreen(),
+              _SettingsTab(),
+            ],
           ),
           Positioned(
             left: 0,
@@ -109,19 +102,41 @@ class _HomeTabsState extends State<HomeTabs> {
               // Key for widget tests to scope to the tab bar.
               key: const ValueKey('tabBarSafeArea'),
               top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    for (var i = 0; i < _tabs.length; i++)
-                      _TabIcon(
-                        tab: _tabs[i],
-                        active: i == _index,
-                        onTap: () => setState(() => _index = i),
+              child: Stack(
+                children: [
+                  // Soft gradient scrim: keeps the floating icons readable
+                  // over scrolling content without a hard bar edge.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              museInk.withValues(alpha: 0.0),
+                              museInk.withValues(alpha: 0.6),
+                            ],
+                          ),
+                        ),
                       ),
-                  ],
-                ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        for (var i = 0; i < _tabs.length; i++)
+                          _TabIcon(
+                            tab: _tabs[i],
+                            active: i == _index,
+                            onTap: () => setState(() => _index = i),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -169,11 +184,7 @@ class _TabIcon extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
           child: Tooltip(
             message: tab.label,
-            child: Icon(
-              tab.activeIcon,
-              size: 20,
-              color: museBlue,
-            ),
+            child: Icon(tab.activeIcon, size: 20, color: museBlue),
           ),
         ),
       );

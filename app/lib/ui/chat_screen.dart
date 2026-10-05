@@ -950,6 +950,8 @@ class _ChatScreenState extends State<ChatScreen> {
               onRemovePending: _removePendingAttachment,
               onLiveMode: _openLiveMode,
             ),
+          // Clearance for the floating tab bar overlay.
+          const SizedBox(height: 80),
         ],
       ),
     );

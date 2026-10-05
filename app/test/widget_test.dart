@@ -1,4 +1,4 @@
-// Smoke test for the companion screen: with a stubbed service scope the
+// Smoke test for the home tabs: with a stubbed service scope the
 // home screen renders the placeholder, the unpaired state and the
 // settings affordance, and settings navigates.
 
@@ -11,7 +11,7 @@ import 'package:muse_companion/app/chat.dart';
 import 'package:muse_companion/app/model.dart';
 import 'package:muse_companion/src/gadget/identity.dart';
 import 'package:muse_companion/src/gadget/service.dart';
-import 'package:muse_companion/ui/companion_screen.dart';
+import 'package:muse_companion/ui/home_tabs.dart';
 import 'package:muse_companion/ui/scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -53,7 +53,7 @@ void main() {
       chat: chat,
       sdkTokens: SecureSdkTokenStore(),
       child: const MaterialApp(
-        home: CompanionScreen(),
+        home: HomeTabs(),
       ),
     ));
     await tester.pump();
