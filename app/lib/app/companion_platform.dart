@@ -177,8 +177,10 @@ class AppCompanionDisplay implements CompanionDisplay {
           keepScreenOn: keepScreenOn,
           speakReplies: speakReplies,
         );
-    await _settings.saveSettings(next);
+    // In-memory first (see _commit in settings_screen.dart): onSettings updates
+    // presentation before saveSettings notifies settings listeners.
     listener.onSettings(next);
+    await _settings.saveSettings(next);
     return {
       'theme': next.theme,
       'keep_screen_on': next.keepScreenOn,

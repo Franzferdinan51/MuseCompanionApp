@@ -413,8 +413,12 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _commit(CompanionSettings next) async {
     final scope = AppScope.of(context);
-    await scope.settings.saveSettings(next);
+    // In-memory first: settings listeners (e.g. syncSpeakEnabled in main.dart)
+    // read presentation.settings, so it must be fresh before saveSettings
+    // fires its notifications. (2026-10-04: fixed speak toggle not restoring
+    // voice - the listener was reading the stale pre-toggle value.)
     scope.presentation.applySettings(next);
+    await scope.settings.saveSettings(next);
     if (!mounted) return;
     setState(() => _settings = next);
   }
