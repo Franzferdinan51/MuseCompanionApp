@@ -23,7 +23,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 /// Delivery state of one message.
-enum ChatStatus { sending, sent, failed }
+enum ChatStatus { sending, sent, failed, queued }
 
 /// Who wrote the bubble.
 enum ChatRole { user, assistant }
@@ -166,6 +166,16 @@ class ChatHistory {
     final message = _find(id);
     if (message == null) return;
     message.status = ChatStatus.failed;
+    message.error = error;
+    _emit();
+  }
+
+  /// Queue [id] for the offline outbox: the send failed and the
+  /// message waits in the outbox for the next flush. Keeps its place.
+  void markQueued(int id, String error) {
+    final message = _find(id);
+    if (message == null) return;
+    message.status = ChatStatus.queued;
     message.error = error;
     _emit();
   }
