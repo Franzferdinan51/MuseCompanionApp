@@ -354,4 +354,148 @@ void main() {
         .single;
     expect(homeIcon.icon, Icons.pets);
   });
+
+  testWidgets('chat composer clears the floating tab bar (portrait+landscape)',
+      (tester) async {
+
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.init();
+    final presentation =
+        PresentationState(settings: settings.loadSettings());
+    final service = GadgetService(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      commands: const {},
+      runCommand: (_, _, _) async => {'ok': true},
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final ble = BlePeripheralManager(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final chat = ChatHistory();
+    addTearDown(() async {
+      await service.stop();
+      await ble.dispose();
+      chat.close();
+      presentation.close();
+    });
+
+    Future<void> pumpTabs() async {
+      await tester.pumpWidget(AppScope(
+        service: service,
+        presentation: presentation,
+        settings: settings,
+        ble: ble,
+        chat: chat,
+        sdkTokens: SecureSdkTokenStore(),
+        child: const MaterialApp(
+          home: HomeTabs(),
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.byTooltip('Chat'));
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    Future<void> expectComposerAboveBar() async {
+      await settleBriefly(tester);
+      final sendRect = tester.getRect(find.byTooltip('Send'));
+      final barRect = tester.getRect(
+        find.byKey(const ValueKey('tabBarSafeArea')),
+      );
+      // The composer (Send button) must sit fully above the tab bar -
+      // never obscured by it.
+      expect(sendRect.bottom, lessThanOrEqualTo(barRect.top));
+    }
+
+    // Portrait (default test surface).
+    await pumpTabs();
+    await expectComposerAboveBar();
+
+    // Landscape: tight vertical space, same guarantee.
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.resetPhysicalSize);
+    await pumpTabs();
+    await expectComposerAboveBar();
+  });
+
+  testWidgets('tab bar hides while the keyboard is up, restores after',
+      (tester) async {
+
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.init();
+    final presentation =
+        PresentationState(settings: settings.loadSettings());
+    final service = GadgetService(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      commands: const {},
+      runCommand: (_, _, _) async => {'ok': true},
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final ble = BlePeripheralManager(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final chat = ChatHistory();
+    addTearDown(() async {
+      await service.stop();
+      await ble.dispose();
+      chat.close();
+      presentation.close();
+    });
+
+    Future<void> pumpTabs({bool keyboardUp = false}) async {
+      await tester.pumpWidget(AppScope(
+        service: service,
+        presentation: presentation,
+        settings: settings,
+        ble: ble,
+        chat: chat,
+        sdkTokens: SecureSdkTokenStore(),
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                viewInsets: keyboardUp
+                    ? const EdgeInsets.only(bottom: 300)
+                    : EdgeInsets.zero,
+              ),
+              child: const HomeTabs(),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.byTooltip('Chat'));
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    AnimatedOpacity barOpacity() => tester.widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byKey(const ValueKey('tabBarSafeArea')),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
+        );
+
+    // Keyboard up on the Chat tab -> bar hides, no handle (it's behind
+    // the keyboard anyway).
+    await pumpTabs(keyboardUp: true);
+    await settleBriefly(tester);
+    expect(barOpacity().opacity, 0.0);
+    expect(find.byKey(const ValueKey('tabBarHandle')), findsNothing);
+
+    // Keyboard closed -> the pre-keyboard state restores (bar visible).
+    await pumpTabs(keyboardUp: false);
+    await settleBriefly(tester);
+    expect(barOpacity().opacity, 1.0);
+    expect(find.byKey(const ValueKey('tabBarHandle')), findsNothing);
+  });
 }

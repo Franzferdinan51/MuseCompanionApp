@@ -123,6 +123,12 @@ class _HomeTabsState extends State<HomeTabs> {
 
   @override
   Widget build(BuildContext context) {
+    // While the keyboard is up the tab bar is useless (no tab
+    // switching mid-typing) and just eats vertical space, worst in
+    // landscape. Hide it; the ValueNotifier keeps the pre-keyboard
+    // state so closing the keyboard restores exactly what was there.
+    // The slim edge handle hides too: it sits behind the keyboard.
+    final keyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
     return Scaffold(
       backgroundColor: museInk,
       // The tab bar floats as a Stack overlay instead of using the
@@ -161,14 +167,15 @@ class _HomeTabsState extends State<HomeTabs> {
             child: ValueListenableBuilder<bool>(
               valueListenable: _tabBarVisible,
               builder: (context, visible, child) {
+                final effectiveVisible = visible && !keyboardUp;
                 return AnimatedSlide(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeOut,
-                  offset: visible ? Offset.zero : const Offset(0, 1.5),
+                  offset: effectiveVisible ? Offset.zero : const Offset(0, 1.5),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 200),
                     curve: Curves.easeOut,
-                    opacity: visible ? 1.0 : 0.0,
+                    opacity: effectiveVisible ? 1.0 : 0.0,
                     child: child,
                   ),
                 );
@@ -226,7 +233,7 @@ class _HomeTabsState extends State<HomeTabs> {
             child: ValueListenableBuilder<bool>(
               valueListenable: _tabBarVisible,
               builder: (context, visible, _) {
-                if (visible) return const SizedBox.shrink();
+                if (visible || keyboardUp) return const SizedBox.shrink();
                 return SafeArea(
                   top: false,
                   child: GestureDetector(
