@@ -14,6 +14,11 @@
 //
 // Home tabs: bottom navigation across Home (avatar), Chat, Device,
 // Activity, and Media. The avatar screen stays the default tab.
+//
+// The tab bar follows the old companion-screen _BottomBar aesthetic:
+// a floating row with no background container — plain 20px icons on the
+// page background, tooltips instead of labels, and the active tab wrapped
+// in a MuseBubble (rounded, themed) for the accent.
 
 import 'package:flutter/material.dart';
 
@@ -66,7 +71,6 @@ class _HomeTabsState extends State<HomeTabs> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: museInk,
       body: IndexedStack(
@@ -79,19 +83,81 @@ class _HomeTabsState extends State<HomeTabs> {
           MediaScreen(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        backgroundColor: theme.colorScheme.surface,
-        indicatorColor: theme.colorScheme.primaryContainer,
-        destinations: [
-          for (final tab in _tabs)
-            NavigationDestination(
-              icon: Icon(tab.icon),
-              selectedIcon: Icon(tab.activeIcon),
-              label: tab.label,
+      // No background container — the icons float on the page background,
+      // exactly like the old _BottomBar.
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              for (var i = 0; i < _tabs.length; i++)
+                _TabIcon(
+                  tab: _tabs[i],
+                  active: i == _index,
+                  onTap: () => setState(() => _index = i),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One tab icon: plain and floating when inactive; wrapped in a MuseBubble
+/// (rounded, themed, glowing) when active.
+class _TabIcon extends StatelessWidget {
+  const _TabIcon({
+    required this.tab,
+    required this.active,
+    required this.onTap,
+  });
+
+  final _Tab tab;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (active) {
+      return MuseBubble(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          child: Tooltip(
+            message: tab.label,
+            child: Icon(
+              tab.activeIcon,
+              size: 20,
+              color: museBlue,
             ),
-        ],
+          ),
+        ),
+      );
+    }
+    return _InactiveTabIcon(tab: tab, onTap: onTap);
+  }
+}
+
+/// Inactive tab: a plain 20px muted icon floating on the background.
+class _InactiveTabIcon extends StatelessWidget {
+  const _InactiveTabIcon({required this.tab, required this.onTap});
+
+  final _Tab tab;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tab.label,
+      onPressed: onTap,
+      icon: Icon(
+        tab.icon,
+        size: 20,
+        color: const Color(0xFF5A7395), // muted blue-grey
       ),
     );
   }
