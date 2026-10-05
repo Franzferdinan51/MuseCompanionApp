@@ -25,20 +25,17 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app/avatar_motion.dart';
-import '../app/captions.dart';
 import '../app/model.dart';
 import '../app/pixel_avatar.dart';
 import '../src/gadget/chat_events.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
 import '../main.dart';
-import 'chat_screen.dart';
 import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
 import 'muse_theme.dart';
 import 'avatar_video_stage.dart';
 import 'scope.dart';
-import 'settings_screen.dart';
 
 /// Shared observer so the companion screen knows when it is covered.
 final RouteObserver<ModalRoute<dynamic>> routeObserver =
@@ -228,7 +225,7 @@ class _Surface extends StatelessWidget {
                         const SizedBox(height: 8),
                         _StatusLines(lines: presentation.lines),
                         const SizedBox(height: 12),
-                        _BottomBar(
+                        _ConnectionStatus(
                           state:
                               presentation.connection ??
                               ConnectionState.unpaired,
@@ -645,8 +642,12 @@ class _StatusLines extends StatelessWidget {
   }
 }
 
-class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.state, required this.detail}) : super();
+/// Slim connection status pill for the Home tab. The old _BottomBar
+/// navigation buttons (chat, settings) moved to the tab bar and
+/// "say it again" moved to the Chat tab app bar; this keeps only
+/// the status bubble and the contextual Pair button.
+class _ConnectionStatus extends StatelessWidget {
+  const _ConnectionStatus({required this.state, required this.detail});
 
   final ConnectionState state;
   final String detail;
@@ -658,6 +659,7 @@ class _BottomBar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           MuseBubble(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -677,8 +679,6 @@ class _BottomBar extends StatelessWidget {
               ],
             ),
           ),
-          const Spacer(),
-          const SizedBox(width: 8),
           if (state == ConnectionState.unpaired)
             IconButton(
               tooltip: 'Pair',
@@ -687,61 +687,9 @@ class _BottomBar extends StatelessWidget {
               ),
               icon: const Icon(Icons.bluetooth, size: 20),
             ),
-          IconButton(
-            tooltip: 'Say it again',
-            onPressed: () => _repeatLast(context),
-            icon: const Icon(Icons.replay),
-          ),
-          IconButton(
-            tooltip: 'Message',
-            icon: const Icon(Icons.chat_bubble_outline),
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute<void>(builder: (_) => const ChatScreen())),
-          ),
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              final scope = AppScope.of(context);
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                    builder: (_) => SettingsScreen(
-                          onSendChat: (msg, attachments) =>
-                              scope.service.sendChat(msg, null, attachments),
-                        )),
-              );
-            },
-          ),
         ],
       ),
     );
-  }
-
-  Future<void> _repeatLast(BuildContext context) async {
-    final scope = AppScope.of(context);
-    final reply = scope.chat.lastReply;
-    final source = (reply != null && reply.trim().isNotEmpty)
-        ? reply
-        : scope.presentation.statusText;
-    final spoken = speakableReply(source);
-    if (spoken.isEmpty || spoken == 'Listening…') {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Nothing to say yet.')));
-      return;
-    }
-    try {
-      await scope.phone.run('phone.volume', {
-        'level': scope.presentation.settings.speechVolume,
-      });
-      await scope.phone.speak(spoken);
-    } on PhoneActionException catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    }
   }
 }
 

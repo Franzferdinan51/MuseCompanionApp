@@ -43,6 +43,7 @@ import 'canvas_screen.dart';
 import 'live_screen.dart';
 import 'muse_theme.dart';
 import 'scope.dart';
+import '../app/captions.dart';
 import 'markdown_builders.dart';
 import 'slash_autocomplete.dart';
 
@@ -775,6 +776,32 @@ class _ChatScreenState extends State<ChatScreen> {
     return items;
   }
 
+  /// Re-speaks the last assistant reply (moved from the old
+  /// companion-screen bottom bar).
+  Future<void> _repeatLast() async {
+    final scope = AppScope.of(context);
+    final reply = scope.chat.lastReply;
+    final source = (reply != null && reply.trim().isNotEmpty)
+        ? reply
+        : scope.presentation.statusText;
+    final spoken = speakableReply(source);
+    if (spoken.isEmpty || spoken == 'Listening...') {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nothing to say yet.')));
+      return;
+    }
+    try {
+      await scope.phone.run('phone.volume', {
+        'level': scope.presentation.settings.speechVolume,
+      });
+      await scope.phone.speak(spoken);
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
@@ -795,6 +822,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Say it again',
+            icon: const Icon(Icons.replay),
+            onPressed: _repeatLast,
+          ),
           IconButton(
             tooltip: 'Canvas documents',
             icon: const Icon(Icons.edit_note_outlined),

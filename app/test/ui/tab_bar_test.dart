@@ -67,13 +67,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
-    // Five icon-only tabs with tooltips (no text labels, like the old bar).
-    for (final label in ['Home', 'Chat', 'Device', 'Activity', 'Media']) {
+    // Six icon-only tabs with tooltips (no text labels, like the old bar).
+    for (final label in ['Home', 'Chat', 'Device', 'Activity', 'Media', 'Settings']) {
       expect(find.byTooltip(label), findsOneWidget,
           reason: 'tab "$label" should exist as a tooltip icon button');
     }
     // The bar itself is icon-only: no text labels inside it.
-    final barScope = find.byType(SafeArea).last;
+    final barScope = find.byKey(const ValueKey('tabBarSafeArea'));
     expect(
       find.descendant(
         of: barScope,
@@ -110,7 +110,7 @@ void main() {
     final deviceIcon = tester
         .widgetList<Icon>(find.descendant(
           of: find.descendant(
-            of: find.byType(SafeArea).last,
+            of: find.byKey(const ValueKey('tabBarSafeArea')),
             matching: find.byType(MuseBubble),
           ),
           matching: find.byType(Icon),
@@ -126,12 +126,28 @@ void main() {
     final homeIcon = tester
         .widgetList<Icon>(find.descendant(
           of: find.descendant(
-            of: find.byType(SafeArea).last,
+            of: find.byKey(const ValueKey('tabBarSafeArea')),
             matching: find.byType(MuseBubble),
           ),
           matching: find.byType(Icon),
         ))
         .single;
     expect(homeIcon.icon, Icons.pets);
+
+    // Tapping Settings switches to the settings screen without errors.
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+    final settingsIcon = tester
+        .widgetList<Icon>(find.descendant(
+          of: find.descendant(
+            of: find.byKey(const ValueKey('tabBarSafeArea')),
+            matching: find.byType(MuseBubble),
+          ),
+          matching: find.byType(Icon),
+        ))
+        .single;
+    expect(settingsIcon.icon, Icons.settings);
+    expect(settingsIcon.color, museBlue);
   });
 }

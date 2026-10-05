@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 // Home tabs: bottom navigation across Home (avatar), Chat, Device,
-// Activity, and Media. The avatar screen stays the default tab.
+// Activity, Media, and Settings. The avatar screen stays the default tab.
 //
 // The tab bar follows the old companion-screen _BottomBar aesthetic:
 // a floating row with no background container — plain 20px icons on the
@@ -27,7 +27,9 @@ import 'chat_screen.dart';
 import 'companion_screen.dart';
 import 'device_screen.dart';
 import 'media_screen.dart';
+import 'settings_screen.dart';
 import 'muse_theme.dart';
+import 'scope.dart';
 
 /// Bottom-tab home. Each tab keeps its own state via IndexedStack;
 /// the Companion avatar screen is tab 0 (the default).
@@ -67,41 +69,79 @@ class _HomeTabsState extends State<HomeTabs> {
       icon: Icons.photo_library_outlined,
       activeIcon: Icons.photo_library,
     ),
+    _Tab(
+      label: 'Settings',
+      icon: Icons.settings_outlined,
+      activeIcon: Icons.settings,
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: museInk,
-      body: IndexedStack(
-        index: _index,
-        children: const [
-          CompanionScreen(),
-          ChatScreen(),
-          DeviceScreen(),
-          ActivityScreen(),
-          MediaScreen(),
+      // The tab bar floats as a Stack overlay instead of using the
+      // bottomNavigationBar slot, so no dark strip paints behind it.
+      // Tab content extends underneath the floating icons.
+      body: Stack(
+        children: [
+          // Bottom clearance so tab content is not hidden
+          // behind the floating tab row.
+          Padding(
+            padding: const EdgeInsets.only(bottom: 72),
+            child: IndexedStack(
+              index: _index,
+              children: const [
+                CompanionScreen(),
+                ChatScreen(),
+                DeviceScreen(),
+                ActivityScreen(),
+                MediaScreen(),
+                _SettingsTab(),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              // Key for widget tests to scope to the tab bar.
+              key: const ValueKey('tabBarSafeArea'),
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    for (var i = 0; i < _tabs.length; i++)
+                      _TabIcon(
+                        tab: _tabs[i],
+                        active: i == _index,
+                        onTap: () => setState(() => _index = i),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
-      // No background container — the icons float on the page background,
-      // exactly like the old _BottomBar.
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              for (var i = 0; i < _tabs.length; i++)
-                _TabIcon(
-                  tab: _tabs[i],
-                  active: i == _index,
-                  onTap: () => setState(() => _index = i),
-                ),
-            ],
-          ),
-        ),
-      ),
+    );
+  }
+}
+
+/// Settings as a tab: grabs AppScope at build time so the tab list can
+/// stay const while SettingsScreen gets its onSendChat callback.
+class _SettingsTab extends StatelessWidget {
+  const _SettingsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = AppScope.of(context);
+    return SettingsScreen(
+      onSendChat: (msg, attachments) =>
+          scope.service.sendChat(msg, null, attachments),
     );
   }
 }
