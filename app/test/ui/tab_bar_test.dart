@@ -176,6 +176,33 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expectDockRight();
   });
+  testWidgets(
+      'long status text stays clear of the side dock in portrait',
+      (tester) async {
+    final harness = await buildTabs();
+    addTearDown(harness.dispose);
+    // Simulate a long descriptive agent status.
+    harness.presentation.applyStatus(
+        'Taking a photo of the grow tent canopy with flash…');
+
+    // Portrait phone surface.
+    tester.view.physicalSize = const Size(720, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(harness.widget);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final statusText = find.textContaining('Taking a photo');
+    expect(statusText, findsWidgets,
+        reason: 'long status text should be visible on Home');
+    final pillRect = tester.getRect(statusText.first);
+    final dockRect =
+        tester.getRect(find.byKey(const ValueKey('sideDock')));
+    expect(pillRect.right, lessThan(dockRect.left),
+        reason: 'status pill must not reach the side dock');
+  });
 }
 
 /// Holds the objects a HomeTabs pump needs so the test can tear them down.
