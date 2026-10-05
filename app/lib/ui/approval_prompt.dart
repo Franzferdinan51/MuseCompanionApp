@@ -2,17 +2,18 @@
 //
 // An [ApprovalPromptListener] sits high in the widget tree (wrapping the
 // home screen) and shows one dialog per [ApprovalRequest] from
-// [ApprovalService]. The Approve button stays disabled for 600 ms after
-// the popup appears, so a tap meant for something else can't accidentally
-// approve (same debounce as the hermes-gadget-sdk reference firmware).
+// [ApprovalService]. Both buttons stay disabled for 600 ms after the popup
+// appears, so a tap meant for something else can't accidentally answer it
+// (same debounce as the hermes-gadget-sdk reference firmware, which ignores
+// all presses in the first 0.6 s).
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:muse_companion/app/approval_service.dart';
 
-/// How long after the popup appears before Approve becomes tappable.
-const Duration _approveDebounce = Duration(milliseconds: 600);
+/// How long after the popup appears before either button becomes tappable.
+const Duration _answerDebounce = Duration(milliseconds: 600);
 
 /// Listens for approval requests and shows each as a modal dialog.
 /// Place above the home screen so prompts work from any flow.
@@ -71,14 +72,14 @@ class _ApprovalDialog extends StatefulWidget {
 }
 
 class _ApprovalDialogState extends State<_ApprovalDialog> {
-  bool _canApprove = false;
+  bool _canAnswer = false;
   Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    _debounce = Timer(_approveDebounce, () {
-      if (mounted) setState(() => _canApprove = true);
+    _debounce = Timer(_answerDebounce, () {
+      if (mounted) setState(() => _canAnswer = true);
     });
   }
 
@@ -102,11 +103,13 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
       content: SingleChildScrollView(child: Text(widget.request.body)),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed:
+              _canAnswer ? () => Navigator.of(context).pop(false) : null,
           child: const Text('Deny'),
         ),
         FilledButton(
-          onPressed: _canApprove ? () => Navigator.of(context).pop(true) : null,
+          onPressed:
+              _canAnswer ? () => Navigator.of(context).pop(true) : null,
           child: const Text('Approve'),
         ),
       ],

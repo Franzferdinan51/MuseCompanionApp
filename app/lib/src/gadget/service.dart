@@ -159,6 +159,19 @@ class GadgetService {
   final StreamController<ChatEvent> _chatEvents =
       StreamController<ChatEvent>.broadcast();
 
+  /// Server-sent display cards (hermes-gadget-sdk `display`).
+  final StreamController<DisplayCard> _displayCards =
+      StreamController<DisplayCard>.broadcast();
+
+  /// Server-sent transient one-liners (hermes-gadget-sdk `notice`).
+  final StreamController<String> _notices =
+      StreamController<String>.broadcast();
+
+  /// Server-sent live working-state text (hermes-gadget-sdk `status`).
+  /// Empty string clears it.
+  final StreamController<String> _workingStatus =
+      StreamController<String>.broadcast();
+
   ConnectionState _connectionState = ConnectionState.stopped;
   String _statusDetail = '';
   bool _stopRequested = false;
@@ -185,6 +198,16 @@ class GadgetService {
 
   /// Assistant events from `/chat/subscribe`.
   Stream<ChatEvent> get onChatEvent => _chatEvents.stream;
+
+  /// Display cards from the server. The UI shows title + body until
+  /// ttlSeconds elapses (0 = until dismissed).
+  Stream<DisplayCard> get onDisplayCard => _displayCards.stream;
+
+  /// Transient one-line notices from the server.
+  Stream<String> get onNotice => _notices.stream;
+
+  /// Live working-state text from the server ("" clears it).
+  Stream<String> get onWorkingStatus => _workingStatus.stream;
 
   ConnectionState get connectionState => _connectionState;
 
@@ -441,6 +464,21 @@ class GadgetService {
     session.onChatEvent = (event) {
       if (!_chatEvents.isClosed) _chatEvents.add(event);
     };
+    session.onDisplayCard = (title, body, ttlSeconds) {
+      if (!_displayCards.isClosed) {
+        _displayCards.add(DisplayCard(
+          title: title,
+          body: body,
+          ttl: Duration(seconds: ttlSeconds),
+        ));
+      }
+    };
+    session.onNotice = (text) {
+      if (text.isNotEmpty && !_notices.isClosed) _notices.add(text);
+    };
+    session.onWorkingStatus = (text) {
+      if (!_workingStatus.isClosed) _workingStatus.add(text);
+    };
     session.onRegistered = () {
       _setState(ConnectionState.connected, _agentName ?? 'registered');
     };
@@ -592,4 +630,19 @@ class GadgetService {
     final value = map[key];
     return value is String ? value : fallback;
   }
+}
+
+/// A card overlay pushed by the server (hermes-gadget-sdk `display`).
+class DisplayCard {
+  const DisplayCard({
+    required this.title,
+    required this.body,
+    required this.ttl,
+  });
+
+  final String title;
+  final String body;
+
+  /// How long to show it; zero means until dismissed.
+  final Duration ttl;
 }

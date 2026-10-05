@@ -68,6 +68,13 @@ class ApprovalService {
 
   bool get hasPending => _active != null || _queue.isNotEmpty;
 
+  /// ID of the most recently created request (active or queued).
+  /// Lets link code map a server `prompt` id to our internal request id.
+  String? get lastRequestId {
+    if (_queue.isNotEmpty) return _queue.last.id;
+    return _active?.id;
+  }
+
   /// Ask the user a yes/no question. Returns true when approved, false
   /// when denied, withdrawn, or timed out.
   Future<bool> requestApproval({

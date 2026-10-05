@@ -35,6 +35,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'chat_events.dart';
+import '../../app/approval_service.dart';
 import 'envelope.dart';
 import 'invoke.dart';
 import 'noise_xx.dart';
@@ -364,6 +365,9 @@ class LinkSession {
   final Map<int, MessageDecoder> _sideDecoders = {};
   int _streamId = 0;
   String _registerId = '';
+  /// Maps server `prompt` ids to our ApprovalService request ids,
+  /// so `prompt.close` can withdraw the right question.
+  final Map<String, String> _serverPromptIds = {};
   final Map<int, _Request> _requests = {};
   DateTime? registeredAt;
 
@@ -375,6 +379,17 @@ class LinkSession {
 
   /// Called once the VM accepts `link.register`.
   void Function()? onRegistered;
+
+  /// Server-sent display card (hermes-gadget-sdk `display` message).
+  /// Args: title, body, ttlSeconds (0 = until dismissed).
+  void Function(String title, String body, int ttlSeconds)? onDisplayCard;
+
+  /// Server-sent transient one-liner (hermes-gadget-sdk `notice` message).
+  void Function(String text)? onNotice;
+
+  /// Server-sent live working-state text (hermes-gadget-sdk `status`).
+  /// Empty string clears it.
+  void Function(String text)? onWorkingStatus;
 
   /// Called once the reply subscription has been written to the socket,
   /// so a following chat post is not missed.
@@ -706,7 +721,82 @@ class LinkSession {
     }
   }
 
+  /// Handles hermes-gadget-sdk `type`-based server messages:
+  /// `prompt`, `prompt.close`, `display`, `notice`, `status`.
+  /// Returns true when the message was consumed.
+  bool _handleTypedMessage(Map<String, Object?> message) {
+    final type = message['type']?.toString();
+    if (type == null) return false;
+    switch (type) {
+      case 'prompt': {
+        final id = message['id']?.toString();
+        if (id == null || id.isEmpty) return true;
+        final title = message['title']?.toString() ?? 'Confirm?';
+        final text = message['text']?.toString() ?? '';
+        final ttlS = (message['ttl_s'] as num?)?.toInt() ?? 300;
+        onStatus?.call('in:prompt:$id');
+        // Route through the same ApprovalService the on-phone agent uses:
+        // one question at a time, 600ms debounce, exactly-once answer.
+        final future = ApprovalService.instance.requestApproval(
+          title: title,
+          body: text,
+          timeout: Duration(seconds: ttlS.clamp(5, 600)),
+        );
+        // Remember which ApprovalRequest answers this server prompt.
+        final ourId = ApprovalService.instance.lastRequestId;
+        if (ourId != null) _serverPromptIds[id] = ourId;
+        future.then((approved) {
+          _serverPromptIds.remove(id);
+          final reply = <String, Object?>{
+            'type': 'prompt.reply',
+            'id': id,
+            'answer': approved ? 'yes' : 'no',
+          };
+          final task = send(reply);
+          _tasks.add(task);
+          task.whenComplete(() => _tasks.remove(task));
+          onStatus?.call('prompt:$id:${approved ? "yes" : "no"}');
+        });
+        return true;
+      }
+      case 'prompt.close': {
+        final id = message['id']?.toString();
+        if (id != null) {
+          final ourId = _serverPromptIds.remove(id);
+          if (ourId != null) {
+            ApprovalService.instance.closeRequest(ourId);
+          }
+          onStatus?.call('in:prompt.close:$id');
+        }
+        return true;
+      }
+      case 'display': {
+        final title = message['title']?.toString() ?? '';
+        final body = message['body']?.toString() ?? '';
+        final ttlS = (message['ttl_s'] as num?)?.toInt() ?? 0;
+        onStatus?.call('in:display');
+        onDisplayCard?.call(title, body, ttlS);
+        return true;
+      }
+      case 'notice': {
+        final text = message['text']?.toString() ?? '';
+        onStatus?.call('in:notice');
+        onNotice?.call(text);
+        return true;
+      }
+      case 'status': {
+        final text = message['text']?.toString() ?? '';
+        onWorkingStatus?.call(text);
+        return true;
+      }
+    }
+    return false;
+  }
+
   Outcome? _handle(Map<String, Object?> message, {int? sourceStream}) {
+    // hermes-gadget-sdk typed messages (prompt/display/notice/status)
+    // take precedence over the legacy method/event shapes.
+    if (_handleTypedMessage(message)) return null;
     final method = message['method']?.toString();
     final eventName = message['event']?.toString();
     if (method != null) {
