@@ -43,6 +43,12 @@ dependencies:
   video_player: ^2.9.0
   # OpenRouter TTS playback (plays synthesized MP3 bytes in memory).
   audioplayers: ^6.1.0
+  # Rich text in chat bubbles: markdown, code blocks, lists, links.
+  flutter_markdown: ^0.7.7
+  # Open tapped links from chat messages in the browser.
+  url_launcher: ^6.3.1
+  # Element type for the markdown code-block builder.
+  markdown: ^7.3.0
 
 dev_dependencies:
   flutter_test:

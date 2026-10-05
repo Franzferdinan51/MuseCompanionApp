@@ -20,6 +20,7 @@
 // this class never touches the network itself.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 /// Delivery state of one message.
 enum ChatStatus { sending, sent, failed }
@@ -37,6 +38,9 @@ class ChatMessage {
     this.role = ChatRole.user,
     this.streaming = false,
     this.serverId,
+    this.attachmentBytes,
+    this.attachmentMime,
+    this.attachmentName,
   });
 
   final int id;
@@ -49,6 +53,21 @@ class ChatMessage {
 
   /// Muse message id, so streamed deltas land on the same bubble.
   String? serverId;
+
+  /// Optional attachment sent with this message (voice note WAV or photo
+  /// JPEG). Stored on the message so bubbles can render playback/thumbnails
+  /// without re-fetching.
+  final Uint8List? attachmentBytes;
+  final String? attachmentMime;
+  final String? attachmentName;
+
+  /// True when this message carries an audio attachment.
+  bool get hasAudio =>
+      attachmentBytes != null && (attachmentMime ?? '').startsWith('audio/');
+
+  /// True when this message carries an image attachment.
+  bool get hasImage =>
+      attachmentBytes != null && (attachmentMime ?? '').startsWith('image/');
 }
 
 /// Session-scoped outgoing messages, oldest first, bounded in memory.
@@ -91,12 +110,20 @@ class ChatHistory {
   List<ChatMessage> get messages => List.unmodifiable(_messages);
 
   /// Record a message about to be sent; returns its id.
-  int addSending(String text) {
+  int addSending(
+    String text, {
+    Uint8List? attachmentBytes,
+    String? attachmentMime,
+    String? attachmentName,
+  }) {
     final message = ChatMessage(
       id: _nextId++,
       text: text,
       sentAt: DateTime.now(),
       status: ChatStatus.sending,
+      attachmentBytes: attachmentBytes,
+      attachmentMime: attachmentMime,
+      attachmentName: attachmentName,
     );
     _messages.add(message);
     _trim();
@@ -150,6 +177,51 @@ class ChatHistory {
     message.status = ChatStatus.sending;
     message.error = '';
     _emit();
+  }
+
+  /// Remove a message (long-press delete). Returns true when removed.
+  bool deleteMessage(int id) {
+    final index = _messages.indexWhere((m) => m.id == id);
+    if (index < 0) return false;
+    _messages.removeAt(index);
+    _emit();
+    return true;
+  }
+
+  /// Find a message by id, or null.
+  ChatMessage? find(int id) => _find(id);
+
+  /// Restore one persisted message (used by ChatStore). The id is
+  /// reassigned so it cannot collide with live messages.
+  void restoreMessage(ChatMessage message) {
+    _messages.add(
+      ChatMessage(
+        id: _nextId++,
+        text: message.text,
+        sentAt: message.sentAt,
+        status: message.status == ChatStatus.sending
+            ? ChatStatus.sent
+            : message.status,
+        role: message.role,
+      ),
+    );
+    _trim();
+    _emit();
+  }
+
+  /// Remove all messages (clear-history action).
+  void clearAll() {
+    _messages.clear();
+    _emit();
+  }
+
+  /// Case-insensitive text search over message bodies.
+  List<ChatMessage> search(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return _messages
+        .where((m) => m.text.toLowerCase().contains(q))
+        .toList();
   }
 
   /// Fold one `/chat/subscribe` event into the history.

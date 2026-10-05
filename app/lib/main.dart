@@ -39,6 +39,7 @@ import 'package:muse_companion/src/gadget/service.dart';
 
 import 'ui/approval_prompt.dart';
 import 'ui/companion_screen.dart';
+import 'ui/home_tabs.dart';
 import 'ui/muse_theme.dart';
 import 'ui/scope.dart';
 
@@ -599,7 +600,7 @@ class _MuseCompanionAppState extends State<MuseCompanionApp>
             );
           },
           home: const ApprovalPromptListener(
-            child: CompanionScreen(),
+            child: HomeTabs(),
           ),
         ),
       ),
