@@ -25,7 +25,10 @@ import 'package:muse_companion/ui/scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('offline send records the service error inline',
+  // 2026-10-04: offline sends now go to the persisted outbox with
+  // ChatStatus.queued (auto-flushed on reconnect) instead of staying
+  // ChatStatus.failed with "not connected" inline.
+  testWidgets('offline send queues the message in the outbox',
       (tester) async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
@@ -75,7 +78,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('hello muse'), findsOneWidget);
-    expect(find.textContaining('not connected'), findsOneWidget);
-    expect(chat.messages.single.status, ChatStatus.failed);
+    expect(find.textContaining('not connected'), findsNothing);
+    expect(chat.messages.single.status, ChatStatus.queued);
+    expect(chat.messages.single.error, isNotEmpty);
   });
 }
