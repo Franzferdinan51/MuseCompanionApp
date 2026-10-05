@@ -21,6 +21,7 @@ import 'package:muse_companion/app/storage.dart';
 import 'package:muse_companion/src/gadget/identity.dart';
 import 'package:muse_companion/src/gadget/service.dart';
 import 'package:muse_companion/ui/home_tabs.dart';
+import 'package:muse_companion/ui/companion_screen.dart';
 import 'package:muse_companion/ui/muse_theme.dart';
 import 'package:muse_companion/ui/scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -149,5 +150,82 @@ void main() {
         .single;
     expect(settingsIcon.icon, Icons.settings);
     expect(settingsIcon.color, museBlue);
+  });
+
+  testWidgets(
+      'home tab content clears the floating tab bar in portrait and landscape',
+      (tester) async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsStore.init();
+    final presentation =
+        PresentationState(settings: settings.loadSettings());
+    final service = GadgetService(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      commands: const {},
+      runCommand: (_, _, _) async => {'ok': true},
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final ble = BlePeripheralManager(
+      identity: const Identity('02:aa:bb:cc:dd:ee'),
+      pairingStore: MemoryPairingStore(),
+      version: '0.1.0',
+    );
+    final chat = ChatHistory();
+    addTearDown(() async {
+      await service.stop();
+      await ble.dispose();
+      chat.close();
+      presentation.close();
+    });
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(AppScope(
+      service: service,
+      presentation: presentation,
+      settings: settings,
+      ble: ble,
+      chat: chat,
+      sdkTokens: SecureSdkTokenStore(),
+      child: const MaterialApp(
+        home: HomeTabs(),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The Home tab (CompanionScreen) is wrapped in bottom padding that must
+    // be at least as tall as the floating tab bar, so its lowest buttons
+    // (connection status, Pair) never sit underneath the tab icons.
+    void expectClearance() {
+      final barRect =
+          tester.getRect(find.byKey(const ValueKey('tabBarSafeArea')));
+      final wrapper = find
+          .ancestor(
+            of: find.byType(CompanionScreen),
+            matching: find.byType(Padding),
+          )
+          .first;
+      final padding = tester.widget<Padding>(wrapper).padding as EdgeInsets;
+      expect(
+        padding.bottom,
+        greaterThanOrEqualTo(barRect.height),
+        reason:
+            'home tab bottom padding (${padding.bottom}) must clear the '
+            'floating tab bar (${barRect.height})',
+      );
+    }
+
+    // Portrait.
+    expectClearance();
+
+    // Landscape: the tab bar is still a bottom overlay, so the same
+    // clearance must hold.
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+    expectClearance();
   });
 }
