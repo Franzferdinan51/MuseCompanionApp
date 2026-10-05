@@ -53,7 +53,34 @@ void main() {
     );
   }
 
-  testWidgets('side dock shows six destinations, active gets the bubble',
+  Future<void> openDrawer(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Menu').first);
+    // Several frames: a single long pump leaves the drawer mid-slide.
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+  }
+
+  bool isDrawerOpen(WidgetTester tester) =>
+      tester
+          .state<ScaffoldState>(find.byWidgetPredicate(
+              (w) => w is Scaffold && w.drawer != null))
+          .isDrawerOpen;
+
+  /// Advances past drawer animations. pumpAndSettle is unusable here:
+  /// the avatar animates forever, so it would time out.
+  Future<void> settleDrawer(WidgetTester tester) async {
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+  }
+
+  Finder drawerBubble() => find.descendant(
+        of: find.byType(Drawer),
+        matching: find.byType(MuseBubble),
+      );
+
+  testWidgets('drawer lists six destinations, active gets the bubble glow',
       (tester) async {
     final harness = await buildTabs();
     addTearDown(harness.dispose);
@@ -62,50 +89,40 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
-    final dock = find.byKey(const ValueKey('sideDock'));
-    expect(dock, findsOneWidget, reason: 'floating side dock must exist');
+    // Drawer starts closed; hamburger sits top-left on Home.
+    expect(isDrawerOpen(tester), isFalse);
+    expect(find.byTooltip('Menu'), findsOneWidget);
 
-    // Six icon-only destinations with tooltips.
-    for (final label in
-        ['Home', 'Chat', 'Device', 'Activity', 'Media', 'Settings']) {
+    await openDrawer(tester);
+
+    expect(isDrawerOpen(tester), isTrue);
+    for (final label
+        in ['Home', 'Chat', 'Device', 'Activity', 'Media', 'Settings']) {
       expect(
-        find.descendant(of: dock, matching: find.byTooltip(label)),
+        find.descendant(
+            of: find.byType(Drawer),
+            matching: find.byKey(ValueKey('drawer_$label'))),
         findsOneWidget,
-        reason: 'dock destination "$label" should exist',
+        reason: 'drawer destination "$label" should exist',
+      );
+      expect(
+        find.descendant(
+            of: find.byType(Drawer), matching: find.text(label)),
+        findsOneWidget,
+        reason: 'drawer destination "$label" should be labeled',
       );
     }
-    // Icon-only: no text labels inside the dock.
+
+    // Exactly one MuseBubble in the drawer: the active destination.
+    expect(drawerBubble(), findsOneWidget);
     expect(
-      find.descendant(of: dock, matching: find.byType(Text)),
-      findsNothing,
-      reason: 'dock destinations are icon-only',
+      find.descendant(of: drawerBubble(), matching: find.text('Home')),
+      findsOneWidget,
+      reason: 'Home is the default tab, so it glows',
     );
-
-    // Exactly one MuseBubble: the active destination indicator.
-    final dockBubbles = find.descendant(
-      of: dock,
-      matching: find.byType(MuseBubble),
-    );
-    expect(dockBubbles, findsOneWidget,
-        reason: 'only the active destination gets the MuseBubble');
-
-    // Home is the default tab: bubble wraps the pets icon in museBlue.
-    final activeIcon = tester
-        .widgetList<Icon>(find.descendant(
-          of: dockBubbles,
-          matching: find.byType(Icon),
-        ))
-        .single;
-    expect(activeIcon.icon, Icons.pets);
-    expect(activeIcon.color, museBlue);
-    expect(activeIcon.size, 20);
-
-    // No bottom tab bar remnants anywhere.
-    expect(find.byKey(const ValueKey('tabBarSafeArea')), findsNothing);
-    expect(find.byKey(const ValueKey('tabBarHandle')), findsNothing);
   });
 
-  testWidgets('tapping dock icons switches tabs and moves the bubble',
+  testWidgets('drawer destinations switch tabs and close the drawer',
       (tester) async {
     final harness = await buildTabs();
     addTearDown(harness.dispose);
@@ -114,77 +131,62 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
-    Icon activeDockIcon() => tester
-        .widgetList<Icon>(find.descendant(
-          of: find.descendant(
-            of: find.byKey(const ValueKey('sideDock')),
-            matching: find.byType(MuseBubble),
-          ),
-          matching: find.byType(Icon),
-        ))
-        .single;
+    await openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer_Chat')));
+    await settleDrawer(tester);
 
-    await tester.tap(find.byTooltip('Device'));
+    // Drawer closed; Chat screen is showing.
+    expect(isDrawerOpen(tester), isFalse);
+    expect(find.text('Message Muse'), findsOneWidget);
+
+    // The glow followed the active tab.
+    await openDrawer(tester);
+    expect(
+      find.descendant(of: drawerBubble(), matching: find.text('Chat')),
+      findsOneWidget,
+      reason: 'active glow should track the selected tab',
+    );
+  });
+
+  testWidgets('Settings keeps the back pattern and disables drawer drag',
+      (tester) async {
+    final harness = await buildTabs();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(harness.widget);
     await tester.pump(const Duration(milliseconds: 500));
-    expect(activeDockIcon().icon, Icons.phone_android);
-
-    await tester.tap(find.byTooltip('Chat'));
     await tester.pump(const Duration(milliseconds: 500));
-    expect(activeDockIcon().icon, Icons.chat_bubble);
 
-    await tester.tap(find.byTooltip('Settings'));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(activeDockIcon().icon, Icons.settings);
+    Scaffold rootScaffold() => tester.widgetList<Scaffold>(
+          find.byWidgetPredicate(
+              (w) => w is Scaffold && w.drawer != null),
+        ).single;
 
-    // The dock is hidden on the Settings detail page: back returns to
-    // the previous tab (Chat here).
+    // Drawer drag is enabled on the main tabs.
+    expect(rootScaffold().drawerEnableOpenDragGesture, isTrue);
+
+    // Navigate in via the drawer.
+    await openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer_Settings')));
+    await settleDrawer(tester);
+
+    // We're on the Settings detail page.
+    expect(find.text('Companion Settings'), findsOneWidget);
+    expect(find.byType(BackButton), findsOneWidget);
+
+    // No hamburger on the detail page; edge-drag is off.
+    expect(find.byTooltip('Menu'), findsNothing);
+    expect(rootScaffold().drawerEnableOpenDragGesture, isFalse);
+
+    // Back returns to Home.
     await tester.tap(find.byType(BackButton));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(activeDockIcon().icon, Icons.chat_bubble);
-
-    await tester.tap(find.byTooltip('Home'));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(activeDockIcon().icon, Icons.pets);
+    await settleDrawer(tester);
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.byTooltip('Menu'), findsOneWidget);
+    expect(rootScaffold().drawerEnableOpenDragGesture, isTrue);
   });
 
-  testWidgets('dock floats on the right edge in portrait and landscape',
-      (tester) async {
-    final harness = await buildTabs();
-    addTearDown(harness.dispose);
-    addTearDown(tester.view.resetPhysicalSize);
-
-    await tester.pumpWidget(harness.widget);
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    void expectDockRight() {
-      final dockRect = tester.getRect(find.byKey(const ValueKey('sideDock')));
-      final view = tester.view;
-      // getRect is in logical pixels; physicalSize is physical.
-      final screenWidth = view.physicalSize.width / view.devicePixelRatio;
-      // Dock hugs the right edge (10px padding + safe area).
-      expect(dockRect.right, greaterThan(screenWidth - 60));
-      // Vertically centered-ish, not glued to the bottom.
-      final screenHeight = view.physicalSize.height / view.devicePixelRatio;
-      expect(dockRect.top, greaterThan(40));
-      expect(dockRect.bottom, lessThan(screenHeight - 40));
-    }
-
-    // Portrait: default test view (2400x1800 physical @ 3.0 DPR
-    // -> 800x600 logical). Metrics are live from the start.
-    expectDockRight();
-
-    // Landscape: resize the view, then pump so the new metrics apply
-    // before measuring.
-    tester.view.physicalSize = const Size(1200, 800);
-    tester.view.devicePixelRatio = 1.0;
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(milliseconds: 500));
-    expectDockRight();
-  });
-  testWidgets(
-      'long status text stays clear of the side dock in portrait',
-      (tester) async {
+  testWidgets('long status text stays visible on Home', (tester) async {
     final harness = await buildTabs();
     addTearDown(harness.dispose);
     // Simulate a long descriptive agent status.
@@ -204,45 +206,14 @@ void main() {
     expect(statusText, findsWidgets,
         reason: 'long status text should be visible on Home');
     final pillRect = tester.getRect(statusText.first);
-    final dockRect =
-        tester.getRect(find.byKey(const ValueKey('sideDock')));
-    expect(pillRect.right, lessThan(dockRect.left),
-        reason: 'status pill must not reach the side dock');
-  });
-  testWidgets('Settings hides the dock and back returns to Home',
-      (tester) async {
-    final harness = await buildTabs();
-    addTearDown(harness.dispose);
-
-    await tester.pumpWidget(harness.widget);
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    AnimatedOpacity dockFade() => tester.widget<AnimatedOpacity>(
-        find.byKey(const ValueKey('sideDockFade')));
-    expect(dockFade().opacity, 1.0);
-
-    // Navigate in via the dock: Settings gear icon.
-    await tester.tap(find.byTooltip('Settings'));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    // Dock fades out and ignores touches; back button appears.
-    expect(dockFade().opacity, 0.0);
-    expect(
-        tester
-            .widget<IgnorePointer>(
-                find.byKey(const ValueKey('sideDockIgnore')))
-            .ignoring,
-        isTrue);
-    expect(find.byType(BackButton), findsOneWidget);
-
-    // Back returns to Home and the dock fades back in.
-    await tester.tap(find.byType(BackButton));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(dockFade().opacity, 1.0);
-    expect(find.byType(BackButton), findsNothing);
+    expect(pillRect.right, lessThanOrEqualTo(720),
+        reason: 'status pill must not overflow the screen');
+    expect(pillRect.left, greaterThanOrEqualTo(0),
+        reason: 'status pill must not overflow the screen');
   });
 }
+
+
 
 /// Holds the objects a HomeTabs pump needs so the test can tear them down.
 class _TestHarness {
@@ -278,4 +249,5 @@ class _TestHarness {
     chat.close();
     presentation.close();
   }
+
 }

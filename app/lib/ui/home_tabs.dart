@@ -43,6 +43,8 @@ class HomeTabs extends StatefulWidget {
 class _HomeTabsState extends State<HomeTabs> {
   static const int _settingsIndex = 5;
 
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
   int _index = 0;
   int _previousIndex = 0;
 
@@ -50,6 +52,8 @@ class _HomeTabsState extends State<HomeTabs> {
         if (i != _index) _previousIndex = _index;
         _index = i;
       });
+
+  void _openDrawer() => _scaffoldKey.currentState?.openDrawer();
 
   /// Settings is a detail page: back returns to the tab we came from.
   void _backFromSettings() => _selectTab(
@@ -89,52 +93,26 @@ class _HomeTabsState extends State<HomeTabs> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: museInk,
-      // The dock floats over full-bleed tab content; nothing is reserved
-      // at the bottom of the screen.
-      body: Stack(
+      // Slide-in navigation drawer. Nothing persistent overlays content;
+      // Settings is a detail page, so the edge-drag gesture is off there
+      // (its back button is the way out).
+      drawer: _NavDrawer(
+        tabs: _tabs,
+        index: _index,
+        onSelect: _selectTab,
+      ),
+      drawerEnableOpenDragGesture: !_onSettings,
+      body: IndexedStack(
+        index: _index,
         children: [
-          IndexedStack(
-            index: _index,
-            children: [
-              const CompanionScreen(),
-              const ChatScreen(),
-              const DeviceScreen(),
-              const ActivityScreen(),
-              const MediaScreen(),
-              _SettingsTab(onBack: _backFromSettings),
-            ],
-          ),
-          // Floating side dock: right edge, vertically centered.
-          // Hidden on the Settings detail page (it gets a back button
-          // instead). Fades out and ignores touches while hidden.
-          // Positioned.fill + Align keeps it a direct Stack child.
-          Positioned.fill(
-            child: IgnorePointer(
-              key: const ValueKey('sideDockIgnore'),
-              ignoring: _onSettings,
-              child: AnimatedOpacity(
-                key: const ValueKey('sideDockFade'),
-                opacity: _onSettings ? 0.0 : 1.0,
-                duration: const Duration(milliseconds: 200),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: SafeArea(
-                    left: false,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: _SideDock(
-                        key: const ValueKey('sideDock'),
-                        tabs: _tabs,
-                        index: _index,
-                        onSelect: _selectTab,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          CompanionScreen(onMenu: _openDrawer),
+          ChatScreen(onMenu: _openDrawer),
+          DeviceScreen(onMenu: _openDrawer),
+          ActivityScreen(onMenu: _openDrawer),
+          MediaScreen(onMenu: _openDrawer),
+          _SettingsTab(onBack: _backFromSettings),
         ],
       ),
     );
@@ -142,8 +120,8 @@ class _HomeTabsState extends State<HomeTabs> {
 }
 
 /// Settings as a detail page: grabs AppScope at build time so the tab list
-/// can stay const while SettingsScreen gets its callbacks. The dock is
-/// hidden here; [onBack] returns to the previous tab.
+/// can stay const while SettingsScreen gets its callbacks. The drawer
+/// stays closed here; [onBack] returns to the previous tab.
 class _SettingsTab extends StatelessWidget {
   const _SettingsTab({required this.onBack});
 
@@ -160,12 +138,12 @@ class _SettingsTab extends StatelessWidget {
   }
 }
 
-/// Slim vertical floating dock: six small circular destinations in a
-/// semi-transparent pill. The active destination gets the MuseBubble
-/// glow; inactive ones are plain floating icons.
-class _SideDock extends StatelessWidget {
-  const _SideDock({
-    super.key,
+/// Slide-in navigation drawer: the six destinations as icon + label rows.
+/// The active destination gets the MuseBubble glow so it's always clear
+/// where you are. Tapping a destination navigates and closes the drawer;
+/// the scrim and edge-swipe behaviors are the standard Drawer ones.
+class _NavDrawer extends StatelessWidget {
+  const _NavDrawer({
     required this.tabs,
     required this.index,
     required this.onSelect,
@@ -177,90 +155,89 @@ class _SideDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      // Semi-transparent at rest so it stays out of the content's way.
-      opacity: 0.88,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(
-          color: museNight.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.12),
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black45,
-              blurRadius: 12,
-              offset: Offset(0, 4),
+    final theme = Theme.of(context);
+    return Drawer(
+      backgroundColor: museInk,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Row(
+                children: [
+                  const MuseLogo(size: 40),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Muse',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(
+              color: Color(0x22FFFFFF),
+              indent: 20,
+              endIndent: 20,
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: tabs.length,
+                itemBuilder: (context, i) {
+                  final tab = tabs[i];
+                  final active = i == index;
+                  final row = Row(
+                    children: [
+                      Icon(
+                        active ? tab.activeIcon : tab.icon,
+                        color: active
+                            ? museBlue
+                            : museMist.withValues(alpha: 0.75),
+                        size: 22,
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        tab.label,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight:
+                              active ? FontWeight.w700 : FontWeight.w500,
+                          color: active
+                              ? museMist
+                              : museMist.withValues(alpha: 0.75),
+                        ),
+                      ),
+                    ],
+                  );
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 4),
+                    child: InkWell(
+                      key: ValueKey('drawer_${tab.label}'),
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        onSelect(i);
+                        Navigator.of(context).pop();
+                      },
+                      child: active
+                          ? MuseBubble(child: row)
+                          : Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              child: row,
+                            ),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < tabs.length; i++)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: _DockIcon(
-                  tab: tabs[i],
-                  active: i == index,
-                  onTap: () => onSelect(i),
-                ),
-              ),
-          ],
-        ),
       ),
     );
-  }
-}
-
-/// One dock destination: a glowing MuseBubble circle when active,
-/// a plain floating icon when inactive.
-class _DockIcon extends StatelessWidget {
-  const _DockIcon({
-    required this.tab,
-    required this.active,
-    required this.onTap,
-  });
-
-  final _Tab tab;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final icon = Icon(
-      active ? tab.activeIcon : tab.icon,
-      size: 20,
-      color: active ? museBlue : const Color(0xFF9DB9DC),
-      shadows: const [
-        Shadow(
-          color: Colors.black54,
-          blurRadius: 4,
-          offset: Offset(0, 1),
-        ),
-      ],
-    );
-    final button = InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: Tooltip(
-        message: tab.label,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: icon,
-        ),
-      ),
-    );
-    if (active) {
-      return MuseBubble(
-        padding: EdgeInsets.zero,
-        radius: 22,
-        child: button,
-      );
-    }
-    return button;
   }
 }
 

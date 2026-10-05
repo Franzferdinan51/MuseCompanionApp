@@ -15,9 +15,6 @@ const Color museMist = Color(0xFFF4F8FF);
 
 const String museLogoAsset = 'assets/brand/juno-logo-glossy.png';
 
-/// Horizontal clearance for tab content from the floating side dock:
-/// ~48px dock width + 10px edge offset + 10px breathing room.
-const double kSideDockClearance = 68.0;
 const String museBackdropAsset = 'assets/brand/juno-bg-glossy.png';
 
 ThemeData museTheme(Brightness brightness) {

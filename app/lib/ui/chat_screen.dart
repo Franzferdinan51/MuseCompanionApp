@@ -48,7 +48,10 @@ import 'markdown_builders.dart';
 import 'slash_autocomplete.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, this.onMenu});
+
+  /// Opens the navigation drawer; null hides the menu button.
+  final VoidCallback? onMenu;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -832,6 +835,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final landscape = orientation == Orientation.landscape;
     return MusePage(
       appBar: AppBar(
+        leading: widget.onMenu == null
+            ? null
+            : IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onMenu,
+              ),
         // Landscape is vertically tight: shrink the bar and its icons.
         toolbarHeight: landscape ? 48 : null,
         titleSpacing: landscape ? 8 : null,
@@ -1025,7 +1035,7 @@ class _ChatScreenState extends State<ChatScreen> {
             controller: _scroll,
             // Right padding keeps bubbles and timestamps clear of the
             // floating side dock in both orientations.
-            padding: const EdgeInsets.fromLTRB(16, 12, 16 + kSideDockClearance, 12),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             itemCount: items.length,
             itemBuilder: (context, i) => items[i],
           );
@@ -1940,7 +1950,7 @@ class _Composer extends StatelessWidget {
         Padding(
           // Right padding keeps the send button clear of the floating
           // side dock in both orientations.
-          padding: const EdgeInsets.fromLTRB(12, 8, 12 + kSideDockClearance, 12),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [

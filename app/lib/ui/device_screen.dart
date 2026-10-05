@@ -27,7 +27,10 @@ import 'scope.dart';
 /// through the Muse link when available; until then the phone side is
 /// shown with the link state beside it.
 class DeviceScreen extends StatefulWidget {
-  const DeviceScreen({super.key});
+  const DeviceScreen({super.key, this.onMenu});
+
+  /// Opens the navigation drawer; null hides the menu button.
+  final VoidCallback? onMenu;
 
   @override
   State<DeviceScreen> createState() => _DeviceScreenState();
@@ -75,6 +78,13 @@ class _DeviceScreenState extends State<DeviceScreen> {
     final service = scope.service;
     return MusePage(
       appBar: AppBar(
+        leading: widget.onMenu == null
+            ? null
+            : IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onMenu,
+              ),
         title: const Text('Device'),
         actions: [
           IconButton(

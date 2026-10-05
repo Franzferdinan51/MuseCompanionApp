@@ -43,7 +43,10 @@ final RouteObserver<ModalRoute<dynamic>> routeObserver =
     RouteObserver<ModalRoute<dynamic>>();
 
 class CompanionScreen extends StatefulWidget {
-  const CompanionScreen({super.key});
+  const CompanionScreen({super.key, this.onMenu});
+
+  /// Opens the navigation drawer; null hides the menu button.
+  final VoidCallback? onMenu;
 
   @override
   State<CompanionScreen> createState() => _CompanionScreenState();
@@ -172,8 +175,12 @@ class _CompanionScreenState extends State<CompanionScreen> with RouteAware {
     final scope = AppScope.of(context);
     return StreamBuilder<void>(
       stream: scope.presentation.stream,
-      builder: (context, _) =>
-          _Surface(scope: scope, asleep: _asleep, onSleep: _toggleSleep),
+      builder: (context, _) => _Surface(
+          scope: scope,
+          asleep: _asleep,
+          onSleep: _toggleSleep,
+          onMenu: widget.onMenu,
+        ),
     );
   }
 }
@@ -183,11 +190,13 @@ class _Surface extends StatelessWidget {
     required this.scope,
     required this.asleep,
     required this.onSleep,
+    this.onMenu,
   }) : super(key: const ValueKey('companion_surface'));
 
   final AppScope scope;
   final bool asleep;
   final VoidCallback onSleep;
+  final VoidCallback? onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +219,7 @@ class _Surface extends StatelessWidget {
                 battery: presentation.battery,
                 asleep: asleep,
                 onSleep: onSleep,
+                onMenu: onMenu,
               ),
               Expanded(
                 child: Stack(
@@ -289,21 +299,14 @@ class _PortraitBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        // Right padding keeps the pills clear of the floating side dock;
-        // long status text ("Taking a photo…") ellipsizes instead of
-        // growing into it.
-        Padding(
-          padding: const EdgeInsets.only(right: kSideDockClearance),
-          child: _StatusLines(lines: presentation.lines),
-        ),
+        // Long status text ("Taking a photo…") ellipsizes instead of
+        // overflowing.
+        _StatusLines(lines: presentation.lines),
         const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.only(right: kSideDockClearance),
-          child: _ConnectionStatus(
-            key: const ValueKey('connection_status'),
-            state: presentation.connection ?? ConnectionState.unpaired,
-            detail: presentation.statusDetail,
-          ),
+        _ConnectionStatus(
+          key: const ValueKey('connection_status'),
+          state: presentation.connection ?? ConnectionState.unpaired,
+          detail: presentation.statusDetail,
         ),
       ],
     );
@@ -354,14 +357,12 @@ class _LandscapeBody extends StatelessWidget {
             ),
           ),
         ),
-        // Right: status pills stacked compactly, clear of the side dock.
-        // The scroll view guards against overflow on very short
-        // landscape heights.
+        // Right: status pills stacked compactly. The scroll view guards
+        // against overflow on very short landscape heights.
         Expanded(
           flex: 5,
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.only(right: kSideDockClearance),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -389,12 +390,14 @@ class _Header extends StatelessWidget {
     required this.battery,
     required this.asleep,
     required this.onSleep,
+    this.onMenu,
   }) : super(key: const ValueKey('companion_header'));
 
   final String name;
   final int? battery;
   final bool asleep;
   final VoidCallback onSleep;
+  final VoidCallback? onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -405,6 +408,12 @@ class _Header extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         child: Row(
           children: [
+            if (onMenu != null)
+              IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onPressed: onMenu,
+              ),
             const Padding(
               padding: EdgeInsets.only(left: 6),
               child: MuseLogo(size: 36),

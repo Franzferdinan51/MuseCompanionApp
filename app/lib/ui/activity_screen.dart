@@ -23,7 +23,10 @@ import 'muse_theme.dart';
 /// Activity log screen: newest-first event list with kind icons and
 /// success/failure coloring.
 class ActivityScreen extends StatelessWidget {
-  const ActivityScreen({super.key});
+  const ActivityScreen({super.key, this.onMenu});
+
+  /// Opens the navigation drawer; null hides the menu button.
+  final VoidCallback? onMenu;
 
   IconData _icon(ActivityKind kind) {
     return switch (kind) {
@@ -61,6 +64,13 @@ class ActivityScreen extends StatelessWidget {
     final theme = Theme.of(context);
     return MusePage(
       appBar: AppBar(
+        leading: onMenu == null
+            ? null
+            : IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onPressed: onMenu,
+              ),
         title: const Text('Activity'),
         actions: [
           IconButton(

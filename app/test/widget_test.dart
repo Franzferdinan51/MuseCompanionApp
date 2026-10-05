@@ -66,11 +66,16 @@ void main() {
     expect(find.text('Muse'), findsOneWidget);
     expect(find.text('Waiting for character'), findsOneWidget);
     expect(find.text('Not paired'), findsOneWidget);
-    expect(find.byTooltip('Settings'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Settings'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    // Settings lives in the nav drawer now: open it and tap the row.
+    await tester.tap(find.byTooltip('Menu'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await tester.tap(find.byKey(const ValueKey('drawer_Settings')));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
     expect(find.text('Companion Settings'), findsOneWidget);
 
     // Stop the service inside the body: the binding verifies no timers

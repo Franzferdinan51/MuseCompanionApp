@@ -26,14 +26,26 @@ import 'scope.dart';
 /// Media gallery: photos as a thumbnail grid, voice notes as a playable
 /// list. Both come from the in-memory chat history.
 class MediaScreen extends StatelessWidget {
-  const MediaScreen({super.key});
+  const MediaScreen({super.key, this.onMenu});
+
+  /// Opens the navigation drawer; null hides the menu button.
+  final VoidCallback? onMenu;
 
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final theme = Theme.of(context);
     return MusePage(
-      appBar: AppBar(title: const Text('Media')),
+      appBar: AppBar(
+        leading: onMenu == null
+            ? null
+            : IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu),
+                onPressed: onMenu,
+              ),
+        title: const Text('Media'),
+      ),
       body: StreamBuilder<void>(
         stream: scope.chat.stream,
         builder: (context, _) {
