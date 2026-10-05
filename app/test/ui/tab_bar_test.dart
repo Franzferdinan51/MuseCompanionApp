@@ -116,7 +116,7 @@ void main() {
           matching: find.byType(Icon),
         ))
         .single;
-    expect(deviceIcon.icon, Icons.monitor_heart);
+    expect(deviceIcon.icon, Icons.phone_android);
     expect(deviceIcon.color, museBlue);
 
     // Tapping back to Home works.
