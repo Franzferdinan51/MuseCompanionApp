@@ -23,6 +23,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:muse_companion/app/approval_notifications.dart';
+import 'package:muse_companion/app/approval_service.dart';
 import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
@@ -64,6 +66,12 @@ Future<void> main() async {
   initLinkService();
 
   final settings = await SettingsStore.init();
+  // Approval plumbing (additive): notification fallback for approval
+  // requests while the app is backgrounded, and persisted "always allow"
+  // decisions. The foregrounded in-app dialog path is unchanged.
+  ApprovalService.instance.notificationSink = ApprovalNotifications.instance;
+  unawaited(ApprovalNotifications.instance.attach());
+  ApprovalService.instance.allowanceStore = settings.approvalAllowances();
   final identity = await PersistentIdentity.loadOrCreate(
     const FlutterSecureStorage(),
   );
