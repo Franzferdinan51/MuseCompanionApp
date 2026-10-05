@@ -52,6 +52,12 @@ dependencies:
   flutter_local_notifications: ^22.3.1
   # Receive shared text/images from other apps ("Share to Juno").
   receive_sharing_intent: ^1.8.0
+  # KaTeX math rendering ($...$ inline, $$...$$ block).
+  flutter_math_fork: ^0.7.4
+  # Mermaid diagrams: rendered to SVG in an offscreen WebView, shown with
+  # pinch-to-zoom (flutter_svg), no network needed (mermaid.min.js bundled).
+  webview_flutter: ^4.14.1
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -68,3 +74,6 @@ flutter:
     - assets/avatar/juno_idle.mp4
     - assets/avatar/juno_orb.mp4
     - assets/avatar/juno_talking.mp4
+    # Mermaid UMD bundle (MIT, https://github.com/mermaid-js/mermaid)
+    # for offline diagram rendering.
+    - assets/js/mermaid.min.js

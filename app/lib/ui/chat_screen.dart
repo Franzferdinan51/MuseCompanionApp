@@ -27,9 +27,6 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:markdown/markdown.dart' as md;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:muse_companion/src/gadget/chat_events.dart';
 import 'package:muse_companion/src/gadget/phone_actions.dart';
 
@@ -44,6 +41,7 @@ import '../app/share_intake.dart';
 import '../src/gadget/service.dart';
 import 'muse_theme.dart';
 import 'scope.dart';
+import 'markdown_builders.dart';
 import 'slash_autocomplete.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -1495,8 +1493,10 @@ class _Bubble extends StatelessWidget {
   }
 }
 
-/// Message text with markdown rendering: bold, italic, lists, links,
-/// and fenced code blocks with a copy button.
+/// Message text with rich markdown rendering: bold, italic, lists, links,
+/// fenced code blocks (collapsible, copyable, colored diffs, mermaid),
+/// sortable tables, tappable task lists, callouts and KaTeX math.
+/// Plain markdown renders exactly as before; the extras are additive.
 class _BubbleText extends StatelessWidget {
   const _BubbleText({
     required this.text,
@@ -1508,95 +1508,9 @@ class _BubbleText extends StatelessWidget {
   final Color color;
   final bool mine;
 
-  Future<void> _openLink(String? href) async {
-    if (href == null || href.isEmpty) return;
-    final uri = Uri.tryParse(href);
-    if (uri == null) return;
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // Link open is best-effort.
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final base = theme.textTheme.bodyMedium?.copyWith(color: color);
-    final sheet = MarkdownStyleSheet.fromTheme(theme).copyWith(
-      p: base,
-      h1: theme.textTheme.titleLarge?.copyWith(color: color),
-      h2: theme.textTheme.titleMedium?.copyWith(color: color),
-      h3: theme.textTheme.titleSmall?.copyWith(color: color),
-      em: base?.copyWith(fontStyle: FontStyle.italic),
-      strong: base?.copyWith(fontWeight: FontWeight.bold),
-      listBullet: base,
-      a: base?.copyWith(
-        color: mine ? Colors.white : theme.colorScheme.primary,
-        decoration: TextDecoration.underline,
-      ),
-      code: base?.copyWith(
-        fontFamily: 'monospace',
-        fontSize: 13,
-        backgroundColor: color.withValues(alpha: 0.12),
-      ),
-    );
-    return MarkdownBody(
-      data: text,
-      selectable: true,
-      styleSheet: sheet,
-      builders: {'pre': _CodeBlockBuilder(textColor: color)},
-      onTapLink: (text, href, title) => _openLink(href),
-    );
-  }
-}
-
-/// Fenced code block with a tap-to-copy button.
-class _CodeBlockBuilder extends MarkdownElementBuilder {
-  _CodeBlockBuilder({required this.textColor});
-
-  final Color textColor;
-
-  @override
-  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
-    final code = element.textContent;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
-      decoration: BoxDecoration(
-        color: textColor.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: GestureDetector(
-              onTap: () => Clipboard.setData(ClipboardData(text: code)),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  Icons.copy_outlined,
-                  size: 16,
-                  color: textColor.withValues(alpha: 0.7),
-                ),
-              ),
-            ),
-          ),
-          SelectableText(
-            code,
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 13,
-              height: 1.4,
-              color: textColor,
-            ),
-          ),
-        ],
-      ),
-    );
+    return RichMarkdown(text: text, color: color, mine: mine);
   }
 }
 
