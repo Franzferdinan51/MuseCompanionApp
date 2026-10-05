@@ -23,7 +23,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 /// Delivery state of one message.
-enum ChatStatus { sending, sent, failed }
+enum ChatStatus { sending, sent, failed, queued }
 
 /// Who wrote the bubble.
 enum ChatRole { user, assistant }
@@ -41,6 +41,9 @@ class ChatMessage {
     this.attachmentBytes,
     this.attachmentMime,
     this.attachmentName,
+    this.canvasDocId,
+    this.canvasTitle,
+    this.canvasUpdated = false,
   });
 
   final int id;
@@ -60,6 +63,17 @@ class ChatMessage {
   final Uint8List? attachmentBytes;
   final String? attachmentMime;
   final String? attachmentName;
+
+  /// Set when this message is a tappable canvas document card: the
+  /// document id to open on the Canvas screen.
+  final String? canvasDocId;
+
+  /// Title shown on the canvas card.
+  final String? canvasTitle;
+
+  /// True when the card represents an update to an existing document
+  /// (vs. a newly created one).
+  final bool canvasUpdated;
 
   /// True when this message carries an audio attachment.
   bool get hasAudio =>
@@ -152,6 +166,33 @@ class ChatHistory {
     }
   }
 
+  /// Post a tappable canvas document card as an assistant message. The
+  /// bubble renders the card; tapping opens the document on the Canvas
+  /// screen. [updated] marks an update to an existing document vs. a
+  /// fresh creation.
+  void addCanvasCard({
+    required String docId,
+    required String title,
+    bool updated = false,
+  }) {
+    _messages.add(
+      ChatMessage(
+        id: _nextId++,
+        text: updated
+            ? 'Updated canvas document: $title'
+            : 'Canvas document: $title',
+        sentAt: DateTime.now(),
+        status: ChatStatus.sent,
+        role: ChatRole.assistant,
+        canvasDocId: docId,
+        canvasTitle: title,
+        canvasUpdated: updated,
+      ),
+    );
+    _trim();
+    _emit();
+  }
+
   /// Mark [id] delivered.
   void markSent(int id) {
     final message = _find(id);
@@ -166,6 +207,16 @@ class ChatHistory {
     final message = _find(id);
     if (message == null) return;
     message.status = ChatStatus.failed;
+    message.error = error;
+    _emit();
+  }
+
+  /// Queue [id] for the offline outbox: the send failed and the
+  /// message waits in the outbox for the next flush. Keeps its place.
+  void markQueued(int id, String error) {
+    final message = _find(id);
+    if (message == null) return;
+    message.status = ChatStatus.queued;
     message.error = error;
     _emit();
   }
@@ -203,6 +254,9 @@ class ChatHistory {
             ? ChatStatus.sent
             : message.status,
         role: message.role,
+        canvasDocId: message.canvasDocId,
+        canvasTitle: message.canvasTitle,
+        canvasUpdated: message.canvasUpdated,
       ),
     );
     _trim();
@@ -219,9 +273,7 @@ class ChatHistory {
   List<ChatMessage> search(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
-    return _messages
-        .where((m) => m.text.toLowerCase().contains(q))
-        .toList();
+    return _messages.where((m) => m.text.toLowerCase().contains(q)).toList();
   }
 
   /// Fold one `/chat/subscribe` event into the history.

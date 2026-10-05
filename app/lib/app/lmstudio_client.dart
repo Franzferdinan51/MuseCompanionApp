@@ -25,7 +25,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:langchain/langchain.dart';
 import 'package:langchain_openai/langchain_openai.dart';
 
+import 'agent_memory.dart';
+import 'agent_status.dart';
 import 'approval_service.dart';
+import 'canvas_store.dart';
+import 'event_bus.dart';
 import 'lmstudio_tools.dart';
 import 'phone_tool_adapter.dart';
 import 'systemone_client.dart';
@@ -81,11 +85,18 @@ class LocalAiService {
     this.systemOneUrl = 'http://100.68.208.113:8765',
     this.modelRole = 'agent',
     this.approver,
+    this.onCanvasDocument,
   });
 
   /// Decides whether a flagged tool call may run. Defaults to the
   /// [ApprovalService] popup; tests inject a fake.
   final Future<bool> Function(String title, String body)? approver;
+
+  /// Fired when the agent creates or updates a canvas document during a
+  /// task, so the UI can surface a tappable card in chat.
+  /// (docId, title, updated)
+  final void Function(String docId, String title, bool updated)?
+  onCanvasDocument;
 
   /// e.g. http://100.68.208.113:1234 (no trailing slash).
   final String baseUrl;
@@ -280,15 +291,28 @@ class LocalAiService {
       usbStorageEnabled: usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled,
     );
+    // On-device long-term memory: additive and fail-open. The agent works
+    // fine with empty memory. Memory contents never leave the phone: they
+    // are only injected into this local system prompt and exposed through
+    // the memory_remember / memory_recall tools below.
+    final memory = AgentMemory.instance;
+    await memory.init();
+    tools = [...tools, ...memoryLmTools(memory)];
     if (systemOneEnabled) {
       tools = await _filterLmToolsViaSystemOne(instruction, tools);
     }
 
     var toolCalls = 0;
+    // The canvas store is best-effort here: when the documents directory
+    // is unavailable the canvas tools stay registered but report an
+    // error instead of running (see LmToolContext.canvas).
+    final canvas = await CanvasStore.instance();
     final ctx = LmToolContext(
       phone: phone,
       cameraFacing: cameraFacing,
       speakAllowed: speakAllowed,
+      canvas: canvas,
+      onCanvasDocument: onCanvasDocument,
     );
     final lcTools = phoneToolsToLangChain(
       tools: tools,
@@ -321,15 +345,36 @@ class LocalAiService {
               'You can control the phone by calling the provided functions. '
               'Call functions when the user asks you to do something on the '
               'phone; otherwise just answer. Keep spoken-style answers short.\n'
-              '${_capabilityGuide()}',
+              '${_capabilityGuide()}${memory.promptContext()}',
         ),
       ),
     );
     final executor = AgentExecutor(agent: agent, maxIterations: _maxRounds);
+    // Status + event bus: additive, fire-and-forget. The agent path must
+    // not depend on this.
+    AgentStatusBus.instance.working('Thinking...');
+    EventBus.instance.emit(
+      AppEventKind.status,
+      payload: {'text': 'Thinking...', 'working': true},
+    );
     try {
       final text = (await executor.run(instruction)).trim();
+      AgentStatusBus.instance.ready();
+      EventBus.instance.emit(
+        AppEventKind.reply,
+        payload: {'text': text.length <= 200 ? text : '${text.substring(0, 197)}...'},
+      );
+      EventBus.instance.emit(
+        AppEventKind.status,
+        payload: {'text': 'Ready', 'working': false},
+      );
       return LocalAiResult(text: text, toolCalls: toolCalls);
     } catch (e) {
+      AgentStatusBus.instance.ready();
+      EventBus.instance.emit(
+        AppEventKind.error,
+        payload: {'message': _friendlyError(e)},
+      );
       return LocalAiResult(
         text: '',
         toolCalls: toolCalls,
@@ -360,6 +405,12 @@ class LocalAiService {
     // filtered out take_photo for "take a photo")
     final gated = {for (final t in allTools) if (t.requiresApproval) t.name};
     picked.addAll(gated);
+    // Never filter out the memory tools either: long-term memory is
+    // session infrastructure, not a task-specific capability. Dropping
+    // memory_recall would blind the agent to everything it remembered.
+    picked.addAll(
+      [for (final t in allTools) if (t.name.startsWith('memory_')) t.name],
+    );
     return [for (final t in allTools) if (picked.contains(t.name)) t];
   }
 
@@ -377,6 +428,10 @@ class LocalAiService {
       'show a notification with show_notification',
       'open URLs and apps with open_url and launch_app',
       'vibrate, read/set the clipboard, toggle the flashlight',
+      'remember lasting facts across sessions with memory_remember and '
+          'look them up with memory_recall',
+      'create and edit shared canvas documents with canvas_create, '
+          'canvas_update and canvas_list',
     ];
     if (usbStorageEnabled) {
       caps.add(

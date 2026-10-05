@@ -23,12 +23,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:muse_companion/app/approval_notifications.dart';
+import 'package:muse_companion/app/approval_service.dart';
 import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
 import 'package:muse_companion/app/chat.dart';
 import 'package:muse_companion/app/companion_platform.dart';
 import 'package:muse_companion/app/foreground.dart';
+import 'package:muse_companion/app/live_mode.dart';
 import 'package:muse_companion/app/model.dart';
 import 'package:muse_companion/app/phone_bridge.dart';
 import 'package:muse_companion/app/storage.dart';
@@ -64,6 +67,12 @@ Future<void> main() async {
   initLinkService();
 
   final settings = await SettingsStore.init();
+  // Approval plumbing (additive): notification fallback for approval
+  // requests while the app is backgrounded, and persisted "always allow"
+  // decisions. The foregrounded in-app dialog path is unchanged.
+  ApprovalService.instance.notificationSink = ApprovalNotifications.instance;
+  unawaited(ApprovalNotifications.instance.attach());
+  ApprovalService.instance.allowanceStore = settings.approvalAllowances();
   final identity = await PersistentIdentity.loadOrCreate(
     const FlutterSecureStorage(),
   );
@@ -236,6 +245,11 @@ Future<void> main() async {
     if (caption.isNotEmpty) presentation.applyStatus(caption);
   };
   chat.onAssistantDone = (text) {
+    // A live (hands-free) session owns its turns: it shows the reply text,
+    // speaks it itself, then re-opens the mic. Letting the normal path run
+    // too would double-speak and fight the loop.
+    final live = LiveModeController.active;
+    if (live != null && live.deliverReply(text)) return;
     final image = httpsImageUrlInReply(text);
     if (image != null) {
       final host = Uri.tryParse(image)?.host;

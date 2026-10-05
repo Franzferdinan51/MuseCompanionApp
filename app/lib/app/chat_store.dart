@@ -16,6 +16,9 @@
 // SharedPreferences as JSON, restores on launch. Text only — attachment
 // bytes are not persisted (voice notes/photos stay in-session). The user
 // can clear history from the chat app bar.
+//
+// Pin/archive flags live here too: per-conversation metadata persisted
+// under a separate key so clearing message history does not reset them.
 
 import 'dart:convert';
 
@@ -33,6 +36,13 @@ class ChatStore {
   static const String _key = 'chat_history_v1';
   static const int _maxStored = 200;
 
+  /// Pin/archive flags for the conversation. Separate key so clearing
+  /// message history does not reset them.
+  static const String _metaKey = 'chat_meta_v1';
+
+  /// In-memory pin/archive flags; populated by [restoreMeta].
+  ChatMeta meta = const ChatMeta();
+
   /// Serialize one message. Returns null when the message should not be
   /// stored (e.g. still streaming).
   Map<String, Object?>? _toJson(ChatMessage m) {
@@ -44,6 +54,9 @@ class ChatStore {
       'role': m.role.name,
       'hasAudio': m.hasAudio,
       'hasImage': m.hasImage,
+      if (m.canvasDocId != null) 'canvasDocId': m.canvasDocId,
+      if (m.canvasTitle != null) 'canvasTitle': m.canvasTitle,
+      if (m.canvasUpdated) 'canvasUpdated': true,
     };
   }
 
@@ -55,6 +68,8 @@ class ChatStore {
     if (at == null) return null;
     final statusName = json['status'];
     final roleName = json['role'];
+    final canvasDocId = json['canvasDocId'];
+    final canvasTitle = json['canvasTitle'];
     return ChatMessage(
       id: -1, // Reassigned on restore.
       text: text,
@@ -67,6 +82,9 @@ class ChatStore {
         (v) => v.name == roleName,
         orElse: () => ChatRole.user,
       ),
+      canvasDocId: canvasDocId is String ? canvasDocId : null,
+      canvasTitle: canvasTitle is String ? canvasTitle : null,
+      canvasUpdated: json['canvasUpdated'] == true,
     );
   }
 
@@ -118,4 +136,68 @@ class ChatStore {
       await prefs.remove(_key);
     } catch (_) {}
   }
+
+  /// Load persisted pin/archive flags into [meta].
+  Future<void> restoreMeta() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_metaKey);
+      if (raw == null || raw.isEmpty) {
+        meta = const ChatMeta();
+        return;
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, Object?>) {
+        meta = ChatMeta.fromJson(decoded);
+      }
+    } catch (_) {
+      meta = const ChatMeta();
+    }
+  }
+
+  /// Persist [pinned] and update [meta].
+  Future<void> setPinned(bool pinned) async {
+    meta = meta.copyWith(pinned: pinned);
+    await _saveMeta();
+  }
+
+  /// Persist [archived] and update [meta].
+  Future<void> setArchived(bool archived) async {
+    meta = meta.copyWith(archived: archived);
+    await _saveMeta();
+  }
+
+  Future<void> _saveMeta() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_metaKey, jsonEncode(meta.toJson()));
+    } catch (_) {
+      // Persistence is best-effort; the chat works without it.
+    }
+  }
+}
+
+/// Pin/archive flags for one conversation.
+///
+/// Attribution: pin/archive per conversation is adapted from the
+/// hermes-mobile-app session list (MIT, omarqaterge/hermes-mobile-app —
+/// `web/src/components/SessionList.tsx`, `gateway.ts` `setArchived`).
+class ChatMeta {
+  const ChatMeta({this.pinned = false, this.archived = false});
+
+  final bool pinned;
+  final bool archived;
+
+  ChatMeta copyWith({bool? pinned, bool? archived}) => ChatMeta(
+    pinned: pinned ?? this.pinned,
+    archived: archived ?? this.archived,
+  );
+
+  Map<String, Object?> toJson() =>
+      <String, Object?>{'pinned': pinned, 'archived': archived};
+
+  factory ChatMeta.fromJson(Map<String, Object?> json) => ChatMeta(
+    pinned: json['pinned'] == true,
+    archived: json['archived'] == true,
+  );
 }

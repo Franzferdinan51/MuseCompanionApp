@@ -27,6 +27,9 @@ const Map<String, List<String>> _toolConcepts = {
   'usb_list_volumes': ['usb', 'storage', 'drive'],
   'usb_list_files': ['usb', 'storage', 'file', 'drive'],
   'usb_serial_list': ['usb', 'serial'],
+  'canvas_create': ['document', 'canvas', 'note', 'write', 'page', 'report'],
+  'canvas_update': ['document', 'canvas', 'note', 'edit', 'page', 'report'],
+  'canvas_list': ['document', 'canvas', 'note', 'list', 'page'],
 };
 
 /// Minimum relevance for a tool to be included on its own merit.
