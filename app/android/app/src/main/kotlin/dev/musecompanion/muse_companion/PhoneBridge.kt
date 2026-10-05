@@ -114,6 +114,7 @@ class PhoneBridge(private val activity: MainActivity) {
                         result.success(null)
                     }
                     "stopRecording" -> result.success(stopRecording())
+                    "recordingAmplitude" -> result.success(recordingAmplitude())
                     "recordWav" -> {
                         val seconds = call.argument<Int>("seconds") ?: 5
                         io.post {
@@ -543,6 +544,30 @@ class PhoneBridge(private val activity: MainActivity) {
         }
         reader = thread
         thread.start()
+    }
+
+    /** RMS amplitude (0..1) of the most recent ~400ms of PCM, or 0 when
+     * not recording. Used for the in-chat recording waveform. */
+    private fun recordingAmplitude(): Double {
+        if (!recording) return 0.0
+        val out = pcm ?: return 0.0
+        val data: ByteArray = synchronized(out) { out.toByteArray() }
+        if (data.size < 2) return 0.0
+        val windowBytes = 12800 // ~400ms at 16kHz 16-bit mono
+        val start = maxOf(0, data.size - windowBytes)
+        var sum = 0.0
+        var count = 0
+        var i = start
+        while (i + 1 < data.size) {
+            val sample = (((data[i + 1].toInt() shl 8) or
+                (data[i].toInt() and 0xFF)).toShort()).toInt()
+            sum += (sample * sample).toDouble()
+            count++
+            i += 2
+        }
+        if (count == 0) return 0.0
+        val rms = kotlin.math.sqrt(sum / count) / 32768.0
+        return rms.coerceIn(0.0, 1.0)
     }
 
     private fun stopRecording(): ByteArray {

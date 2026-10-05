@@ -177,6 +177,18 @@ class PhoneBridge implements PhoneActions {
     return bytes;
   }
 
+  /// RMS mic amplitude (0..1) while recording, for the waveform UI.
+  /// Returns 0 when not recording or on any error.
+  Future<double> recordingAmplitude() async {
+    try {
+      final value = await _call<double>('recordingAmplitude');
+      if (value == null) return 0.0;
+      return value.clamp(0.0, 1.0);
+    } catch (_) {
+      return 0.0;
+    }
+  }
+
   @override
   Future<void> speak(String text) async {
     if (!speakEnabled) return;

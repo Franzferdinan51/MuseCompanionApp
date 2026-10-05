@@ -611,6 +611,11 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
+          if (_listening)
+            _RecordingWaveform(
+              amplitude: () =>
+                  AppScope.of(context).phone.recordingAmplitude(),
+            ),
           _Composer(
             controller: _controller,
             ready: _ready,
@@ -1340,6 +1345,88 @@ class _QuickReplies extends StatelessWidget {
       avatar: Icon(icon, size: 16, color: theme.colorScheme.primary),
       label: Text(label),
       onPressed: onTap,
+    );
+  }
+}
+
+/// Live mic-level waveform shown while hold-to-talk is active.
+/// Polls the native recording amplitude ~10x/sec and renders bars.
+class _RecordingWaveform extends StatefulWidget {
+  const _RecordingWaveform({required this.amplitude});
+
+  /// Called to sample the current mic amplitude (0..1).
+  final Future<double> Function() amplitude;
+
+  @override
+  State<_RecordingWaveform> createState() => _RecordingWaveformState();
+}
+
+class _RecordingWaveformState extends State<_RecordingWaveform> {
+  static const int _bars = 24;
+  final List<double> _levels = List.filled(_bars, 0.0);
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) async {
+      final level = await widget.amplitude();
+      if (!mounted) return;
+      setState(() {
+        _levels.removeAt(0);
+        // Amplify for visibility; real silence stays near zero.
+        _levels.add((level * 2.5).clamp(0.0, 1.0));
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.mic,
+            size: 18,
+            color: theme.colorScheme.error,
+          ),
+          const SizedBox(width: 8),
+          ..._levels.map(
+            (level) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1.5),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 90),
+                width: 3,
+                height: 4 + level * 28,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.error.withValues(
+                    alpha: 0.35 + 0.65 * level,
+                  ),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Release to send',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
