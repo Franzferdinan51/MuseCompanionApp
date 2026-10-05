@@ -34,6 +34,7 @@ import '../app/chat.dart';
 import '../app/chat_store.dart';
 import '../app/lmstudio_client.dart';
 import '../src/gadget/service.dart';
+import 'live_screen.dart';
 import 'muse_theme.dart';
 import 'scope.dart';
 
@@ -438,6 +439,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Hands-free live conversation: pushes the live session screen, which
+  /// owns the mic/TTS loop until the user stops it. Disabled while a
+  /// hold-to-talk recording is in flight so the two never share the mic.
+  void _openLiveMode() {
+    if (_listening || !_ready) return;
+    final scope = AppScope.of(context);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => LiveScreen(
+          phone: scope.phone,
+          chat: scope.chat,
+          service: scope.service,
+        ),
+      ),
+    );
+  }
+
   Future<void> _capture() async {
     if (_capturing || !_ready) return;
     setState(() => _capturing = true);
@@ -627,6 +646,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onListenEnd: _stopVoice,
             onCapture: _capture,
             onLocalAi: _askLocalAi,
+            onLiveMode: _openLiveMode,
           ),
         ],
       ),
@@ -1443,6 +1463,7 @@ class _Composer extends StatelessWidget {
     required this.onListenEnd,
     required this.onCapture,
     required this.onLocalAi,
+    required this.onLiveMode,
   });
 
   final TextEditingController controller;
@@ -1455,6 +1476,7 @@ class _Composer extends StatelessWidget {
   final VoidCallback onListenEnd;
   final VoidCallback onCapture;
   final Future<void> Function() onLocalAi;
+  final VoidCallback onLiveMode;
 
   @override
   Widget build(BuildContext context) {
@@ -1500,6 +1522,11 @@ class _Composer extends StatelessWidget {
                 color: listening ? theme.colorScheme.error : null,
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Live conversation (hands-free)',
+            onPressed: ready && !listening ? onLiveMode : null,
+            icon: const Icon(Icons.bolt_outlined),
           ),
           Expanded(
             child: TextField(

@@ -29,6 +29,7 @@ import 'package:muse_companion/app/captions.dart';
 import 'package:muse_companion/app/chat.dart';
 import 'package:muse_companion/app/companion_platform.dart';
 import 'package:muse_companion/app/foreground.dart';
+import 'package:muse_companion/app/live_mode.dart';
 import 'package:muse_companion/app/model.dart';
 import 'package:muse_companion/app/phone_bridge.dart';
 import 'package:muse_companion/app/storage.dart';
@@ -236,6 +237,11 @@ Future<void> main() async {
     if (caption.isNotEmpty) presentation.applyStatus(caption);
   };
   chat.onAssistantDone = (text) {
+    // A live (hands-free) session owns its turns: it shows the reply text,
+    // speaks it itself, then re-opens the mic. Letting the normal path run
+    // too would double-speak and fight the loop.
+    final live = LiveModeController.active;
+    if (live != null && live.deliverReply(text)) return;
     final image = httpsImageUrlInReply(text);
     if (image != null) {
       final host = Uri.tryParse(image)?.host;

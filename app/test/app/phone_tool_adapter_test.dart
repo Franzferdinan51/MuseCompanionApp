@@ -1,7 +1,6 @@
 // Tests for the LangChain phone-tool adapter.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:langchain/langchain.dart';
 import 'package:muse_companion/app/lmstudio_tools.dart';
 import 'package:muse_companion/app/phone_tool_adapter.dart';
 import 'package:muse_companion/src/gadget/phone_actions.dart';
