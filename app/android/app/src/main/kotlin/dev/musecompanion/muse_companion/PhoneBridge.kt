@@ -60,6 +60,7 @@ import android.view.Surface
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -85,6 +86,13 @@ class PhoneBridge(private val activity: MainActivity) {
     private var pcm: ByteArrayOutputStream? = null
     private var reader: Thread? = null
     @Volatile private var recording = false
+    // Wake-word streaming capture (openWakeWord): 16kHz mono PCM frames
+    // pushed to Dart over an EventChannel. Separate from the voice-note
+    // recorder above — the two never run at the same time.
+    private var wakeWordRecorder: AudioRecord? = null
+    private var wakeWordThread: Thread? = null
+    @Volatile private var wakeWordStreaming = false
+    private var wakeWordSink: EventChannel.EventSink? = null
     private val usbOtg = UsbOtgManager(context).apply { start() }
     private var usbStorageEnabled = true
     private var usbSerialEnabled = true
@@ -104,6 +112,18 @@ class PhoneBridge(private val activity: MainActivity) {
 
     fun register(messenger: BinaryMessenger) {
         startTts()
+        EventChannel(messenger, "$CHANNEL/wake_word_audio").setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(args: Any?, sink: EventChannel.EventSink) {
+                    wakeWordSink = sink
+                    startWakeWordCapture()
+                }
+                override fun onCancel(args: Any?) {
+                    stopWakeWordCapture()
+                    wakeWordSink = null
+                }
+            }
+        )
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
@@ -509,6 +529,76 @@ class PhoneBridge(private val activity: MainActivity) {
         if (rotation == 0f) return bitmap
         val matrix = Matrix().apply { postRotate(rotation) }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    // Wake-word audio: streams 1280-sample (80ms) 16kHz int16 PCM frames
+    // to Dart for openWakeWord inference. Runs on its own thread; the
+    // voice-note recorder must be stopped first (Dart pauses wake word
+    // while recording).
+    private fun startWakeWordCapture() {
+        if (wakeWordStreaming) return
+        if (recording) return // mic is busy with a voice note
+        val rate = 16000
+        val min = AudioRecord.getMinBufferSize(
+            rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (min <= 0) {
+            main.post { wakeWordSink?.error("audio", "microphone unavailable", null) }
+            return
+        }
+        val record = AudioRecord(
+            MediaRecorder.AudioSource.MIC,
+            rate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            min * 4,
+        )
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            main.post { wakeWordSink?.error("audio", "microphone did not start", null) }
+            return
+        }
+        wakeWordRecorder = record
+        wakeWordStreaming = true
+        record.startRecording()
+        val thread = Thread {
+            val frameSamples = 1280
+            val shorts = ShortArray(frameSamples)
+            val bytes = ByteArray(frameSamples * 2)
+            while (wakeWordStreaming) {
+                val n = record.read(shorts, 0, frameSamples)
+                if (n > 0) {
+                    // Little-endian int16 -> bytes.
+                    for (i in 0 until n) {
+                        val v = shorts[i].toInt()
+                        bytes[i * 2] = (v and 0xFF).toByte()
+                        bytes[i * 2 + 1] = ((v shr 8) and 0xFF).toByte()
+                    }
+                    val copy = bytes.copyOf(n * 2)
+                    main.post { wakeWordSink?.success(copy) }
+                } else if (n < 0) {
+                    break // read error; stop the stream
+                }
+            }
+        }
+        wakeWordThread = thread
+        thread.start()
+    }
+
+    private fun stopWakeWordCapture() {
+        wakeWordStreaming = false
+        try {
+            wakeWordThread?.join(500)
+        } catch (_: InterruptedException) {
+        }
+        wakeWordThread = null
+        val record = wakeWordRecorder
+        wakeWordRecorder = null
+        try {
+            record?.stop()
+        } catch (_: Exception) {
+        }
+        record?.release()
     }
 
     private fun startRecording() {

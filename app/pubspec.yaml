@@ -23,6 +23,8 @@ dependencies:
   path_provider: ^2.1.5
   # Runtime permission requests (Bluetooth, notifications).
   permission_handler: 11.4.0
+  # On-device wake word detection (openWakeWord TFLite models).
+  tflite_flutter: ^0.11.0
   # Battery level for the device.health command.
   battery_plus: ^6.2.1
   # Pre-built agent framework: tool-calling agent loop for the
@@ -57,3 +59,6 @@ flutter:
     - assets/avatar/juno_idle.mp4
     - assets/avatar/juno_orb.mp4
     - assets/avatar/juno_talking.mp4
+    - assets/wake_word/melspectrogram.tflite
+    - assets/wake_word/embedding_model.tflite
+    - assets/wake_word/hey_jarvis_v0.1.tflite

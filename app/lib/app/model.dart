@@ -106,6 +106,9 @@ class CompanionSettings {
     this.adbInfoSharingEnabled = false,
     this.usbStorageEnabled = true,
     this.usbSerialEnabled = true,
+    this.wakeWordEnabled = false,
+    this.wakeWordModel = 'hey_jarvis',
+    this.wakeWordSensitivity = 0.5,
     this.lmStudioEnabled = false,
     this.lmStudioUrl = 'http://100.68.208.113:1234',
     this.lmStudioModel = '',
@@ -163,6 +166,18 @@ class CompanionSettings {
   /// user opts out.
   final bool usbSerialEnabled;
 
+  /// Listen for the wake word ("Hey Jarvis" stand-in until a "Hey Muse"
+  /// model is trained) on the companion screen. Off by default; costs
+  /// extra battery when on.
+  final bool wakeWordEnabled;
+
+  /// Which bundled openWakeWord model to listen for (e.g. 'hey_jarvis').
+  final String wakeWordModel;
+
+  /// openWakeWord detection sensitivity, 0.0-1.0. Higher catches more but
+  /// false-positives more.
+  final double wakeWordSensitivity;
+
   /// Let a local AI model (via LM Studio) control the phone. Off until the
   /// user opts in.
   final bool lmStudioEnabled;
@@ -203,6 +218,9 @@ class CompanionSettings {
     bool? adbInfoSharingEnabled,
     bool? usbStorageEnabled,
     bool? usbSerialEnabled,
+    bool? wakeWordEnabled,
+    String? wakeWordModel,
+    double? wakeWordSensitivity,
     bool? lmStudioEnabled,
     String? lmStudioUrl,
     String? lmStudioModel,
@@ -227,6 +245,10 @@ class CompanionSettings {
           adbInfoSharingEnabled ?? this.adbInfoSharingEnabled,
       usbStorageEnabled: usbStorageEnabled ?? this.usbStorageEnabled,
       usbSerialEnabled: usbSerialEnabled ?? this.usbSerialEnabled,
+      wakeWordEnabled: wakeWordEnabled ?? this.wakeWordEnabled,
+      wakeWordModel: wakeWordModel ?? this.wakeWordModel,
+      wakeWordSensitivity:
+          wakeWordSensitivity ?? this.wakeWordSensitivity,
       lmStudioEnabled: lmStudioEnabled ?? this.lmStudioEnabled,
       lmStudioUrl: lmStudioUrl ?? this.lmStudioUrl,
       lmStudioModel: lmStudioModel ?? this.lmStudioModel,
@@ -279,6 +301,11 @@ class CompanionSettings {
       usbSerialEnabled: map['usb_serial_enabled'] is bool
           ? map['usb_serial_enabled']! as bool
           : true,
+      wakeWordEnabled: map['wake_word_enabled'] == true,
+      wakeWordModel: map['wake_word_model'] is String
+          ? map['wake_word_model']! as String
+          : 'hey_jarvis',
+      wakeWordSensitivity: _wakeSensitivity(map['wake_word_sensitivity']),
       lmStudioEnabled: map['lm_studio_enabled'] == true,
       lmStudioUrl: _lmStudioUrl(map['lm_studio_url']),
       lmStudioModel: _lmStudioModel(map['lm_studio_model']),
@@ -293,6 +320,11 @@ class CompanionSettings {
       systemOneEnabled: map['system_one_enabled'] == true,
       systemOneUrl: _systemOneUrl(map['system_one_url']),
     );
+  }
+
+  static double _wakeSensitivity(Object? value) {
+    final v = value is num ? value.toDouble() : 0.5;
+    return v.clamp(0.0, 1.0);
   }
 
   static String _cameraFacing(Object? value) =>

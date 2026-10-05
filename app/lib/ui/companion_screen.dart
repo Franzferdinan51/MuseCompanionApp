@@ -28,6 +28,7 @@ import '../app/avatar_motion.dart';
 import '../app/captions.dart';
 import '../app/model.dart';
 import '../app/pixel_avatar.dart';
+import '../app/wake_word.dart';
 import '../src/gadget/chat_events.dart';
 import '../src/gadget/phone_actions.dart';
 import '../src/gadget/service.dart';
@@ -382,18 +383,124 @@ class _Character extends StatefulWidget {
   State<_Character> createState() => _CharacterState();
 }
 
-class _CharacterState extends State<_Character> {
+class _CharacterState extends State<_Character> with WidgetsBindingObserver {
   bool _holding = false;
   bool _pointerDown = false;
   int _bounce = 0;
   int _pets = 0;
   DateTime? _listenStarted;
   Timer? _arm;
+  WakeWordService? _wakeWord;
+  StreamSubscription<void>? _wakeWordSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Backgrounded / screen off: stop the mic, stop the battery drain.
+    // Foreground companion screen is the only place detection runs.
+    if (!mounted) return;
+    if (state == AppLifecycleState.resumed) {
+      _syncWakeWord();
+    } else {
+      _wakeWord?.pause();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scope = AppScope.of(context);
+    _wakeWordSub?.cancel();
+    _wakeWordSub = scope.presentation.stream.listen((_) {
+      if (mounted) _syncWakeWord();
+    });
+    _syncWakeWord();
+  }
+
+  @override
+  void didUpdateWidget(_Character oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.asleep != widget.asleep) _syncWakeWord();
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _wakeWordSub?.cancel();
+    _wakeWord?.dispose();
     _arm?.cancel();
     super.dispose();
+  }
+
+  /// Keep openWakeWord in step with the wake-word settings. Idempotent.
+  Future<void> _syncWakeWord() async {
+    if (!mounted) return;
+    final scope = AppScope.of(context);
+    final settings = scope.presentation.settings;
+    _wakeWord ??= WakeWordService(onDetected: _onWakeWord);
+    await _wakeWord!.sync(
+      enabled: settings.wakeWordEnabled && !widget.asleep,
+      sensitivity: settings.wakeWordSensitivity,
+    );
+  }
+
+  /// Wake word was heard: barge in on any speech, then record a timed
+  /// voice note and post it — the same pipeline as voice.listen.
+  Future<void> _onWakeWord() async {
+    if (!mounted) return;
+    final scope = AppScope.of(context);
+    if (scope.presentation.pose == AvatarPose.speaking) {
+      await stopSpeaking(scope.phone, scope.presentation);
+      if (!mounted) return;
+    }
+    // The mic can't be shared: pause detection while we record.
+    await _wakeWord?.pause();
+    scope.presentation.applyPose(AvatarPose.listening);
+    scope.presentation.applyStatus('Listening…');
+    try {
+      if (!scope.service.isRegistered) {
+        _needMuse();
+        return;
+      }
+      // 10s gives time for a full spoken command after the keyword.
+      final wav = await scope.phone.recordWav(10);
+      if (!mounted) return;
+      final id = scope.chat.addSending('Voice note');
+      final result = await scope.service.sendChat('🎤 Voice note', null, [
+        ChatAttachment(
+          mimeType: 'audio/wav',
+          filename: 'voice_note.wav',
+          bytes: wav,
+        ),
+      ]);
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        scope.chat.markSent(id);
+      } else {
+        final error = result['error'];
+        scope.chat.markFailed(
+          id,
+          error is String && error.isNotEmpty ? error : 'send failed',
+        );
+      }
+    } on PhoneActionException catch (e) {
+      if (!mounted) return;
+      scope.presentation.applyPose(AvatarPose.idle);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      scope.presentation.applyPose(AvatarPose.idle);
+    } finally {
+      if (mounted) scope.presentation.applyPose(AvatarPose.idle);
+      await _wakeWord?.resume();
+    }
   }
 
   void _needMuse() {
