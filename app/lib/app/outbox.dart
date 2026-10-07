@@ -60,16 +60,23 @@ class OutboxEntry {
     'enqueuedAt': enqueuedAt.toIso8601String(),
   };
 
-  factory OutboxEntry.fromJson(Map<String, dynamic> json) => OutboxEntry(
-    id: (json['id'] as num?)?.toInt() ?? 0,
-    text: (json['text'] as String?) ?? '',
-    attachmentBase64: json['attachmentBase64'] as String?,
-    attachmentMime: json['attachmentMime'] as String?,
-    attachmentName: json['attachmentName'] as String?,
-    enqueuedAt:
-        DateTime.tryParse(json['enqueuedAt'] as String? ?? '') ??
-        DateTime.fromMillisecondsSinceEpoch(0),
-  );
+  factory OutboxEntry.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id'];
+    final rawDate = json['enqueuedAt'];
+    String? asString(Object? value) => value is String ? value : null;
+    return OutboxEntry(
+      id: rawId is num ? rawId.toInt() : 0,
+      text: asString(json['text']) ?? '',
+      attachmentBase64: asString(json['attachmentBase64']),
+      attachmentMime: asString(json['attachmentMime']),
+      attachmentName: asString(json['attachmentName']),
+      enqueuedAt:
+          rawDate is String
+              ? DateTime.tryParse(rawDate) ??
+                  DateTime.fromMillisecondsSinceEpoch(0)
+              : DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
 }
 
 /// Persisted FIFO of unsent chat messages. Single shared instance.

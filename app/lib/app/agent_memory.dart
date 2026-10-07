@@ -136,7 +136,14 @@ class AgentMemory extends ChangeNotifier {
   }
 
   /// Load from disk. Idempotent; safe to call before every use.
-  Future<void> init() => _serial(() async {
+  ///
+  /// Never calls [_serial] itself: [remember], [forget], and [clear] run
+  /// inside their own serial op and await [_initLocked] directly. Routing
+  /// those through [init] would chain the loader behind the running op
+  /// and deadlock when nothing initialized the store first.
+  Future<void> init() => _serial(_initLocked);
+
+  Future<void> _initLocked() async {
     if (_loaded) return;
     _loaded = true;
     final file = await _file();
@@ -162,7 +169,7 @@ class AgentMemory extends ChangeNotifier {
       } catch (_) {}
       _entries.clear();
     }
-  });
+  }
 
   /// Normalize a key: trim + lowercase so agent lookups are stable.
   static String normalizeKey(String key) => key.trim().toLowerCase();
@@ -170,7 +177,7 @@ class AgentMemory extends ChangeNotifier {
   /// Store [value] under [key], recording the old -> new diff.
   Future<void> remember(String key, String value, {String source = 'agent'}) =>
       _serial(() async {
-        await init();
+        await _initLocked();
         final nkey = normalizeKey(key);
         if (nkey.isEmpty) throw ArgumentError('memory key must not be empty');
         final nvalue = value.length > _maxValueLength
@@ -226,7 +233,7 @@ class AgentMemory extends ChangeNotifier {
 
   /// Forget [key]. Returns true when something was removed.
   Future<bool> forget(String key) => _serial(() async {
-    await init();
+    await _initLocked();
     final removed = _entries.remove(normalizeKey(key)) != null;
     if (removed) {
       await _persist();
@@ -238,7 +245,7 @@ class AgentMemory extends ChangeNotifier {
   /// Forget everything. The file is rewritten empty (not deleted) so a
   /// later load stays well-defined.
   Future<void> clear() => _serial(() async {
-    await init();
+    await _initLocked();
     _entries.clear();
     await _persist();
     notifyListeners();
