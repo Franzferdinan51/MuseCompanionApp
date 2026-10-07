@@ -65,9 +65,9 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
   final t = seconds;
   switch (pose) {
     case AvatarPose.listening:
-      // Lean in attentively - VERY visible
+      // Lean in attentively; bob matches the pixel-screen timing.
       return AvatarMotion(
-        bob: math.sin(t * 3.5) * 3.0,
+        bob: math.sin(t * 3) * 0.6,
         lean: math.sin(t * 2) * 2.0,
         scale: 1 + 0.08 * math.sin(t * 2.5),
         rings: true,
@@ -113,9 +113,9 @@ AvatarMotion avatarMotion(AvatarPose pose, double seconds, {double level = 0}) {
         ringPhase: 0,
       );
     case AvatarPose.idle:
-      // Visible sway
+      // Gentle sway peaking at one pixel-unit.
       return AvatarMotion(
-        bob: math.sin(t * 1.8) * 2.5,
+        bob: math.sin(t * 1.8) * 1.0,
         lean: math.sin(t * 0.9) * 2.0,
         scale: 1 + 0.05 * math.sin(t * 1.2),
         rings: false,

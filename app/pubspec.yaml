@@ -41,6 +41,8 @@ dependencies:
   flutter_foreground_task: ^10.0.0
   # 3D avatar rendering (GLB models from the Muse).
   model_viewer_plus: ^1.10.0
+  # Real-time 3D avatar stage (GLB with animation clips).
+  flutter_3d_controller: ^2.3.0
   # Video-clip avatar animation.
   video_player: ^2.9.0
   # OpenRouter TTS playback (plays synthesized MP3 bytes in memory).
@@ -81,6 +83,7 @@ flutter:
     - assets/avatar/juno_idle.mp4
     - assets/avatar/juno_orb.mp4
     - assets/avatar/juno_talking.mp4
+    - assets/avatar/duck.glb
     # Mermaid UMD bundle (MIT, https://github.com/mermaid-js/mermaid)
     # for offline diagram rendering.
     - assets/js/mermaid.min.js

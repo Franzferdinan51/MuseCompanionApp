@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// The primary companion surface: name + battery header, the pixel avatar
+// The primary companion surface: name + battery header, the avatar
 // inside a fixed round stage, captions below it, and a bottom bar showing
 // connection state. The stage follows the full-UI boards: a portrait that
 // moves inside the disc, a state word, blinks, gaze, boot, shutdown, a
@@ -35,7 +35,7 @@ import '../main.dart';
 import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
 import 'muse_theme.dart';
-import 'avatar_video_stage.dart';
+import 'avatar_3d_stage.dart';
 import 'scope.dart';
 
 /// Shared observer so the companion screen knows when it is covered.
@@ -799,7 +799,7 @@ class _CharacterState extends State<_Character> with WidgetsBindingObserver {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                AvatarVideoStage(
+                Avatar3DStage(
                   pose: presentation.pose,
                   bytes: bytes,
                   bounceGeneration: _bounce,
