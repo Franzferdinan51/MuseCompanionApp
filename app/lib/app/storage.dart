@@ -100,6 +100,36 @@ class OpenRouterKeyStore {
   Future<void> delete() => _storage.delete(key: _openRouterKeyKey);
 }
 
+const String _homeAssistantTokenKey = 'muse_home_assistant_token';
+const String _mqttPasswordKey = 'muse_mqtt_password';
+
+/// Home-integration secrets: the Home Assistant long-lived token and the
+/// MQTT password. Like the OpenRouter key, these live ONLY in encrypted
+/// storage — never in SharedPreferences, never logged, and never readable
+/// or writable through commands. The user enters them in Settings.
+class HomeSecretsStore {
+  const HomeSecretsStore([this._storage = const FlutterSecureStorage()]);
+
+  final FlutterSecureStorage _storage;
+
+  Future<String?> loadHomeAssistantToken() =>
+      _storage.read(key: _homeAssistantTokenKey);
+
+  Future<void> saveHomeAssistantToken(String token) =>
+      _storage.write(key: _homeAssistantTokenKey, value: token);
+
+  Future<void> deleteHomeAssistantToken() =>
+      _storage.delete(key: _homeAssistantTokenKey);
+
+  Future<String?> loadMqttPassword() =>
+      _storage.read(key: _mqttPasswordKey);
+
+  Future<void> saveMqttPassword(String password) =>
+      _storage.write(key: _mqttPasswordKey, value: password);
+
+  Future<void> deleteMqttPassword() => _storage.delete(key: _mqttPasswordKey);
+}
+
 /// A stable device identity persisted across upgrades and unpairings.
 class PersistentIdentity {
   PersistentIdentity(this._identity);
@@ -157,6 +187,17 @@ class SettingsStore {
           _prefs.getBool('${_settingsPrefix}usb_storage_enabled') ?? true,
       'usb_serial_enabled':
           _prefs.getBool('${_settingsPrefix}usb_serial_enabled') ?? true,
+      'home_assistant_enabled':
+          _prefs.getBool('${_settingsPrefix}home_assistant_enabled') ?? false,
+      'home_assistant_base_url':
+          _prefs.getString('${_settingsPrefix}home_assistant_base_url'),
+      'mqtt_enabled':
+          _prefs.getBool('${_settingsPrefix}mqtt_enabled') ?? false,
+      'mqtt_host': _prefs.getString('${_settingsPrefix}mqtt_host'),
+      'mqtt_port': _prefs.getInt('${_settingsPrefix}mqtt_port'),
+      'mqtt_username': _prefs.getString('${_settingsPrefix}mqtt_username'),
+      'mqtt_topic_prefix':
+          _prefs.getString('${_settingsPrefix}mqtt_topic_prefix'),
       'wake_word_enabled':
           _prefs.getBool('${_settingsPrefix}wake_word_enabled') ?? false,
       'wake_word_model':
@@ -284,6 +325,34 @@ class SettingsStore {
     await _prefs.setString(
       '${_settingsPrefix}openrouter_voice',
       settings.openRouterVoice,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}home_assistant_enabled',
+      settings.homeAssistantEnabled,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}home_assistant_base_url',
+      settings.homeAssistantBaseUrl,
+    );
+    await _prefs.setBool(
+      '${_settingsPrefix}mqtt_enabled',
+      settings.mqttEnabled,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}mqtt_host',
+      settings.mqttHost,
+    );
+    await _prefs.setInt(
+      '${_settingsPrefix}mqtt_port',
+      settings.mqttPort,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}mqtt_username',
+      settings.mqttUsername,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}mqtt_topic_prefix',
+      settings.mqttTopicPrefix,
     );
     _notifyListeners();
   }

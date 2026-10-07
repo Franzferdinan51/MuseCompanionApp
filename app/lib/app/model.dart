@@ -119,6 +119,13 @@ class CompanionSettings {
     this.voiceProvider = 'android',
     this.openRouterModel = 'fish-audio/s2.1-pro-free:free',
     this.openRouterVoice = '',
+    this.homeAssistantEnabled = false,
+    this.homeAssistantBaseUrl = '',
+    this.mqttEnabled = false,
+    this.mqttHost = '',
+    this.mqttPort = 1883,
+    this.mqttUsername = '',
+    this.mqttTopicPrefix = 'muse/',
   });
 
   /// One of `light`, `dark` or `system`.
@@ -221,6 +228,31 @@ class CompanionSettings {
   /// for the model's default voice.
   final String openRouterVoice;
 
+  /// Let Muse read and drive the smart home through Home Assistant.
+  /// Off until the user opts in and enters a base URL + token.
+  final bool homeAssistantEnabled;
+
+  /// Home Assistant base URL, e.g. http://homeassistant.local:8123.
+  /// The long-lived token lives in secure storage, never here.
+  final String homeAssistantBaseUrl;
+
+  /// Let Muse publish to an MQTT broker. Off until the user opts in.
+  final bool mqttEnabled;
+
+  /// MQTT broker host, e.g. 192.168.1.10. The password lives in
+  /// secure storage, never here.
+  final String mqttHost;
+
+  /// MQTT broker port, 1-65535. Default 1883.
+  final int mqttPort;
+
+  /// MQTT username, or '' for anonymous.
+  final String mqttUsername;
+
+  /// All agent publishes stay under this prefix (default `muse/`).
+  /// Muse cannot publish outside it.
+  final String mqttTopicPrefix;
+
   CompanionSettings copyWith({
     String? theme,
     bool? keepScreenOn,
@@ -248,6 +280,13 @@ class CompanionSettings {
     String? voiceProvider,
     String? openRouterModel,
     String? openRouterVoice,
+    bool? homeAssistantEnabled,
+    String? homeAssistantBaseUrl,
+    bool? mqttEnabled,
+    String? mqttHost,
+    int? mqttPort,
+    String? mqttUsername,
+    String? mqttTopicPrefix,
   }) {
     return CompanionSettings(
       theme: theme ?? this.theme,
@@ -279,6 +318,15 @@ class CompanionSettings {
       voiceProvider: voiceProvider ?? this.voiceProvider,
       openRouterModel: openRouterModel ?? this.openRouterModel,
       openRouterVoice: openRouterVoice ?? this.openRouterVoice,
+      homeAssistantEnabled:
+          homeAssistantEnabled ?? this.homeAssistantEnabled,
+      homeAssistantBaseUrl:
+          homeAssistantBaseUrl ?? this.homeAssistantBaseUrl,
+      mqttEnabled: mqttEnabled ?? this.mqttEnabled,
+      mqttHost: mqttHost ?? this.mqttHost,
+      mqttPort: mqttPort ?? this.mqttPort,
+      mqttUsername: mqttUsername ?? this.mqttUsername,
+      mqttTopicPrefix: mqttTopicPrefix ?? this.mqttTopicPrefix,
     );
   }
 
@@ -345,7 +393,59 @@ class CompanionSettings {
       voiceProvider: _voiceProvider(map['voice_provider']),
       openRouterModel: _openRouterModel(map['openrouter_model']),
       openRouterVoice: _openRouterVoice(map['openrouter_voice']),
+      homeAssistantEnabled: map['home_assistant_enabled'] == true,
+      homeAssistantBaseUrl: _httpUrl(map['home_assistant_base_url']),
+      mqttEnabled: map['mqtt_enabled'] == true,
+      mqttHost: _mqttHost(map['mqtt_host']),
+      mqttPort: _mqttPort(map['mqtt_port']),
+      mqttUsername: _mqttUsername(map['mqtt_username']),
+      mqttTopicPrefix: _mqttPrefix(map['mqtt_topic_prefix']),
     );
+  }
+
+  /// Plain http(s) URL up to 256 chars, or '' when unset/invalid.
+  static String _httpUrl(Object? value) {
+    if (value is String) {
+      final url = value.trim();
+      if ((url.startsWith('http://') || url.startsWith('https://')) &&
+          url.length <= 256) {
+        return url;
+      }
+    }
+    return '';
+  }
+
+  /// Broker host: hostname, IPv4, or [IPv6]. Empty when unset/invalid.
+  static String _mqttHost(Object? value) {
+    if (value is! String) return '';
+    final host = value.trim().toLowerCase();
+    if (host.isEmpty || host.length > 256) return '';
+    final ok = RegExp(r'^[a-z0-9.\-_\[\]:]+$').hasMatch(host);
+    return ok ? host : '';
+  }
+
+  static int _mqttPort(Object? value) {
+    final port = value is num ? value.toInt() : 1883;
+    if (port < 1 || port > 65535) return 1883;
+    return port;
+  }
+
+  static String _mqttUsername(Object? value) {
+    if (value is! String) return '';
+    final name = value.trim();
+    return name.length <= 128 ? name : '';
+  }
+
+  /// Topic prefix the agent may publish under. Normalized to end with
+  /// exactly one `/`; falls back to `muse/` when empty or invalid.
+  static String _mqttPrefix(Object? value) {
+    if (value is! String) return 'muse/';
+    final prefix = value.trim();
+    if (prefix.isEmpty || prefix.length > 120) return 'muse/';
+    if (!RegExp(r'^[A-Za-z0-9/_-]+$').hasMatch(prefix)) return 'muse/';
+    final clean = prefix.replaceAll(RegExp(r'/+$'), '');
+    if (clean.isEmpty) return 'muse/';
+    return '$clean/';
   }
 
   static double _wakeSensitivity(Object? value) {

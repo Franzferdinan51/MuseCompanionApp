@@ -20,11 +20,19 @@
 // gadget's shell and the phone app's own device pairing — it lets the
 // Muse see, hear, and act on this phone.
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'chat_events.dart';
 import 'phone_actions.dart';
+import '../../app/choice_cards.dart';
+import '../../app/home_integrations.dart';
 import '../../app/lmstudio_client.dart';
+import '../../app/media_queue.dart';
+import '../../app/vision_analyze.dart';
+import '../../app/scenes.dart';
+import '../../app/sensors_snapshot.dart';
+import '../../app/workspace_files.dart';
 
 /// Longest status caption the app accepts (UTF-16 code units).
 const int maxStatusChars = 4000;
@@ -356,6 +364,194 @@ Map<String, Object?> companionCommandSpecs({
       },
       'optional': <String, Object?>{},
     },
+    'file.list': {
+      'description':
+          'List files and folders in the agent workspace (sandboxed app '
+          'storage for notes, itineraries, data): name, type, size, '
+          'modified time. Folders first, 500-entry cap. Omit path for '
+          'the workspace root.',
+      'required': <String, Object?>{},
+      'optional': {
+        'path': stringParam('Folder inside the workspace, e.g. notes.'),
+      },
+    },
+    'file.read': {
+      'description':
+          'Read a workspace file as text (64k char cap) or base64 '
+          '(10MB cap) with encoding base64. Paths stay inside the '
+          'workspace; traversal is refused.',
+      'required': {
+        'path': stringParam('Workspace file path, e.g. notes/todo.txt.'),
+      },
+      'optional': {
+        'encoding': stringParam('"text" (default) or "base64".'),
+      },
+    },
+    'file.write': {
+      'description':
+          'Write text to a workspace file (5MB cap), creating parent '
+          'folders. Atomic: temp file + rename. Pass append true to '
+          'append instead of replacing. Pass encoding base64 with '
+          'base64-encoded content to store binary files (images for '
+          'vision.analyze).',
+      'required': {
+        'path': stringParam('Workspace file path, e.g. notes/todo.txt.'),
+        'content': stringParam('Text to store, or base64 with encoding.'),
+      },
+      'optional': {
+        'append': {
+          'type': 'boolean',
+          'description': 'Append to the file instead of replacing it.',
+        },
+        'encoding': stringParam(
+          '"text" (default) or "base64" for binary content.',
+        ),
+      },
+    },
+    'file.delete': {
+      'description':
+          'Delete a workspace file or empty folder. Returns whether '
+          'anything was removed.',
+      'required': {
+        'path': stringParam('Workspace file or folder path.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'scene.save': {
+      'description':
+          'Save a named offline routine: 1-10 command steps run in order '
+          'on the phone, stopping at the first failure. Run it later '
+          'with scene.run. A scene cannot contain other scene.* steps.',
+      'required': {
+        'id': stringParam(
+          'Scene id: 1-32 chars of a-z, 0-9, _ or -, e.g. movie-night.',
+        ),
+      },
+      'optional': {
+        'title': stringParam('Human title shown in the scene list.'),
+        'steps_json': stringParam(
+          'JSON array of steps, each {"command": "...", "params": {...}}. '
+          'Example: [{"command":"phone.speak","params":{"text":"Hi"}}].',
+        ),
+      },
+    },
+    'scene.list': {
+      'description':
+          'List saved offline routines: id, title, step count.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'scene.run': {
+      'description':
+          'Run a saved offline routine by id, executing its steps in '
+          'order on the phone. Reports per-step results and whether the '
+          'scene completed.',
+      'required': {
+        'id': stringParam('Scene id from scene.list.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'scene.delete': {
+      'description': 'Delete a saved offline routine. Returns whether '
+          'anything was removed.',
+      'required': {
+        'id': stringParam('Scene id from scene.list.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'sensors.read': {
+      'description':
+          'Take one-shot motion and magnetic-field readings: '
+          'accelerometer (m/s^2 incl. gravity), gyroscope (rad/s), '
+          'magnetometer (microtesla), plus per-sensor availability. '
+          'Missing hardware reports absent instead of failing.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'media.enqueue': {
+      'description':
+          'Queue an audio URL for playback on the phone speaker '
+          '(http/https only, 50-track cap). Pass next true to play it '
+          'right after the current track.',
+      'required': {
+        'url': stringParam('http(s) audio URL to queue.'),
+      },
+      'optional': {
+        'title': stringParam('Track title for the queue listing.'),
+        'mime': stringParam('MIME hint, e.g. audio/mpeg.'),
+        'next': {
+          'type': 'boolean',
+          'description': 'Insert after the current track. Default false.',
+        },
+      },
+    },
+    'media.queue': {
+      'description':
+          'Show the playback queue: player state, current index, and '
+          'tracks with titles.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'media.play': {
+      'description':
+          'Play the queue from the current track (or the given index). '
+          'Audio only; video needs a visible surface the agent has not.',
+      'required': <String, Object?>{},
+      'optional': {
+        'index': intParam('Queue index to start from. Default current.'),
+      },
+    },
+    'media.control': {
+      'description': 'Control playback: pause, resume, stop, next, previous.',
+      'required': {
+        'action': stringParam(
+          '"pause", "resume", "stop", "next" or "previous".',
+        ),
+      },
+      'optional': <String, Object?>{},
+    },
+    'media.clear': {
+      'description': 'Stop playback and empty the queue.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'display.show_card': {
+      'description':
+          'Show an interactive card on the phone stage: title, text, '
+          'up to 4 buttons. The user taps a button on the phone; the '
+          'choice is recorded, not pushed — read it back with '
+          'display.card_status. The card auto-dismisses after ttl_s '
+          '(default 60, max 3600). Showing a card replaces any current '
+          'one.',
+      'required': {
+        'title': stringParam('Card title.'),
+      },
+      'optional': {
+        'text': stringParam('Card body text.'),
+        'image_url': stringParam('http(s) image shown on the card.'),
+        'buttons_json': stringParam(
+          'JSON array of buttons, each {"id": "...", "label": "..."}. '
+          'Example: [{"id":"yes","label":"Yes"}].',
+        ),
+        'ttl_s': intParam(
+          'Seconds before auto-dismiss. Default 60, max 3600.',
+          minimum: 1,
+          maximum: 3600,
+        ),
+      },
+    },
+    'display.card_status': {
+      'description':
+          'Report the current card (if any) and the last recorded '
+          'button choice.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'display.clear_card': {
+      'description': 'Dismiss the current card without recording a choice.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
     'vision.capture': {
       'description':
           'Take one photo with the phone camera and show it to you in this '
@@ -372,6 +568,77 @@ Map<String, Object?> companionCommandSpecs({
         ),
       },
       'timeout_ms': drawImageTimeoutMs,
+    },
+    'home.status': {
+      'description':
+          'Show smart-home integration status: whether Home Assistant '
+          'and MQTT are enabled and configured (base URL, host, topic '
+          'prefix). Secrets are never included.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'home.states': {
+      'description':
+          'Read Home Assistant entity states (capped list), or one '
+          'entity with entity_id like light.kitchen. Needs Home '
+          'Assistant enabled and set up in Settings.',
+      'required': <String, Object?>{},
+      'optional': {
+        'entity_id': stringParam(
+          'Entity id, e.g. light.kitchen. Omit to list states.',
+        ),
+      },
+    },
+    'home.call': {
+      'description':
+          'Call a Home Assistant service, e.g. domain light, service '
+          'turn_on with entity_id light.kitchen. Needs Home Assistant '
+          'enabled and set up in Settings.',
+      'required': {
+        'domain': stringParam('Service domain, e.g. light.'),
+        'service': stringParam('Service name, e.g. turn_on.'),
+      },
+      'optional': {
+        'entity_id': stringParam('Target entity, e.g. light.kitchen.'),
+        'data_json': stringParam(
+          'Extra service data as a JSON object, e.g. {"brightness": 128}.',
+        ),
+      },
+    },
+    'mqtt.status': {
+      'description':
+          'Show MQTT status: enabled, broker host/port, topic prefix. '
+          'Same payload as home.status.',
+      'required': <String, Object?>{},
+      'optional': <String, Object?>{},
+    },
+    'mqtt.publish': {
+      'description':
+          'Publish a message to the MQTT broker under the configured '
+          'topic prefix (default muse/). Absolute topics, wildcards and '
+          'escapes are refused. Needs MQTT enabled and set up in Settings.',
+      'required': {
+        'topic': stringParam(
+          'Topic under the prefix, e.g. desk/lamp/set.',
+        ),
+        'message': stringParam('Message payload.'),
+      },
+      'optional': <String, Object?>{},
+    },
+    'vision.analyze': {
+      'description':
+          'Read text (OCR) and barcodes from a workspace image, fully '
+          'on-device — the image never leaves the phone. Store image '
+          'bytes first with file.write encoding base64. Returns the '
+          'recognized text plus decoded barcodes with formats.',
+      'required': {
+        'path': stringParam('Workspace image path, e.g. scans/receipt.jpg.'),
+      },
+      'optional': {
+        'mode': stringParam(
+          '"text", "barcode" or "both" (default).',
+        ),
+      },
     },
     'voice.stop': {
       'description': 'Stop any in-progress speech immediately.',
@@ -871,6 +1138,14 @@ class CompanionExecutor {
     this.systemOneEnabled,
     this.systemOneUrl,
     this.speakReplies,
+    this.workspace,
+    this.scenes,
+    this.sensors,
+    this.mediaQueue,
+    this.cards,
+    this.visionAnalyzer,
+    this.homeConfig,
+    this.mqttPublisher,
   });
 
   final CompanionDisplay display;
@@ -905,6 +1180,38 @@ class CompanionExecutor {
 
   /// Camera chosen in Companion Settings when vision.capture omits facing.
   final String Function()? cameraFacing;
+
+  /// Sandboxed workspace file store. Null uses the default documents
+  /// location; tests inject a temp dir.
+  final WorkspaceFiles? workspace;
+
+  /// Saved offline routines. Null uses the default documents location;
+  /// tests inject a temp dir.
+  final SceneStore? scenes;
+
+  /// One-shot sensor reader. Null reads real hardware; tests inject a
+  /// fake sampler.
+  final SensorReader? sensors;
+
+  /// Audio playback queue. Null plays through a real audio backend;
+  /// tests inject a fake backend.
+  final MediaQueuePlayer? mediaQueue;
+
+  /// Interactive display cards. Null uses the process-wide store the
+  /// companion screen observes; tests inject an isolated store.
+  final ChoiceCardStore? cards;
+
+  /// On-device image analysis backend. Null uses real ML Kit models;
+  /// tests inject a fake.
+  final VisionAnalyzerBackend? visionAnalyzer;
+
+  /// Loads the smart-home config (Settings plus secrets). Null means
+  /// unconfigured; tests inject a fixed config.
+  final Future<HomeIntegrationConfig?> Function()? homeConfig;
+
+  /// MQTT publish seam. Null connects to the real broker per publish;
+  /// tests inject a recording fake.
+  final MqttPublisher? mqttPublisher;
 
   Future<Map<String, Object?>> run(
     String command,
@@ -944,8 +1251,38 @@ class CompanionExecutor {
         case 'usb.serial_purge':
         case 'usb.serial_close':
           return await _usbSerial(command, params);
+        case 'file.list':
+        case 'file.read':
+        case 'file.write':
+        case 'file.delete':
+          return await _workspaceFiles(command, params);
+        case 'scene.save':
+        case 'scene.list':
+        case 'scene.run':
+        case 'scene.delete':
+          return await _scenes(command, params, timeoutMs);
+        case 'sensors.read':
+          return okResult(await (sensors ?? SensorReader()).read());
+        case 'media.enqueue':
+        case 'media.queue':
+        case 'media.play':
+        case 'media.control':
+        case 'media.clear':
+          return await _mediaQueue(command, params);
+        case 'display.show_card':
+        case 'display.card_status':
+        case 'display.clear_card':
+          return _displayCard(command, params);
         case 'vision.capture':
           return await _capture(params);
+        case 'vision.analyze':
+          return await _visionAnalyze(command, params);
+        case 'home.status':
+        case 'home.states':
+        case 'home.call':
+        case 'mqtt.status':
+        case 'mqtt.publish':
+          return await _home(command, params);
         case 'phone.screenshot':
           return await _screenshot(params);
         case 'voice.stop':
@@ -1217,6 +1554,437 @@ class CompanionExecutor {
       return errorResult('USB serial is disabled in Companion Settings');
     }
     return _phone(command, params);
+  }
+
+  Future<Map<String, Object?>> _workspaceFiles(
+    String command,
+    Map<String, Object?> params,
+  ) async {
+    final files = workspace ?? WorkspaceFiles();
+    try {
+      switch (command) {
+        case 'file.list': {
+          final entries = await files.list(
+            params['path']?.toString() ?? '',
+          );
+          return okResult({
+            'entries': [for (final e in entries) e.toJson()],
+          });
+        }
+        case 'file.read': {
+          final path = params['path'];
+          if (path is! String || path.isEmpty) {
+            return errorResult('path is required');
+          }
+          if (params['encoding']?.toString() == 'base64') {
+            final (payload, size) = await files.readBytes(path);
+            return okResult({
+              'path': path,
+              'encoding': 'base64',
+              'content': payload,
+              'size_bytes': size,
+            });
+          }
+          return okResult({
+            'path': path,
+            'encoding': 'text',
+            'content': await files.readText(path),
+          });
+        }
+        case 'file.write': {
+          final path = params['path'];
+          final content = params['content'];
+          if (path is! String || path.isEmpty) {
+            return errorResult('path is required');
+          }
+          if (content is! String) {
+            return errorResult('content is required');
+          }
+          if (params['encoding']?.toString() == 'base64') {
+            List<int> bytes;
+            try {
+              bytes = base64Decode(content);
+            } catch (_) {
+              return errorResult('content is not valid base64');
+            }
+            final size = await files.writeBytes(path, bytes);
+            return okResult({'path': path, 'size_bytes': size});
+          }
+          final size = await files.writeText(
+            path,
+            content,
+            append: params['append'] == true,
+          );
+          return okResult({'path': path, 'size_bytes': size});
+        }
+        case 'file.delete': {
+          final path = params['path'];
+          if (path is! String || path.isEmpty) {
+            return errorResult('path is required');
+          }
+          return okResult({'path': path, 'deleted': await files.delete(path)});
+        }
+      }
+    } on WorkspaceException catch (e) {
+      return errorResult(e.message);
+    }
+    return errorResult('unsupported command: $command');
+  }
+
+  Future<Map<String, Object?>> _scenes(
+    String command,
+    Map<String, Object?> params,
+    int? timeoutMs,
+  ) async {
+    final store = scenes ?? SceneStore();
+    try {
+      switch (command) {
+        case 'scene.save': {
+          final id = params['id'];
+          if (id is! String || id.isEmpty) {
+            return errorResult('id is required');
+          }
+          final steps = _parseSceneSteps(params['steps_json']);
+          if (steps == null) {
+            return errorResult(
+              'steps_json must be a JSON array of '
+              '{"command": ..., "params": {...}} steps',
+            );
+          }
+          for (final step in steps) {
+            if (step.command.startsWith('scene.')) {
+              return errorResult('scenes cannot contain scene.* steps');
+            }
+          }
+          final title = params['title']?.toString().trim();
+          final stored = await store.save(
+            Scene(
+              id: id,
+              title: title == null || title.isEmpty ? id : title,
+              steps: steps,
+            ),
+          );
+          return okResult({'id': stored, 'steps': steps.length});
+        }
+        case 'scene.list': {
+          final list = await store.list();
+          return okResult({
+            'scenes': [
+              for (final s in list)
+                {'id': s.id, 'title': s.title, 'steps': s.steps.length},
+            ],
+          });
+        }
+        case 'scene.run': {
+          final id = params['id'];
+          if (id is! String || id.isEmpty) {
+            return errorResult('id is required');
+          }
+          final outcome = await store.runScene(
+            id,
+            (c, p) => run(c, p, timeoutMs),
+          );
+          return okResult(outcome.toJson());
+        }
+        case 'scene.delete': {
+          final id = params['id'];
+          if (id is! String || id.isEmpty) {
+            return errorResult('id is required');
+          }
+          return okResult({'id': id, 'deleted': await store.delete(id)});
+        }
+      }
+    } on SceneException catch (e) {
+      return errorResult(e.message);
+    }
+    return errorResult('unsupported command: $command');
+  }
+
+  /// Parse the scene.save steps_json array, or null when malformed.
+  List<SceneStep>? _parseSceneSteps(Object? raw) {
+    if (raw == null) return const [];
+    if (raw is! String || raw.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return [
+        for (final item in decoded)
+          if (item is Map<String, Object?>)
+            SceneStep.fromJson(item)
+          else if (item is Map)
+            SceneStep.fromJson(item.cast<String, Object?>()),
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, Object?>> _mediaQueue(
+    String command,
+    Map<String, Object?> params,
+  ) async {
+    final player = mediaQueue ?? MediaQueuePlayer();
+    try {
+      switch (command) {
+        case 'media.enqueue': {
+          final url = params['url'];
+          if (url is! String || url.isEmpty) {
+            return errorResult('url is required');
+          }
+          player.queue.add(
+            MediaTrack(
+              url: url,
+              title: params['title']?.toString() ?? '',
+              mime: params['mime']?.toString() ?? '',
+            ),
+            next: params['next'] == true,
+          );
+          return okResult({
+            'queue_length': player.queue.length,
+            ...player.status(),
+          });
+        }
+        case 'media.queue':
+          return okResult({
+            'queue_length': player.queue.length,
+            ...player.status(),
+            'tracks': [
+              for (var i = 0; i < player.queue.tracks.length; i++)
+                {'index': i, ...player.queue.tracks[i].toJson()},
+            ],
+          });
+        case 'media.play': {
+          final rawIndex = params['index'];
+          final index = rawIndex is num ? rawIndex.toInt() : null;
+          if (await player.play(index)) return okResult(player.status());
+          return errorResult(
+            player.lastError.isEmpty ? 'nothing to play' : player.lastError,
+          );
+        }
+        case 'media.control': {
+          final action = params['action']?.toString();
+          switch (action) {
+            case 'pause':
+              if (await player.pause()) return okResult(player.status());
+              return errorResult('nothing playing');
+            case 'resume':
+              if (await player.resume()) return okResult(player.status());
+              return errorResult('nothing paused');
+            case 'stop':
+              await player.stop();
+              return okResult(player.status());
+            case 'next':
+              await player.next();
+              return okResult(player.status());
+            case 'previous':
+              await player.previous();
+              return okResult(player.status());
+          }
+          return errorResult(
+            'action must be pause, resume, stop, next or previous',
+          );
+        }
+        case 'media.clear':
+          player.queue.clear();
+          await player.stop();
+          return okResult(player.status());
+      }
+    } on MediaQueueException catch (e) {
+      return errorResult(e.message);
+    }
+    return errorResult('unsupported command: $command');
+  }
+
+  Map<String, Object?> _displayCard(
+    String command,
+    Map<String, Object?> params,
+  ) {
+    final store = cards ?? ChoiceCardStore.instance;
+    try {
+      switch (command) {
+        case 'display.show_card': {
+          final title = params['title'];
+          if (title is! String || title.trim().isEmpty) {
+            return errorResult('title is required');
+          }
+          final buttons = _parseCardButtons(params['buttons_json']);
+          if (buttons == null) {
+            return errorResult(
+              'buttons_json must be a JSON array of '
+              '{"id": ..., "label": ...} buttons',
+            );
+          }
+          final rawTtl = params['ttl_s'];
+          final card = store.show(
+            title: title,
+            text: params['text']?.toString() ?? '',
+            imageUrl: params['image_url']?.toString() ?? '',
+            buttons: buttons,
+            ttlSeconds: rawTtl is num ? rawTtl.toInt() : 60,
+          );
+          return okResult(card.toJson());
+        }
+        case 'display.card_status':
+          return okResult(store.status());
+        case 'display.clear_card':
+          store.clear();
+          return okResult({'cleared': true});
+      }
+    } on ChoiceCardException catch (e) {
+      return errorResult(e.message);
+    }
+    return errorResult('unsupported command: $command');
+  }
+
+  /// Parse the display.show_card buttons_json array, or null when malformed.
+  List<CardButton>? _parseCardButtons(Object? raw) {
+    if (raw == null) return const [];
+    if (raw is! String || raw.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return [
+        for (final item in decoded)
+          if (item is Map<String, Object?>)
+            CardButton.fromJson(item)
+          else if (item is Map)
+            CardButton.fromJson(item.cast<String, Object?>()),
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, Object?>> _visionAnalyze(
+    String command,
+    Map<String, Object?> params,
+  ) async {
+    assert(command == 'vision.analyze');
+    final path = params['path'];
+    if (path is! String || path.isEmpty) {
+      return errorResult('path is required');
+    }
+    try {
+      final analysis = await analyzeWorkspaceImage(
+        files: workspace ?? WorkspaceFiles(),
+        relPath: path,
+        mode: params['mode']?.toString() ?? 'both',
+        backend: visionAnalyzer,
+      );
+      return okResult({'path': path, ...analysis.toJson()});
+    } on VisionException catch (e) {
+      return errorResult(e.message);
+    } on WorkspaceException catch (e) {
+      return errorResult(e.message);
+    }
+  }
+
+  Future<Map<String, Object?>> _home(
+    String command,
+    Map<String, Object?> params,
+  ) async {
+    final config = await homeConfig?.call() ?? const HomeIntegrationConfig();
+    try {
+      switch (command) {
+        case 'home.status':
+        case 'mqtt.status':
+          return okResult(config.status());
+        case 'home.states':
+        case 'home.call': {
+          final api = _requireHomeAssistant(config);
+          if (api is Map<String, Object?>) return api;
+          final assistant = api as HomeAssistant;
+          if (command == 'home.states') {
+            final entity = params['entity_id']?.toString();
+            return okResult({
+              'states': await assistant.states(
+                entity == null || entity.isEmpty ? null : entity,
+              ),
+            });
+          }
+          final domain = params['domain'];
+          final service = params['service'];
+          if (domain is! String || domain.isEmpty) {
+            return errorResult('domain is required');
+          }
+          if (service is! String || service.isEmpty) {
+            return errorResult('service is required');
+          }
+          final data = _parseServiceData(params['data_json']);
+          if (data == null) {
+            return errorResult('data_json must be a JSON object');
+          }
+          final changed = await assistant.callService(
+            domain,
+            service,
+            entityId: params['entity_id']?.toString(),
+            data: data,
+          );
+          return okResult({'changed': changed});
+        }
+        case 'mqtt.publish': {
+          if (!config.mqttEnabled) {
+            return errorResult('MQTT is disabled in Companion Settings');
+          }
+          if (config.mqttHost.isEmpty) {
+            return errorResult(
+              'MQTT is not set up: enter the broker host in Settings',
+            );
+          }
+          final topic = params['topic'];
+          final message = params['message'];
+          if (topic is! String || topic.isEmpty) {
+            return errorResult('topic is required');
+          }
+          if (message is! String) {
+            return errorResult('message is required');
+          }
+          final full = resolveMqttTopic(config.mqttTopicPrefix, topic);
+          await (mqttPublisher ?? RealMqttPublisher()).publish(
+            host: config.mqttHost,
+            port: config.mqttPort,
+            username: config.mqttUsername,
+            password: config.mqttPassword,
+            topic: full,
+            message: message,
+          );
+          return okResult({'topic': full, 'published': true});
+        }
+      }
+    } on HomeIntegrationException catch (e) {
+      return errorResult(e.message);
+    }
+    return errorResult('unsupported command: $command');
+  }
+
+  /// A configured [HomeAssistant], or an error result map when the
+  /// integration is off or missing its URL/token.
+  Object _requireHomeAssistant(HomeIntegrationConfig config) {
+    if (!config.homeEnabled) {
+      return errorResult('Home Assistant is disabled in Companion Settings');
+    }
+    if (config.homeBaseUrl.isEmpty || config.homeToken.isEmpty) {
+      return errorResult(
+        'Home Assistant is not set up: enter the base URL and token '
+        'in Settings',
+      );
+    }
+    return HomeAssistant(baseUrl: config.homeBaseUrl, token: config.homeToken);
+  }
+
+  /// Parse the home.call data_json object. Null means malformed;
+  /// absent means no extra data.
+  Map<String, Object?>? _parseServiceData(Object? raw) {
+    if (raw == null) return const {};
+    if (raw is! String || raw.trim().isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, Object?>) return decoded;
+      if (decoded is Map) return decoded.cast<String, Object?>();
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Map<String, Object?>> _phone(

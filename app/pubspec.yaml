@@ -41,6 +41,8 @@ dependencies:
   flutter_foreground_task: ^10.0.0
   # 3D avatar rendering (GLB models from the Muse).
   model_viewer_plus: ^1.10.0
+  # Motion/magnetic-field sensors for sensors.read.
+  sensors_plus: ^6.1.0
   # Real-time 3D avatar stage (GLB with animation clips).
   flutter_3d_controller: ^2.3.0
   # Video-clip avatar animation.
@@ -67,6 +69,9 @@ dependencies:
   # Mermaid diagrams: rendered to SVG in an offscreen WebView, shown with
   # pinch-to-zoom (flutter_svg), no network needed (mermaid.min.js bundled).
   flutter_svg: ^2.3.0
+  google_mlkit_text_recognition: ^0.16.0
+  google_mlkit_barcode_scanning: ^0.15.0
+  mqtt_client: ^10.12.0
 
 dev_dependencies:
   flutter_test:

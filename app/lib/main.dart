@@ -31,7 +31,9 @@ import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
 import 'package:muse_companion/app/chat.dart';
+import 'package:muse_companion/app/choice_cards.dart';
 import 'package:muse_companion/app/companion_platform.dart';
+import 'package:muse_companion/app/home_integrations.dart';
 import 'package:muse_companion/app/foreground.dart';
 import 'package:muse_companion/app/live_mode.dart';
 import 'package:muse_companion/app/model.dart';
@@ -187,6 +189,21 @@ Future<void> main() async {
     systemOneEnabled: () => presentation.settings.systemOneEnabled,
     systemOneUrl: () => presentation.settings.systemOneUrl,
     speakReplies: () => presentation.settings.speakReplies,
+    homeConfig: () async {
+      const secrets = HomeSecretsStore();
+      final s = presentation.settings;
+      return HomeIntegrationConfig(
+        homeEnabled: s.homeAssistantEnabled,
+        homeBaseUrl: s.homeAssistantBaseUrl,
+        homeToken: await secrets.loadHomeAssistantToken() ?? '',
+        mqttEnabled: s.mqttEnabled,
+        mqttHost: s.mqttHost,
+        mqttPort: s.mqttPort,
+        mqttUsername: s.mqttUsername,
+        mqttPassword: await secrets.loadMqttPassword() ?? '',
+        mqttTopicPrefix: s.mqttTopicPrefix,
+      );
+    },
   );
 
   final screen = _screenSize();
@@ -215,6 +232,19 @@ Future<void> main() async {
   final chat = ChatHistory();
   service.onChatEvent.listen((event) {
     chat.applyServerEvent(event.event, event.payload);
+  });
+  // Server-pushed display cards finally have a stage: show them as
+  // button-less choice cards (previously the stream had no subscriber).
+  service.onDisplayCard.listen((card) {
+    try {
+      ChoiceCardStore.instance.show(
+        title: card.title,
+        text: card.body,
+        ttlSeconds: card.ttl.inSeconds,
+      );
+    } catch (_) {
+      // A bad server card must never break the link loop.
+    }
   });
   // Server-sent working status drives the agent status line in chat.
   // While a local phone tool runs, its descriptive toolLabel ("Taking a

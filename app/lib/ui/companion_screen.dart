@@ -36,6 +36,7 @@ import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
 import 'muse_theme.dart';
 import 'avatar_3d_stage.dart';
+import '../app/choice_cards.dart';
 import 'scope.dart';
 
 /// Shared observer so the companion screen knows when it is covered.
@@ -823,6 +824,19 @@ class _CharacterState extends State<_Character> with WidgetsBindingObserver {
                       },
                     ),
                   ),
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  bottom: 4,
+                  child: ListenableBuilder(
+                    listenable: ChoiceCardStore.instance,
+                    builder: (context, _) {
+                      final card = ChoiceCardStore.instance.current;
+                      if (card == null) return const SizedBox.shrink();
+                      return _ChoiceCardOverlay(card: card);
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -838,6 +852,71 @@ class _CharacterState extends State<_Character> with WidgetsBindingObserver {
                   color: museMist.withValues(alpha: 0.88),
                 ),
               ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Interactive agent card floating over the stage: title, text, and up
+/// to 4 buttons. Tapping records the choice in [ChoiceCardStore] (the
+/// agent reads it back with display.card_status); X dismisses.
+class _ChoiceCardOverlay extends StatelessWidget {
+  const _ChoiceCardOverlay({required this.card});
+
+  final ChoiceCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return MuseBubble(
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  card.title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Dismiss',
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: ChoiceCardStore.instance.clear,
+              ),
+            ],
+          ),
+          if (card.text.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                card.text,
+                style: theme.textTheme.bodyMedium,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          if (card.buttons.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final button in card.buttons)
+                  FilledButton.tonal(
+                    onPressed: () =>
+                        ChoiceCardStore.instance.choose(button.id),
+                    child: Text(button.label),
+                  ),
+              ],
             ),
         ],
       ),

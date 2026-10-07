@@ -91,6 +91,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       TextEditingController();
   final TextEditingController _openRouterVoiceController =
       TextEditingController();
+  final TextEditingController _haUrlController = TextEditingController();
+  final TextEditingController _mqttHostController = TextEditingController();
+  final TextEditingController _mqttPortController = TextEditingController();
+  final TextEditingController _mqttUserController = TextEditingController();
+  final TextEditingController _mqttPrefixController = TextEditingController();
+  bool _homeArmed = false;
+  bool _haTokenSaved = false;
+  bool _mqttPasswordSaved = false;
   bool _obscureOpenRouterKey = true;
   bool _openRouterKeySaved = false;
   bool _openRouterArmed = false;
@@ -119,6 +127,28 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.didChangeDependencies();
     final scope = AppScope.of(context);
     _settings = scope.settings.loadSettings();
+    if (!_homeArmed) {
+      _homeArmed = true;
+      _haUrlController.text = _settings.homeAssistantBaseUrl;
+      _mqttHostController.text = _settings.mqttHost;
+      _mqttPortController.text = _settings.mqttPort.toString();
+      _mqttUserController.text = _settings.mqttUsername;
+      _mqttPrefixController.text = _settings.mqttTopicPrefix;
+      const HomeSecretsStore().loadHomeAssistantToken().then((saved) {
+        if (mounted) {
+          setState(
+            () => _haTokenSaved = saved != null && saved.isNotEmpty,
+          );
+        }
+      }).catchError((_) {});
+      const HomeSecretsStore().loadMqttPassword().then((saved) {
+        if (mounted) {
+          setState(
+            () => _mqttPasswordSaved = saved != null && saved.isNotEmpty,
+          );
+        }
+      }).catchError((_) {});
+    }
     if (!_openRouterArmed) {
       _openRouterArmed = true;
       _openRouterModelController.text = _settings.openRouterModel;
@@ -205,6 +235,69 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _refreshServiceState() async {
     final running = await isLinkServiceRunning();
     if (mounted) setState(() => _serviceRunning = running);
+  }
+
+  /// Generic obscured secret dialog for the Home section: pre-fills from
+  /// secure storage, saves (or clears when empty) through [save].
+  Future<void> _editHomeSecret({
+    required String title,
+    required String label,
+    required bool saved,
+    required Future<String?> Function() load,
+    required Future<void> Function(String value) save,
+  }) async {
+    String initial = '';
+    try {
+      initial = await load() ?? '';
+    } catch (_) {
+      initial = '';
+    }
+    if (!mounted) return;
+    final controller = TextEditingController(text: initial);
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              saved
+                  ? 'A value is saved (never shown). Enter a new one to '
+                      'replace it, or empty to clear.'
+                  : 'Stored in encrypted storage. Empty clears it.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              obscureText: true,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: label,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    try {
+      await save(result);
+    } catch (_) {}
   }
 
   Future<void> _editSdkToken() async {
@@ -299,6 +392,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     _openRouterModelController.dispose();
     _openRouterKeyController.dispose();
     _openRouterVoiceController.dispose();
+    _haUrlController.dispose();
+    _mqttHostController.dispose();
+    _mqttPortController.dispose();
+    _mqttUserController.dispose();
+    _mqttPrefixController.dispose();
     _openRouterTestTts?.dispose();
     _voiceLookup?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -1175,6 +1273,176 @@ class _SettingsScreenState extends State<SettingsScreen>
                     _settings.copyWith(usbSerialEnabled: v),
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingCard(
+            title: 'Home',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Smart-home integrations for Muse: Home Assistant '
+                  'states and services, MQTT publishes. Both strictly '
+                  'opt-in. Tokens and passwords stay in encrypted '
+                  'storage — commands can never read or change them.',
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Home Assistant'),
+                  subtitle: const Text(
+                    'Read states and call services (needs URL + token)',
+                  ),
+                  value: _settings.homeAssistantEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(homeAssistantEnabled: v),
+                  ),
+                ),
+                if (_settings.homeAssistantEnabled) ...[
+                  TextField(
+                    controller: _haUrlController,
+                    keyboardType: TextInputType.url,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Base URL',
+                      hintText: 'http://homeassistant.local:8123',
+                    ),
+                    onSubmitted: (v) => _commit(
+                      _settings.copyWith(homeAssistantBaseUrl: v.trim()),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _haTokenSaved
+                          ? 'Token saved — enter a new one to replace it'
+                          : 'Long-lived access token (Profile → Security)',
+                    ),
+                    trailing: FilledButton.tonal(
+                      onPressed: () => _editHomeSecret(
+                        title: 'Home Assistant token',
+                        label: 'Long-lived access token',
+                        saved: _haTokenSaved,
+                        load: const HomeSecretsStore().loadHomeAssistantToken,
+                        save: (v) async {
+                          if (v.isEmpty) {
+                            await const HomeSecretsStore()
+                                .deleteHomeAssistantToken();
+                          } else {
+                            await const HomeSecretsStore()
+                                .saveHomeAssistantToken(v);
+                          }
+                          if (mounted) {
+                            setState(() => _haTokenSaved = v.isNotEmpty);
+                          }
+                        },
+                      ),
+                      child: Text(_haTokenSaved ? 'Replace' : 'Set token'),
+                    ),
+                  ),
+                ],
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('MQTT'),
+                  subtitle: const Text(
+                    'Publish under one topic prefix (needs broker host)',
+                  ),
+                  value: _settings.mqttEnabled,
+                  onChanged: (v) => _commit(
+                    _settings.copyWith(mqttEnabled: v),
+                  ),
+                ),
+                if (_settings.mqttEnabled) ...[
+                  TextField(
+                    controller: _mqttHostController,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Broker host',
+                      hintText: '192.168.1.10',
+                    ),
+                    onSubmitted: (v) => _commit(
+                      _settings.copyWith(mqttHost: v.trim()),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _mqttPortController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Broker port',
+                      hintText: '1883 (8883 for TLS)',
+                    ),
+                    onSubmitted: (v) {
+                      final port = int.tryParse(v.trim());
+                      if (port == null) return;
+                      _commit(_settings.copyWith(mqttPort: port));
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _mqttUserController,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Username (optional)',
+                      hintText: 'Empty for anonymous',
+                    ),
+                    onSubmitted: (v) => _commit(
+                      _settings.copyWith(mqttUsername: v.trim()),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _mqttPrefixController,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Topic prefix',
+                      hintText: 'muse/',
+                      helperText:
+                          'Agent publishes stay under this prefix.',
+                    ),
+                    onSubmitted: (v) => _commit(
+                      _settings.copyWith(mqttTopicPrefix: v.trim()),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _mqttPasswordSaved
+                          ? 'Password saved — enter a new one to replace it'
+                          : 'Broker password (optional)',
+                    ),
+                    trailing: FilledButton.tonal(
+                      onPressed: () => _editHomeSecret(
+                        title: 'MQTT password',
+                        label: 'Broker password',
+                        saved: _mqttPasswordSaved,
+                        load: const HomeSecretsStore().loadMqttPassword,
+                        save: (v) async {
+                          if (v.isEmpty) {
+                            await const HomeSecretsStore()
+                                .deleteMqttPassword();
+                          } else {
+                            await const HomeSecretsStore().saveMqttPassword(v);
+                          }
+                          if (mounted) {
+                            setState(
+                              () => _mqttPasswordSaved = v.isNotEmpty,
+                            );
+                          }
+                        },
+                      ),
+                      child: Text(_mqttPasswordSaved ? 'Replace' : 'Set password'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

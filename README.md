@@ -79,6 +79,14 @@ Commands registered with `link.register`. This is the complete list — there is
 | `phone.tap`, `phone.swipe`, `phone.type`, `phone.press` | Tap, swipe, type, press back/home/recents/notifications/quick settings/lock/power. Needs Screen control |
 | `phone.screen_control` | Report whether Screen control is on, or open its system page |
 | `usb.*` | USB storage and serial — see the USB OTG section above |
+| `file.list`, `file.read`, `file.write`, `file.delete` | Sandboxed workspace files for notes, data, images (text or base64) |
+| `scene.save`, `scene.list`, `scene.run`, `scene.delete` | Named offline routines: 1–10 steps run on the phone |
+| `sensors.read` | Accelerometer, gyroscope, magnetometer + availability |
+| `media.enqueue`, `media.queue`, `media.play`, `media.control`, `media.clear` | Audio playback queue on the phone speaker |
+| `display.show_card`, `display.card_status`, `display.clear_card` | Interactive card with buttons on the stage; choice read back |
+| `vision.analyze` | On-device OCR + barcodes from a workspace image |
+| `home.status`, `home.states`, `home.call` | Home Assistant states and services (opt-in, Settings) |
+| `mqtt.status`, `mqtt.publish` | MQTT under one topic prefix (opt-in, Settings) |
 
 ## Getting started
 
