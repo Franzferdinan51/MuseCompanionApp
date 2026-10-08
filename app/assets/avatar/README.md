@@ -2,9 +2,12 @@
 
 The companion screen prefers stages in this order, falling back silently:
 
-1. **3D** (`avatar_3d_stage.dart`) — real-time GLB below, on phones.
-2. **Video** (`avatar_video_stage.dart`) — bundled Juno clips: `juno_idle.mp4`,
+1. **Video** (`avatar_video_stage.dart`) — bundled Juno clips: `juno_idle.mp4`,
    `juno_orb.mp4`, `juno_typing.mp4`, `juno_talking.mp4` (one per pose).
+2. **3D** (`avatar_3d_stage.dart`) — real-time GLB fallback.
+3. **Pixel** (`pixel_stage.dart`) — the 64x64-style portrait, also what widget
+   tests render.
+
 3. **Pixel** (`pixel_stage.dart`) — the 64x64-style portrait, also what widget
    tests render.
 
