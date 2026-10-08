@@ -40,3 +40,18 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+// 2026-10-08: tflite_flutter (develop branch) has the same missing-JVM-target
+// issue as receive_sharing_intent. Align its Java to 17.
+subprojects {
+    if (project.name == "tflite_flutter") {
+        pluginManager.withPlugin("com.android.library") {
+            extensions.findByType(
+                com.android.build.gradle.LibraryExtension::class.java
+            )?.let { ext ->
+                ext.compileOptions.sourceCompatibility = JavaVersion.VERSION_17
+                ext.compileOptions.targetCompatibility = JavaVersion.VERSION_17
+            }
+        }
+    }
+}
