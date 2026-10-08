@@ -32,6 +32,7 @@ import 'commands.dart';
 import 'identity.dart';
 import 'link_client.dart';
 import 'muse_api.dart';
+import '../../app/activity_log.dart';
 
 const String defaultNoiseHost = 'hatch.metaaivm.com';
 const double backoffBaseS = 2.0;
@@ -257,10 +258,27 @@ class GadgetService {
   Identity get identity => _identity;
 
   void _setState(ConnectionState state, [String detail = '']) {
+    final changed = _connectionState != state;
     _connectionState = state;
     _statusDetail = detail;
     if (!_state.isClosed) {
       _state.add(state);
+    }
+    // Mirror connection changes to the Activity tab.
+    if (changed) {
+      final label = switch (state) {
+        ConnectionState.connected => 'Connected to Muse',
+        ConnectionState.connecting => 'Connecting to Muse',
+        ConnectionState.waiting => 'Waiting for Muse',
+        ConnectionState.unpaired => 'Unpaired',
+        ConnectionState.stopped => 'Service stopped',
+      };
+      ActivityLog.instance.add(
+        ActivityKind.system,
+        label,
+        detail: detail,
+        ok: state != ConnectionState.unpaired,
+      );
     }
   }
 

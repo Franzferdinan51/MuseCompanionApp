@@ -27,6 +27,7 @@ import 'package:muse_companion/app/approval_notifications.dart';
 import 'package:muse_companion/app/approval_service.dart';
 import 'package:muse_companion/app/agent_status.dart';
 import 'package:muse_companion/app/event_bus.dart';
+import 'package:muse_companion/app/activity_log.dart';
 import 'package:muse_companion/app/avatar_motion.dart';
 import 'package:muse_companion/app/ble_peripheral.dart';
 import 'package:muse_companion/app/captions.dart';
@@ -335,6 +336,8 @@ Future<void> main() async {
     // diagnosable from logcat (the ring buffer feeds Diagnostics too).
     logger: (message) => debugPrint('[ble-setup] $message'),
   );
+
+  ActivityLog.instance.add(ActivityKind.system, 'App started');
 
   runApp(
     MuseCompanionApp(
