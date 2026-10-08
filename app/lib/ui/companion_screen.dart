@@ -35,7 +35,7 @@ import '../main.dart';
 import 'dashboard_screen.dart';
 import 'pairing_screen.dart';
 import 'muse_theme.dart';
-import 'avatar_3d_stage.dart';
+import 'avatar_video_stage.dart';
 import '../app/choice_cards.dart';
 import 'scope.dart';
 
@@ -800,7 +800,7 @@ class _CharacterState extends State<_Character> with WidgetsBindingObserver {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Avatar3DStage(
+                AvatarVideoStage(
                   pose: presentation.pose,
                   bytes: bytes,
                   bounceGeneration: _bounce,
