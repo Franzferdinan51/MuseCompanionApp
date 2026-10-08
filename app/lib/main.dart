@@ -225,7 +225,9 @@ Future<void> main() async {
     introSent: settings.loadIntroSent(),
     persistIntro: settings.saveIntroSent,
     onCharacterUrl: (url) async {
-      await executor.run('display.draw_url', {'url': url}, null);
+      final result =
+          await executor.run('display.draw_url', {'url': url}, null);
+      return result['ok'] == true;
     },
   );
   poster.bind(service);
