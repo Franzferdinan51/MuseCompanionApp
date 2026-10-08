@@ -153,7 +153,9 @@ class GadgetService {
   final ServiceLogger _logger;
 
   /// Draws a character image discovered on `GET /identity`.
-  final Future<void> Function(String url)? onCharacterUrl;
+  /// Returns true when the image was drawn; the service retries and
+  /// eventually re-sends the intro when it keeps failing.
+  final Future<bool> Function(String url)? onCharacterUrl;
 
   /// Remembers that the setup message was accepted, across app launches.
   /// Called with false when the pairing is removed.
@@ -463,7 +465,7 @@ class GadgetService {
       final url = avatarUrlFromIdentity(result);
       final draw = onCharacterUrl;
       if (url != null && draw != null) {
-        unawaited(draw(url));
+        unawaited(_drawCharacterWithRetry(draw, url));
       }
     };
     session.onChatEvent = (event) {
@@ -512,6 +514,35 @@ class GadgetService {
         : DateTime.now().difference(registeredAt).inMilliseconds / 1000;
     _log('session ended: ${outcome.name}');
     return (outcome, lasted);
+  }
+
+  /// Draw the Muse character from the identity URL, retrying transient
+  /// failures before giving up.
+  ///
+  /// Fresh installs used to sit on the generic logo forever when the first
+  /// draw failed: the intro was already marked sent, so no later session
+  /// retried it. Now a draw that keeps failing resets the intro flag, so
+  /// the next session asks the Muse for its character again.
+  Future<void> _drawCharacterWithRetry(
+      Future<bool> Function(String url) draw, String url) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (await draw(url)) {
+          _log('character drawn from identity');
+          return;
+        }
+        _log('character draw not applied, attempt ${attempt + 1}');
+      } catch (e) {
+        _log('character draw failed, attempt ${attempt + 1}: $e');
+      }
+      if (attempt < 2) {
+        await Future<void>.delayed(Duration(seconds: 2 * (attempt + 1)));
+      }
+    }
+    _log('character draw failed after 3 attempts; intro will be retried');
+    _introSent = false;
+    final persist = persistIntro;
+    if (persist != null) unawaited(persist(false));
   }
 
   /// Ask the Muse to draw its character, once per pairing.
