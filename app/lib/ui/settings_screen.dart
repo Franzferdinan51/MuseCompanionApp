@@ -1125,6 +1125,37 @@ class _SettingsScreenState extends State<SettingsScreen>
                     onSubmitted: (_) => _saveOpenRouterKey(),
                   ),
                   const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Default voice'),
+                        selected: _settings.openRouterVoice.isEmpty,
+                        onSelected: (_) {
+                          _openRouterVoiceController.text = '';
+                          _commit(
+                            _settings.copyWith(openRouterVoice: ''),
+                          );
+                        },
+                      ),
+                      for (final preset in kFishVoicePresets.entries)
+                        ChoiceChip(
+                          label: Text(preset.key),
+                          selected:
+                              _settings.openRouterVoice == preset.value,
+                          onSelected: (_) {
+                            _openRouterVoiceController.text = preset.value;
+                            _commit(
+                              _settings.copyWith(
+                                openRouterVoice: preset.value,
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _openRouterVoiceController,
                     decoration: const InputDecoration(

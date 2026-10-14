@@ -49,6 +49,25 @@ const String kFishAudioFreeModel = 'fish-audio/s2.1-pro-free:free';
 /// case in [OpenRouterTts._friendlyError]).
 const String kDrama3Model = 'fish-audio/drama-3';
 
+/// Built-in Fish Audio voices (public catalog reference ids), the
+/// same preset list the watch offers. The Settings voice picker
+/// writes one of these ids into the voice field; any other id can
+/// still be typed by hand.
+const Map<String, String> kFishVoicePresets = {
+  'Sarah': '933563129e564b19a115bedd57b7406a',
+  'Selene': 'b347db033a6549378b48d00acb0d06cd',
+  'Hannah': '9a9cf47702da476aa4629e2506d4a857',
+  'Friendly': 'b545c585f631496c914815291da4e893',
+  'Polo': 'f48d143a59a946ab87c0130fd081f349',
+  'Adrian': 'bf322df2096a46f18c579d0baa36f41d',
+  'Ethan': '536d3a5e000945adb7038665781a4aca',
+  'Elite': 'd8a1340984ee4b63ad1ffae27a6a4339',
+  'Jordan': '79d0bd3e4e5444b18f7b6d89b5927bf1',
+  'Energetic': '802e3bc2b27e49c2995d23ef70e6ac89',
+  'Atomic': '4c6a6762e4ac4bdebdb4fa8525d054a2',
+  'Announcer': '90e65eaaf50e4470b8e6d43ee6afd7d5',
+};
+
 /// Longest text sent in one TTS request. TTS models have per-request
 /// character limits (a few thousand); longer replies are split on
 /// sentence boundaries and played back to back.
