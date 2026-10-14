@@ -166,6 +166,7 @@ Future<void> main() async {
     PhoneBridge.voiceProvider = voice.voiceProvider;
     PhoneBridge.openRouterModel = voice.openRouterModel;
     PhoneBridge.openRouterVoice = voice.openRouterVoice;
+    PhoneBridge.localTtsBase = voice.localTtsBase;
     PhoneBridge.openRouterApiKey = await const OpenRouterKeyStore().load();
   }
 

@@ -44,10 +44,36 @@ const String kDefaultOpenRouterModel = 'fish-audio/s2.1-pro-free:free';
 /// [kDefaultOpenRouterModel], named for the Settings picker).
 const String kFishAudioFreeModel = 'fish-audio/s2.1-pro-free:free';
 
-/// Fish Audio Drama 3 on OpenRouter. Not free: the key needs a
-/// spending limit above $0 or requests fail 403 (see the limit
-/// case in [OpenRouterTts._friendlyError]).
-const String kDrama3Model = 'fish-audio/drama-3';
+/// Drama 3, served LOCALLY by the Mac TTS server (Drama 3 is
+/// local-only, never OpenRouter). The id is the local server's
+/// model name; older saved settings holding the OpenRouter id
+/// 'fish-audio/drama-3' route to the same local engine.
+const String kDrama3Model = 'drama-3';
+
+/// The OpenRouter id Drama 3 used before it went local-only.
+/// Saved settings may still hold it; it routes locally too.
+const String kDrama3OpenRouterId = 'fish-audio/drama-3';
+
+/// Qwen3-TTS on the local Mac server: the fast, small engine.
+const String kQwen3Model = 'qwen3-tts';
+
+/// Default base URL of the local Mac TTS server (LAN). Editable
+/// in Settings; the server speaks the same /v1/audio/speech shape.
+const String kDefaultLocalTtsBase = 'http://192.168.1.96:8799';
+
+/// Whether [model] is served by the local Mac TTS server.
+bool isLocalTtsModel(String model) =>
+    model == kDrama3Model ||
+    model == kDrama3OpenRouterId ||
+    model == kQwen3Model;
+
+/// Whether [model] selects the local Drama 3 engine.
+bool isDramaTtsModel(String model) =>
+    model == kDrama3Model || model == kDrama3OpenRouterId;
+
+/// The model id the local server expects for [model].
+String localTtsModelId(String model) =>
+    model == kQwen3Model ? kQwen3Model : kDrama3Model;
 
 /// Built-in Fish Audio voices (public catalog reference ids), the
 /// same preset list the watch offers. The Settings voice picker
@@ -72,6 +98,10 @@ const Map<String, String> kFishVoicePresets = {
 /// character limits (a few thousand); longer replies are split on
 /// sentence boundaries and played back to back.
 const int kOpenRouterTtsChunkChars = 1800;
+
+/// Local engines generate on the Mac; smaller chunks keep each
+/// request (and the wait for the first audio) short.
+const int kLocalTtsChunkChars = 600;
 
 /// User-facing failure from an OpenRouter TTS call. Never carries the key.
 /// Extends [PhoneActionException] so existing catch blocks handle it.
@@ -110,15 +140,20 @@ class OpenRouterTts {
     required String apiKey,
     required String model,
     String voice = '',
+    String localBase = kDefaultLocalTtsBase,
   }) async {
     _stopped = false;
-    for (final chunk in _chunkText(text)) {
+    final chunkLimit = isLocalTtsModel(model)
+        ? kLocalTtsChunkChars
+        : kOpenRouterTtsChunkChars;
+    for (final chunk in _chunkText(text, chunkLimit)) {
       if (_stopped) break;
       final audio = await _synthesize(
         text: chunk,
         apiKey: apiKey,
         model: model,
         voice: voice,
+        localBase: localBase,
       );
       if (_stopped) break;
       await _playBytes(audio);
@@ -147,9 +182,11 @@ class OpenRouterTts {
     required String apiKey,
     required String model,
     required String voice,
+    required String localBase,
   }) async {
+    final local = isLocalTtsModel(model);
     final body = <String, Object?>{
-      'model': model,
+      'model': local ? localTtsModelId(model) : model,
       'input': text,
       'response_format': 'mp3',
     };
@@ -158,51 +195,71 @@ class OpenRouterTts {
     try {
       response = await http
           .post(
-            Uri.parse(kOpenRouterSpeechUrl),
+            Uri.parse(
+              local
+                  ? '$localBase/v1/audio/speech'
+                  : kOpenRouterSpeechUrl,
+            ),
             headers: {
-              // The key is sent only in this header, never logged.
-              'Authorization': 'Bearer $apiKey',
+              // The key is sent only in this header, never logged,
+              // and never sent to the local server at all.
+              if (!local) 'Authorization': 'Bearer $apiKey',
               'Content-Type': 'application/json',
             },
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 60));
+          .timeout(Duration(seconds: local ? 180 : 60));
     } on TimeoutException {
-      throw const OpenRouterTtsException(
-        'OpenRouter timed out. Check the connection and try again.',
+      throw OpenRouterTtsException(
+        local
+            ? 'The local TTS server timed out. Is it running on the Mac?'
+            : 'OpenRouter timed out. Check the connection and try again.',
       );
     } catch (_) {
-      throw const OpenRouterTtsException(
-        'Could not reach OpenRouter. Check the connection and try again.',
+      throw OpenRouterTtsException(
+        local
+            ? 'Could not reach the local TTS server. Is it running on the Mac?'
+            : 'Could not reach OpenRouter. Check the connection and try again.',
       );
     }
     if (response.statusCode == 200) {
       if (response.bodyBytes.isEmpty) {
-        throw const OpenRouterTtsException('OpenRouter returned empty audio.');
+        throw OpenRouterTtsException(
+          local
+              ? 'The local TTS server returned empty audio.'
+              : 'OpenRouter returned empty audio.',
+        );
       }
       return response.bodyBytes;
     }
-    throw OpenRouterTtsException(_friendlyError(response));
+    throw OpenRouterTtsException(
+      local ? _friendlyLocalError(response) : _friendlyError(response),
+    );
   }
 
   /// Error bodies are JSON; map the common failures to plain language.
   /// The key is never included in any message.
-  static String _friendlyError(http.Response response) {
-    final code = response.statusCode;
-    String detail = '';
+  /// The error detail string from a JSON error body, or ''.
+  static String _errorDetail(http.Response response) {
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
         final error = decoded['error'];
         if (error is Map<String, dynamic> && error['message'] is String) {
-          detail = error['message'] as String;
+          return error['message'] as String;
         } else if (decoded['message'] is String) {
-          detail = decoded['message'] as String;
+          return decoded['message'] as String;
         }
       }
     } catch (_) {
-      // Non-JSON error body; fall through to the generic message.
+      // Non-JSON error body; no detail to surface.
     }
+    return '';
+  }
+
+  static String _friendlyError(http.Response response) {
+    final code = response.statusCode;
+    final detail = _errorDetail(response);
     if (code == 403 && detail.toLowerCase().contains('limit')) {
       // A $0-limit key is valid but may not spend; Drama 3 lands here.
       return 'OpenRouter: $detail Raise the key limit in OpenRouter '
@@ -224,17 +281,29 @@ class OpenRouterTts {
     return 'OpenRouter request failed (HTTP $code).';
   }
 
+  /// Error mapping for the local Mac TTS server.
+  static String _friendlyLocalError(http.Response response) {
+    final detail = _errorDetail(response);
+    if (detail.isNotEmpty && detail.length <= 200) {
+      return 'Local TTS server: $detail';
+    }
+    return 'Local TTS server request failed (HTTP ${response.statusCode}).';
+  }
+
   /// Split long text into request-sized chunks on sentence boundaries so
   /// no request exceeds the model's input limit.
-  static List<String> _chunkText(String text) {
+  static List<String> _chunkText(
+    String text, [
+    int limit = kOpenRouterTtsChunkChars,
+  ]) {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return const [];
-    if (trimmed.length <= kOpenRouterTtsChunkChars) return [trimmed];
+    if (trimmed.length <= limit) return [trimmed];
     final chunks = <String>[];
     final sentences = trimmed.split(RegExp(r'(?<=[.!?])\s+'));
     final current = StringBuffer();
     for (final sentence in sentences) {
-      if (current.length + sentence.length + 1 > kOpenRouterTtsChunkChars &&
+      if (current.length + sentence.length + 1 > limit &&
           current.isNotEmpty) {
         chunks.add(current.toString().trim());
         current.clear();

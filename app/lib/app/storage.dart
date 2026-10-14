@@ -224,6 +224,8 @@ class SettingsStore {
           _prefs.getString('${_settingsPrefix}openrouter_model'),
       'openrouter_voice':
           _prefs.getString('${_settingsPrefix}openrouter_voice'),
+      'local_tts_base':
+          _prefs.getString('${_settingsPrefix}local_tts_base'),
     });
   }
 
@@ -325,6 +327,10 @@ class SettingsStore {
     await _prefs.setString(
       '${_settingsPrefix}openrouter_voice',
       settings.openRouterVoice,
+    );
+    await _prefs.setString(
+      '${_settingsPrefix}local_tts_base',
+      settings.localTtsBase,
     );
     await _prefs.setBool(
       '${_settingsPrefix}home_assistant_enabled',

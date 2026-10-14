@@ -119,6 +119,7 @@ class CompanionSettings {
     this.voiceProvider = 'android',
     this.openRouterModel = 'fish-audio/s2.1-pro-free:free',
     this.openRouterVoice = '',
+    this.localTtsBase = 'http://192.168.1.96:8799',
     this.homeAssistantEnabled = false,
     this.homeAssistantBaseUrl = '',
     this.mqttEnabled = false,
@@ -228,6 +229,9 @@ class CompanionSettings {
   /// for the model's default voice.
   final String openRouterVoice;
 
+  /// Base URL of the local Mac TTS server (Drama 3 / Qwen3-TTS).
+  final String localTtsBase;
+
   /// Let Muse read and drive the smart home through Home Assistant.
   /// Off until the user opts in and enters a base URL + token.
   final bool homeAssistantEnabled;
@@ -280,6 +284,7 @@ class CompanionSettings {
     String? voiceProvider,
     String? openRouterModel,
     String? openRouterVoice,
+    String? localTtsBase,
     bool? homeAssistantEnabled,
     String? homeAssistantBaseUrl,
     bool? mqttEnabled,
@@ -318,6 +323,7 @@ class CompanionSettings {
       voiceProvider: voiceProvider ?? this.voiceProvider,
       openRouterModel: openRouterModel ?? this.openRouterModel,
       openRouterVoice: openRouterVoice ?? this.openRouterVoice,
+      localTtsBase: localTtsBase ?? this.localTtsBase,
       homeAssistantEnabled:
           homeAssistantEnabled ?? this.homeAssistantEnabled,
       homeAssistantBaseUrl:
@@ -393,6 +399,7 @@ class CompanionSettings {
       voiceProvider: _voiceProvider(map['voice_provider']),
       openRouterModel: _openRouterModel(map['openrouter_model']),
       openRouterVoice: _openRouterVoice(map['openrouter_voice']),
+      localTtsBase: _localTtsBase(map['local_tts_base']),
       homeAssistantEnabled: map['home_assistant_enabled'] == true,
       homeAssistantBaseUrl: _httpUrl(map['home_assistant_base_url']),
       mqttEnabled: map['mqtt_enabled'] == true,
@@ -541,6 +548,18 @@ class CompanionSettings {
       if (unit < 0x21 || unit > 0x7e) return 'fish-audio/s2.1-pro-free:free';
     }
     return id;
+  }
+
+  /// Local TTS server base URL: an http(s) URL, else the LAN default.
+  static String _localTtsBase(Object? value) {
+    if (value is String) {
+      final url = value.trim();
+      if ((url.startsWith('http://') || url.startsWith('https://')) &&
+          url.length <= 120) {
+        return url.replaceAll(RegExp(r'/+$'), '');
+      }
+    }
+    return 'http://192.168.1.96:8799';
   }
 
   /// OpenRouter voice id: same shape as a model id; empty means the

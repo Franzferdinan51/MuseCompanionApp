@@ -126,6 +126,10 @@ class PhoneBridge implements PhoneActions {
   /// OpenRouter TTS voice id (Fish Audio reference id), or '' for default.
   static String openRouterVoice = '';
 
+  /// Base URL of the local Mac TTS server, for the local models
+  /// (Drama 3 / Qwen3-TTS). Synced from settings in main.dart.
+  static String localTtsBase = kDefaultLocalTtsBase;
+
   /// OpenRouter API key from secure storage. Null/empty means the
   /// OpenRouter path is unavailable and speak() falls back to Android TTS.
   static String? openRouterApiKey;
@@ -198,7 +202,19 @@ class PhoneBridge implements PhoneActions {
     speaking.value = true;
     try {
       final key = openRouterApiKey;
-      if (voiceProvider == 'openrouter' && key != null && key.isNotEmpty) {
+      if (voiceProvider == 'openrouter' &&
+          isLocalTtsModel(openRouterModel)) {
+        // Local Mac TTS server (Drama 3 / Qwen3-TTS); no key needed.
+        await _openRouterTts.synthesizeAndPlay(
+          text: text,
+          apiKey: '',
+          model: openRouterModel,
+          voice: openRouterVoice,
+          localBase: localTtsBase,
+        );
+      } else if (voiceProvider == 'openrouter' &&
+          key != null &&
+          key.isNotEmpty) {
         // Opt-in cloud path. Any failure surfaces as an exception;
         // the Android path below is unchanged.
         await _openRouterTts.synthesizeAndPlay(
