@@ -40,6 +40,15 @@ const String kOpenRouterSpeechUrl = 'https://openrouter.ai/api/v1/audio/speech';
 /// into a request path.
 const String kDefaultOpenRouterModel = 'fish-audio/s2.1-pro-free:free';
 
+/// Fish Audio S2.1 Pro, the free OpenRouter route (same id as
+/// [kDefaultOpenRouterModel], named for the Settings picker).
+const String kFishAudioFreeModel = 'fish-audio/s2.1-pro-free:free';
+
+/// Fish Audio Drama 3 on OpenRouter. Not free: the key needs a
+/// spending limit above $0 or requests fail 403 (see the limit
+/// case in [OpenRouterTts._friendlyError]).
+const String kDrama3Model = 'fish-audio/drama-3';
+
 /// Longest text sent in one TTS request. TTS models have per-request
 /// character limits (a few thousand); longer replies are split on
 /// sentence boundaries and played back to back.
@@ -174,6 +183,11 @@ class OpenRouterTts {
       }
     } catch (_) {
       // Non-JSON error body; fall through to the generic message.
+    }
+    if (code == 403 && detail.toLowerCase().contains('limit')) {
+      // A $0-limit key is valid but may not spend; Drama 3 lands here.
+      return 'OpenRouter: $detail Raise the key limit in OpenRouter '
+          'to use this model.';
     }
     if (code == 401 || code == 403) {
       return 'OpenRouter rejected the API key. Check it in Settings.';

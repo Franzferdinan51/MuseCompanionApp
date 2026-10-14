@@ -221,7 +221,7 @@ class CompanionSettings {
 
   /// OpenRouter TTS model id, user-editable in Settings (OpenRouter rotates
   /// free models, so this is never hard-coded). Defaults to the free
-  /// Fish Audio model.
+  /// Fish Audio model; Settings also offers a Drama 3 preset.
   final String openRouterModel;
 
   /// OpenRouter TTS voice id (a Fish Audio reference/voice id), or ''

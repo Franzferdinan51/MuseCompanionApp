@@ -1043,6 +1043,36 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
                 if (_settings.voiceProvider == 'openrouter') ...[
                   const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Fish Audio (free)'),
+                        selected:
+                            _settings.openRouterModel == kFishAudioFreeModel,
+                        onSelected: (_) {
+                          _openRouterModelController.text =
+                              kFishAudioFreeModel;
+                          _commit(
+                            _settings.copyWith(
+                              openRouterModel: kFishAudioFreeModel,
+                            ),
+                          );
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Drama 3'),
+                        selected: _settings.openRouterModel == kDrama3Model,
+                        onSelected: (_) {
+                          _openRouterModelController.text = kDrama3Model;
+                          _commit(
+                            _settings.copyWith(openRouterModel: kDrama3Model),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _openRouterModelController,
                     decoration: const InputDecoration(
@@ -1109,7 +1139,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'fish-audio/s2.1-pro-free is free on OpenRouter.',
+                    'Fish Audio (free) costs nothing. Drama 3 is paid: '
+                    'your OpenRouter key needs a spending limit above \$0.',
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
