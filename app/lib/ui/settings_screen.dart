@@ -473,21 +473,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     });
   }
 
-  /// Speak a short phrase through the configured OpenRouter settings so
-  /// the user can verify the key and model work.
+  /// Speak a short phrase through the configured voice settings so
+  /// the user can verify the model works.
   Future<void> _testOpenRouterVoice() async {
     if (_testingOpenRouter) return;
+    final typedModel = _openRouterModelController.text.trim();
+    final model =
+        typedModel.isNotEmpty ? typedModel : _settings.openRouterModel;
     final typedKey = _openRouterKeyController.text.trim();
     final key = typedKey.isNotEmpty
         ? typedKey
         : await const OpenRouterKeyStore().load() ?? '';
-    if (key.isEmpty) {
+    if (key.isEmpty && !isLocalTtsModel(model)) {
       setState(() => _openRouterTestResult = 'Save an API key first.');
       return;
     }
-    final typedModel = _openRouterModelController.text.trim();
-    final model =
-        typedModel.isNotEmpty ? typedModel : _settings.openRouterModel;
     setState(() {
       _testingOpenRouter = true;
       _openRouterTestResult = null;
@@ -495,10 +495,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       _openRouterTestTts = OpenRouterTts();
       await _openRouterTestTts!.synthesizeAndPlay(
-        text: 'This is a test of the OpenRouter voice.',
+        text: 'This is a test of the selected voice.',
         apiKey: key,
         model: model,
         voice: _openRouterVoiceController.text.trim(),
+        localBase: _settings.localTtsBase,
       );
       if (mounted) {
         setState(() => _openRouterTestResult = 'Voice test played.');
@@ -1020,7 +1021,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               children: [
                 const Text(
                   'Android TTS is the default and stays as-is. OpenRouter '
-                  'is an opt-in cloud voice for testing.',
+                  '(cloud) and the Mac local engines are opt-in voices.',
                 ),
                 const SizedBox(height: 12),
                 SegmentedButton<String>(
@@ -1032,7 +1033,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     ButtonSegment(
                       value: 'openrouter',
-                      label: Text('OpenRouter'),
+                      label: Text('Cloud / Local'),
                       icon: Icon(Icons.cloud_outlined),
                     ),
                   ],
@@ -1061,12 +1062,22 @@ class _SettingsScreenState extends State<SettingsScreen>
                         },
                       ),
                       ChoiceChip(
-                        label: const Text('Drama 3'),
-                        selected: _settings.openRouterModel == kDrama3Model,
+                        label: const Text('Drama 3 (local)'),
+                        selected: isDramaTtsModel(_settings.openRouterModel),
                         onSelected: (_) {
                           _openRouterModelController.text = kDrama3Model;
                           _commit(
                             _settings.copyWith(openRouterModel: kDrama3Model),
+                          );
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Qwen3 TTS (local)'),
+                        selected: _settings.openRouterModel == kQwen3Model,
+                        onSelected: (_) {
+                          _openRouterModelController.text = kQwen3Model;
+                          _commit(
+                            _settings.copyWith(openRouterModel: kQwen3Model),
                           );
                         },
                       ),
@@ -1085,6 +1096,22 @@ class _SettingsScreenState extends State<SettingsScreen>
                       _settings.copyWith(openRouterModel: v.trim()),
                     ),
                   ),
+                  if (isLocalTtsModel(_settings.openRouterModel)) ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      initialValue: _settings.localTtsBase,
+                      decoration: const InputDecoration(
+                        labelText: 'Local TTS server (Mac)',
+                        hintText: 'http://192.168.1.96:8799',
+                        helperText: 'Drama 3 and Qwen3 run on the Mac. '
+                            'No API key needed.',
+                      ),
+                      keyboardType: TextInputType.url,
+                      onChanged: (v) => _commit(
+                        _settings.copyWith(localTtsBase: v.trim()),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextField(
                     controller: _openRouterKeyController,
@@ -1170,8 +1197,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Fish Audio (free) costs nothing. Drama 3 is paid: '
-                    'your OpenRouter key needs a spending limit above \$0.',
+                    'Fish Audio (free) costs nothing. Drama 3 and Qwen3 '
+                    'run locally on the Mac - no key, no cloud.',
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
