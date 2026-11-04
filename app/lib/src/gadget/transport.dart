@@ -156,7 +156,7 @@ class NoiseTransport {
     try {
       final frame = ServiceFrame.bodyChunk(
           streamId, BodyChunk(data: data, endBody: endBody));
-      return _encryptRequest(service, frame);
+      return await _encryptRequest(service, frame);
     } catch (_) {
       _dead = true;
       rethrow;
@@ -173,7 +173,7 @@ class NoiseTransport {
     try {
       final frame = ServiceFrame.reset(
           streamId, Reset(code: code, reason: reason));
-      return _encryptRequest(service, frame);
+      return await _encryptRequest(service, frame);
     } catch (_) {
       _dead = true;
       rethrow;

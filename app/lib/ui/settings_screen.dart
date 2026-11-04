@@ -2252,7 +2252,7 @@ class _ModelSelectorState extends State<_ModelSelector> {
           children: [
             Expanded(
               child: DropdownButtonFormField<String>(
-                value: saved,
+                initialValue: saved,
                 decoration: InputDecoration(
                   labelText: widget.label,
                   border: const OutlineInputBorder(),

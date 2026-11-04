@@ -100,7 +100,7 @@ class AppCompanionDisplay implements CompanionDisplay {
       // GLB 3D models are not images: pass them through to the 3D
       // viewer instead of decoding them. Same bytes-in pipeline, no
       // format restriction — .glb URLs work like image URLs.
-      return _drawBytes(bytes, fromCache: fromCache);
+      return await _drawBytes(bytes, fromCache: fromCache);
     } finally {
       if (owned) client.close();
     }
